@@ -1,0 +1,1031 @@
+import { useState, useEffect, useMemo } from 'react'
+import {
+  RefreshCw, Search, Wifi, Globe, Settings, Sliders,
+  Hash, RotateCcw, X, Cpu, Info, Monitor,
+} from 'lucide-react'
+import type { LucideIcon } from 'lucide-react'
+import { sendCommand, fetchFileContent, saveFileContent } from '../lib/http'
+import { useMachineStore } from '../store'
+import type { Theme } from '../store'
+
+interface Setting {
+  F?: string  // 'nvs' | 'tree'
+  P: string
+  T: string
+  V: string
+  H: string
+  M?: string
+  S?: string
+  O?: Array<Record<string, number>>
+}
+
+const PREFIX_TO_CAT: Record<string, string> = {
+  WiFi: 'wifi', Sta: 'wifi', AP: 'wifi', Hostname: 'wifi',
+  HTTP: 'services', Telnet: 'services', MDNS: 'services',
+  Bluetooth: 'services', Notification: 'services',
+  Message: 'system', Config: 'system', Report: 'system',
+  SD: 'system', Firmware: 'system', GCode: 'system', Start: 'system',
+  Grbl: 'machine',
+}
+
+const CAT_DEFS: Record<string, { label: string; icon: LucideIcon; order: number }> = {
+  workspace: { label: 'Workspace',      icon: Monitor,  order: -1 },
+  wifi:     { label: 'WiFi & Network',  icon: Wifi,     order: 0 },
+  services: { label: 'Services',        icon: Globe,    order: 1 },
+  system:   { label: 'System',          icon: Settings, order: 2 },
+  machine:  { label: 'Machine',         icon: Sliders,  order: 3 },
+  config:   { label: 'Machine Config',  icon: Cpu,      order: 4 },
+  other:    { label: 'Other',           icon: Hash,     order: 99 },
+}
+
+function catOf(s: Setting): string {
+  if (s.F === 'tree') return 'config'
+  return PREFIX_TO_CAT[s.P.split('/')[0]] ?? 'other'
+}
+
+const TREE_PREFIX_TO_SUBCAT: Record<string, string> = {
+  axes:          'Axes',
+  stepping:      'Stepping',
+  uart1:         'UART',
+  uart2:         'UART',
+  uart_channel1: 'UART',
+  uart_channel2: 'UART',
+  sdcard:        'SD Card',
+  coolant:       'Coolant',
+  probe:         'Probe',
+  macros:        'Macros',
+  start:         'Startup',
+  parking:       'Parking',
+  user_outputs:  'Outputs',
+}
+
+const SUBCAT_ORDER = ['General', 'Axes', 'Stepping', 'Startup', 'Parking', 'Probe', 'Coolant', 'Macros', 'UART', 'SD Card', 'Outputs']
+
+function treeSubcat(path: string): string {
+  const seg = path.split('/').filter(Boolean)[0] ?? ''
+  return TREE_PREFIX_TO_SUBCAT[seg] ?? 'General'
+}
+
+const KEY_LABELS: Record<string, string> = {
+  steps_per_mm:                    'Steps / mm',
+  max_rate_mm_per_min:             'Max Rate',
+  acceleration_mm_per_sec2:        'Acceleration',
+  max_travel_mm:                   'Max Travel',
+  mpos_mm:                         'Machine Position',
+  feed_mm_per_min:                 'Feed Rate',
+  seek_mm_per_min:                 'Seek Rate',
+  rate_mm_per_min:                 'Rate',
+  pullout_rate_mm_per_min:         'Pullout Rate',
+  pullout_distance_mm:             'Pullout Distance',
+  target_mpos_mm:                  'Target Position',
+  pulloff_mm:                      'Pulloff Distance',
+  allow_single_axis:               'Allow Single Axis',
+  positive_direction:              'Positive Direction',
+  seek_scaler:                     'Seek Scaler',
+  feed_scaler:                     'Feed Scaler',
+  settle_ms:                       'Settle Time',
+  idle_ms:                         'Idle Time',
+  pulse_us:                        'Pulse Width',
+  dir_delay_us:                    'Direction Delay',
+  disable_delay_us:                'Disable Delay',
+  frequency_hz:                    'Frequency',
+  passthrough_baud:                'Passthrough Baud',
+  passthrough_mode:                'Passthrough Mode',
+  report_interval_ms:              'Report Interval',
+  uart_num:                        'UART Number',
+  message_level:                   'Message Level',
+  hard_limits:                     'Hard Limits',
+  soft_limits:                     'Soft Limits',
+  homing_runs:                     'Homing Runs',
+  check_mode_start:                'Check Mode on Start',
+  hard_stop:                       'Hard Stop on Probe',
+  probe_hard_limit:                'Probe as Hard Limit',
+  startup_line0:                   'Startup Line 1',
+  startup_line1:                   'Startup Line 2',
+  after_homing:                    'After Homing',
+  after_reset:                     'After Reset',
+  after_unlock:                    'After Unlock',
+  must_home:                       'Require Homing on Start',
+  deactivate_parking:              'Deactivate Parking',
+  check_limits:                    'Check Limits on Start',
+  enable_parking_override_control: 'Parking Override Control',
+  arc_tolerance_mm:                'Arc Tolerance',
+  junction_deviation_mm:           'Junction Deviation',
+  verbose_errors:                  'Verbose Errors',
+  report_inches:                   'Report in Inches',
+  use_line_numbers:                'Use G-code Line Numbers',
+  planner_blocks:                  'Planner Buffer Size',
+  delay_ms:                        'Coolant Delay',
+}
+
+const GROUP_LABELS: Record<string, string> = {
+  uart1:         'UART 1',
+  uart2:         'UART 2',
+  uart_channel1: 'UART Channel 1',
+  uart_channel2: 'UART Channel 2',
+  sdcard:        'SD Card',
+  user_outputs:  'User Outputs',
+}
+
+function humanizeKey(key: string): string {
+  if (KEY_LABELS[key]) return KEY_LABELS[key]
+  return key.split('_').map(w => w.charAt(0).toUpperCase() + w.slice(1)).join(' ')
+}
+
+function groupLabel(seg: string): string {
+  return GROUP_LABELS[seg] ?? humanizeKey(seg)
+}
+
+function searchBreadcrumb(s: Setting): string {
+  const cat = CAT_DEFS[catOf(s)]?.label ?? catOf(s)
+  if (s.F === 'tree') {
+    const sub = treeSubcat(s.P)
+    const parts = s.P.split('/').filter(Boolean)
+    // For axes, include the axis letter in the breadcrumb (parts[1] must be a single letter)
+    if (sub === 'Axes' && parts.length >= 3) {
+      const axis = parts[1]
+      const section = parts.length >= 4 ? parts[2] : null
+      const sectionLabel: Record<string, string> = { homing: 'Homing', motor0: 'Motor 0', motor1: 'Motor 1' }
+      return [cat, sub, `${axis} Axis`, section ? sectionLabel[section] : null].filter(Boolean).join(' › ')
+    }
+    return `${cat} › ${sub}`
+  }
+  return cat
+}
+
+function displayLabel(s: Setting): string {
+  if (s.F === 'tree') {
+    const parts = s.P.split('/').filter(Boolean)
+    const last = parts[parts.length - 1] ?? s.P
+    return humanizeKey(last)
+  }
+  const parts = s.P.split('/')
+  if (parts.length <= 1) return parts[0]
+  if (parts.length === 2) return parts[1]
+  return parts.slice(1).join(' / ')
+}
+
+function inferUnit(path: string): string {
+  const k = path.toLowerCase()
+  if (k.includes('steps_per_mm') || k.includes('resolution'))                     return 'steps/mm'
+  if (k.includes('_mm_per_min') || k.includes('maxrate') ||
+     (k.includes('rate') && !k.includes('port') && !k.includes('baud')))          return 'mm/min'
+  if (k.includes('_mm_per_sec2') || k.includes('accel'))                          return 'mm/s²'
+  if (k.includes('_us') || k.includes('pulse') || k.includes('dir_delay') ||
+      k.includes('disable_delay'))                                                  return 'µs'
+  if (k.includes('_ms') || k.includes('delay') || k.includes('settle') ||
+      k.includes('idle'))                                                           return 'ms'
+  if (k.includes('_mm') || k.includes('maxtravel') || k.includes('travel') ||
+      k.includes('pulloff') || k.includes('mpos') || k.includes('tolerance') ||
+      k.includes('deviation'))                                                      return 'mm'
+  if (k.includes('maxspindlespeed') || k.includes('spindlespeed'))                return 'rpm'
+  if (k.includes('_hz') || k.includes('frequency') || k.includes('freq'))        return 'Hz'
+  if (k.includes('baud'))                                                          return 'baud'
+  return ''
+}
+
+type ListItem =
+  | { type: 'header'; label: string; level: 'section' | 'subsection' }
+  | { type: 'setting'; setting: Setting }
+
+function buildGroupedItems(settings: Setting[], subKey: string): ListItem[] {
+  if (subKey === 'Axes') {
+    const general: Setting[] = []
+    const axisMap = new Map<string, Map<string, Setting[]>>()
+
+    for (const s of settings) {
+      const parts = s.P.split('/').filter(Boolean) // ['axes', ...]
+      if (parts.length <= 2) { general.push(s); continue }
+      const axis = parts[1]
+      const section = parts.length >= 4 ? parts[2] : 'motion'
+      if (!axisMap.has(axis)) axisMap.set(axis, new Map())
+      const secMap = axisMap.get(axis)!
+      if (!secMap.has(section)) secMap.set(section, [])
+      secMap.get(section)!.push(s)
+    }
+
+    const items: ListItem[] = []
+    if (general.length > 0) {
+      items.push({ type: 'header', label: 'General', level: 'section' })
+      for (const s of general) items.push({ type: 'setting', setting: s })
+    }
+
+    const SECTION_ORDER = ['motion', 'homing', 'motor0', 'motor1', 'motor2', 'motor3']
+    const SECTION_LABELS: Record<string, string> = {
+      motion:  'Motion',
+      homing:  'Homing',
+      motor0:  'Motor 0',
+      motor1:  'Motor 1',
+      motor2:  'Motor 2',
+      motor3:  'Motor 3',
+    }
+
+    for (const [axis, sections] of [...axisMap].sort(([a], [b]) => a.localeCompare(b))) {
+      items.push({ type: 'header', label: `${axis} Axis`, level: 'section' })
+      const ordered = [...sections.entries()].sort(([a], [b]) => {
+        const ai = SECTION_ORDER.indexOf(a), bi = SECTION_ORDER.indexOf(b)
+        if (ai === -1 && bi === -1) return a.localeCompare(b)
+        if (ai === -1) return 1
+        if (bi === -1) return -1
+        return ai - bi
+      })
+      for (const [sec, subs] of ordered) {
+        items.push({ type: 'header', label: SECTION_LABELS[sec] ?? humanizeKey(sec), level: 'subsection' })
+        for (const s of subs) items.push({ type: 'setting', setting: s })
+      }
+    }
+    return items
+  }
+
+  // All other sub-tabs: group by top-level path segment
+  const groups = new Map<string, Setting[]>()
+  for (const s of settings) {
+    const seg = s.P.split('/').filter(Boolean)[0] ?? 'general'
+    if (!groups.has(seg)) groups.set(seg, [])
+    groups.get(seg)!.push(s)
+  }
+
+  if (groups.size <= 1) return settings.map(s => ({ type: 'setting', setting: s }))
+
+  const items: ListItem[] = []
+  for (const [seg, subs] of groups) {
+    if (subs.length > 1) items.push({ type: 'header', label: groupLabel(seg), level: 'section' })
+    for (const s of subs) items.push({ type: 'setting', setting: s })
+  }
+  return items
+}
+
+type SaveState = 'idle' | 'saving' | 'saved' | 'error'
+
+function SaveBtn({ state, changed, onClick }: {
+  state: SaveState; changed: boolean; onClick: () => void
+}) {
+  const base = 'shrink-0 h-7 min-w-[44px] px-2 rounded text-xs font-medium transition-all border'
+  if (state === 'saving') return <button className={`${base} border-border text-text-dim cursor-not-allowed`} disabled>…</button>
+  if (state === 'saved')  return <button className={`${base} border-ok/40 bg-ok/10 text-ok`} disabled>✓</button>
+  if (state === 'error')  return <button className={`${base} border-danger/40 bg-danger/10 text-danger`} disabled>!</button>
+  if (!changed) return <button className={`${base} border-border text-text-dim opacity-0 pointer-events-none`} disabled>Save</button>
+  return (
+    <button className={`${base} border-accent/50 bg-accent/10 text-accent hover:bg-accent/20`} onClick={onClick}>
+      Save
+    </button>
+  )
+}
+
+interface SettingRowProps {
+  setting: Setting
+  showPath: boolean
+  onSave: (p: string, t: string, v: string) => Promise<void>
+}
+
+function SettingRow({ setting, showPath, onSave }: SettingRowProps) {
+  const [value, setValue]         = useState(setting.V)
+  const [saveState, setSaveState] = useState<SaveState>('idle')
+
+  const changed = value !== setting.V
+  const unit    = inferUnit(setting.P)
+  const label   = displayLabel(setting)
+  const opts    = setting.O ?? []
+  const isNumeric = setting.T === 'I' || setting.T === 'F' || setting.T === 'R'
+
+  const optVals = opts.map(o => Object.values(o)[0]).sort((a, b) => a - b)
+  const isToggle = setting.T === 'B' && opts.length === 2 && optVals[0] === 0 && optVals[1] === 1
+
+  async function save() {
+    if (!changed || saveState === 'saving') return
+    setSaveState('saving')
+    try {
+      await onSave(setting.P, setting.T, value)
+      setSaveState('saved')
+      setTimeout(() => setSaveState('idle'), 2500)
+    } catch {
+      setSaveState('error')
+      setTimeout(() => setSaveState('idle'), 3000)
+    }
+  }
+
+  function handleKey(e: React.KeyboardEvent) {
+    if (e.key === 'Enter' && changed) save()
+  }
+
+  if (isToggle) {
+    const isOn     = Number(value) !== 0
+    const onEntry  = opts.find(o => Object.values(o)[0] === 1)
+    const offEntry = opts.find(o => Object.values(o)[0] === 0)
+    const onVal    = String(Object.values(onEntry  ?? {})[0] ?? 1)
+    const offVal   = String(Object.values(offEntry ?? {})[0] ?? 0)
+
+    function toggle() {
+      const next = isOn ? offVal : onVal
+      setValue(next)
+      onSave(setting.P, setting.T, next)
+        .then(() => { setSaveState('saved'); setTimeout(() => setSaveState('idle'), 1500) })
+        .catch(() => { setSaveState('error'); setTimeout(() => setSaveState('idle'), 2000) })
+    }
+
+    return (
+      <div className="flex items-center gap-3 px-4 py-2.5 border-b border-border last:border-0
+                      hover:bg-elevated/40 transition-colors">
+        <div className="flex-1 min-w-0">
+          <div className="text-sm text-text-primary leading-tight">{label}</div>
+          {showPath && <div className="text-[10px] text-text-dim mt-0.5">{searchBreadcrumb(setting)}</div>}
+        </div>
+        <div className="flex items-center gap-2 shrink-0">
+          {saveState === 'saved' && <span className="text-[10px] text-ok">saved</span>}
+          {saveState === 'error' && <span className="text-[10px] text-danger">error</span>}
+          <button
+            onClick={toggle}
+            className={`relative inline-flex h-5 w-9 shrink-0 items-center rounded-full
+                        border transition-colors duration-200 ${
+              isOn ? 'bg-ok border-ok/60' : 'bg-elevated border-border-strong'
+            }`}
+          >
+            <span className={`inline-block h-3.5 w-3.5 rounded-full bg-white shadow-sm
+                             transition-transform duration-200 ${
+              isOn ? 'translate-x-[18px]' : 'translate-x-[2px]'
+            }`} />
+          </button>
+        </div>
+      </div>
+    )
+  }
+
+  if (setting.T === 'B' && opts.length > 0) {
+    return (
+      <div className={`flex items-center gap-3 px-4 py-2.5 border-b border-border last:border-0
+                       hover:bg-elevated/40 transition-colors ${changed ? 'border-l-2 border-l-warn' : ''}`}>
+        <div className="flex-1 min-w-0">
+          <div className="text-sm text-text-primary">{label}</div>
+          {showPath && <div className="text-[10px] text-text-dim mt-0.5">{searchBreadcrumb(setting)}</div>}
+        </div>
+        <div className="flex items-center gap-2 shrink-0">
+          <select
+            value={value}
+            onChange={e => setValue(e.target.value)}
+            className="input-field py-1 text-xs w-36"
+          >
+            {opts.map(opt => {
+              const [optLabel, optVal] = Object.entries(opt)[0]
+              return <option key={optVal} value={String(optVal)}>{optLabel}</option>
+            })}
+          </select>
+          <SaveBtn state={saveState} changed={changed} onClick={save} />
+        </div>
+      </div>
+    )
+  }
+
+  return (
+    <div className={`px-4 py-2.5 border-b border-border last:border-0
+                     hover:bg-elevated/40 transition-colors ${changed ? 'border-l-2 border-l-warn' : ''}`}>
+      <div className="flex items-center justify-between gap-2 mb-1.5">
+        <div className="min-w-0">
+          <span className="text-sm text-text-primary leading-tight">{label}</span>
+          {showPath && <div className="text-[10px] text-text-dim">{searchBreadcrumb(setting)}</div>}
+        </div>
+        {unit && <span className="text-xs text-text-dim shrink-0">{unit}</span>}
+      </div>
+      <div className="flex items-center gap-2">
+        <input
+          type={isNumeric ? 'number' : 'text'}
+          value={value}
+          onChange={e => setValue(e.target.value)}
+          onKeyDown={handleKey}
+          step={isNumeric ? (setting.T === 'R' ? 'any' : '1') : undefined}
+          min={isNumeric && setting.M !== undefined ? Number(setting.M) : undefined}
+          max={isNumeric && setting.S !== undefined ? Number(setting.S) : undefined}
+          className="input-field flex-1 py-1 text-xs font-mono"
+          spellCheck={false}
+        />
+        <SaveBtn state={saveState} changed={changed} onClick={save} />
+      </div>
+    </div>
+  )
+}
+
+function SectionHeader({ label, level }: { label: string; level: 'section' | 'subsection' }) {
+  if (level === 'subsection') {
+    return (
+      <div className="px-4 pt-3 pb-1 text-[10px] font-semibold uppercase tracking-widest text-text-dim">
+        {label}
+      </div>
+    )
+  }
+  return (
+    <div className="px-4 pt-4 pb-1.5 text-xs font-bold uppercase tracking-wider text-accent/80
+                    border-t border-border first:border-t-0 first:pt-3 bg-elevated/20">
+      {label}
+    </div>
+  )
+}
+
+function parseSimpleYaml(yamlText: string): Record<string, any> {
+  const lines = yamlText.split('\n')
+  const result: Record<string, any> = {}
+  const stack: Array<{ obj: any; indent: number }> = [{ obj: result, indent: -1 }]
+
+  for (const line of lines) {
+    if (line.trim() === '' || line.trim().startsWith('#')) continue
+
+    const indent = line.length - line.trimStart().length
+    const trimmed = line.trim()
+
+    while (stack.length > 1 && stack[stack.length - 1].indent >= indent) {
+      stack.pop()
+    }
+
+    if (trimmed.includes(':')) {
+      const [key, ...valueParts] = trimmed.split(':')
+      const value = valueParts.join(':').trim()
+
+      const currentObj = stack[stack.length - 1].obj
+
+      if (value === '' || value === '{}') {
+        // Nested object
+        currentObj[key.trim()] = {}
+        stack.push({ obj: currentObj[key.trim()], indent })
+      } else {
+        // Simple value
+        currentObj[key.trim()] = parseValue(value)
+      }
+    }
+  }
+
+  return result
+}
+
+/**
+ * Parse a YAML value to appropriate type
+ */
+function parseValue(value: string): any {
+  const trimmed = value.trim()
+
+  // Remove quotes if present
+  if ((trimmed.startsWith('"') && trimmed.endsWith('"')) ||
+      (trimmed.startsWith("'") && trimmed.endsWith("'"))) {
+    return trimmed.slice(1, -1)
+  }
+
+  // Boolean values
+  if (trimmed === 'true') return true
+  if (trimmed === 'false') return false
+  if (trimmed === 'null') return null
+
+  // Number values
+  if (!isNaN(Number(trimmed)) && trimmed !== '') {
+    return Number(trimmed)
+  }
+
+  return trimmed
+}
+
+/**
+ * Convert object back to YAML format
+ */
+function stringifySimpleYaml(obj: Record<string, any>, indent = 0): string {
+  let result = ''
+
+  for (const [key, value] of Object.entries(obj)) {
+    const prefix = '  '.repeat(indent)
+
+    if (value !== null && typeof value === 'object' && !Array.isArray(value)) {
+      result += `${prefix}${key}:\n`
+      result += stringifySimpleYaml(value, indent + 1)
+    } else {
+      let valueStr = String(value)
+      // Quote strings that contain special characters or look like numbers/booleans
+      if (typeof value === 'string' &&
+          (value.includes(':') || value.includes('#') ||
+           !isNaN(Number(value)) || value === 'true' || value === 'false')) {
+        valueStr = `"${value}"`
+      }
+      result += `${prefix}${key}: ${valueStr}\n`
+    }
+  }
+
+  return result
+}
+
+/**
+ * Set a nested value in an object using a path like "axes/X/max_rate_mm_per_min"
+ */
+function setNestedValue(obj: any, path: string, value: string): void {
+  // Remove leading slash and split path
+  const parts = path.replace(/^\/+/, '').split('/').filter(Boolean)
+  let current = obj
+
+  // Navigate to the parent object
+  for (let i = 0; i < parts.length - 1; i++) {
+    let part = parts[i]
+
+    // Convert axis names to lowercase (FluidNC uses lowercase in YAML)
+    if (i === 1 && parts[0] === 'axes') {
+      part = part.toLowerCase()
+    }
+
+    if (!(part in current) || typeof current[part] !== 'object') {
+      current[part] = {}
+    }
+    current = current[part]
+  }
+
+  // Set the final value with appropriate type conversion
+  const finalKey = parts[parts.length - 1]
+  if (finalKey) {
+    current[finalKey] = parseValue(value)
+  }
+}
+
+/**
+ * Update config.yaml file with a setting change for persistence across restarts
+ * Uses lightweight custom YAML parser (~2KB vs 20KB for js-yaml)
+ */
+async function updateConfigYaml(settingPath: string, value: string): Promise<void> {
+  try {
+    // Read current config.yaml from internal storage
+    const configContent = await fetchFileContent('/config.yaml', 'local')
+
+    // Parse YAML using lightweight parser
+    const config = parseSimpleYaml(configContent)
+
+    // Update the setting using the path
+    setNestedValue(config, settingPath, value)
+
+    // Convert back to YAML with proper formatting
+    const updatedContent = stringifySimpleYaml(config)
+
+    // Write back to internal storage
+    await saveFileContent('/', 'config.yaml', updatedContent, 'local')
+
+    console.log(`Updated config.yaml: ${settingPath} = ${value}`)
+
+  } catch (error) {
+    console.warn('Failed to update config.yaml:', error)
+    // Gracefully degrade - runtime change still applied via ESP401
+    throw error  // Re-throw to let caller handle user feedback
+  }
+}
+
+interface SettingsPanelProps {
+  onClose?: () => void
+}
+
+export function SettingsPanel({ onClose }: SettingsPanelProps) {
+  const espInfo = useMachineStore(s => s.espInfo)
+  const units = useMachineStore(s => s.units)
+  const setUnits = useMachineStore(s => s.setUnits)
+  const layoutMode = useMachineStore(s => s.layoutMode)
+  const setLayoutMode = useMachineStore(s => s.setLayoutMode)
+  const theme = useMachineStore(s => s.theme)
+  const setTheme = useMachineStore(s => s.setTheme)
+
+  const [settings, setSettings]     = useState<Setting[]>([])
+  const [loading, setLoading]       = useState(false)
+  const [error, setError]           = useState('')
+  const [filter, setFilter]         = useState('')
+  const [category, setCategory]     = useState('workspace')
+  const [subKey, setSubKey]         = useState('')
+  const [restarting, setRestarting] = useState(false)
+
+  async function load() {
+    setLoading(true)
+    setError('')
+    try {
+      const raw = await sendCommand('[ESP400]')
+
+      if (!raw?.trim()) {
+        setError('Device returned an empty response for [ESP400].')
+        return
+      }
+
+      let json: unknown
+      try {
+        json = JSON.parse(raw)
+      } catch {
+        const preview = raw.slice(0, 200) + (raw.length > 200 ? '…' : '')
+        setError(`Could not parse settings response.\n\nReceived:\n${preview}`)
+        return
+      }
+
+      const j = json as Record<string, unknown>
+      const list: Setting[] =
+        Array.isArray(json) ? (json as Setting[]) :
+        j.EEPROM            ? (j.EEPROM as Setting[]) :
+        j.data              ? [
+            ...((j.data as Record<string, Setting[]>).nvs  ?? []),
+            ...((j.data as Record<string, Setting[]>).tree ?? []),
+          ] :
+        []
+
+      if (list.length === 0) {
+        setError(`Parsed OK but found no settings.\n\nResponse starts with:\n${raw.slice(0, 200)}`)
+        return
+      }
+
+      setSettings(list)
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Failed to load settings')
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  useEffect(() => { load() }, [])
+
+
+  useEffect(() => {
+    if (category === 'machine' || category === 'config') {
+      const keys = buildSubKeys(settings, category)
+      if (keys.length && !subKey) setSubKey(keys[0])
+    } else {
+      setSubKey('')
+    }
+  }, [category, settings])
+
+  async function saveSetting(p: string, t: string, v: string) {
+    // Always update runtime configuration first
+    await sendCommand(`[ESP401]P=${p} T=${t} V=${v}`)
+
+    // For 'tree' settings (config.yaml sourced), also update the persistent config file
+    const setting = settings.find(s => s.P === p)
+    if (setting?.F === 'tree') {
+      try {
+        await updateConfigYaml(p, v)
+      } catch (error) {
+        console.warn(`Runtime updated but config.yaml persistence failed for ${p}:`, error)
+        // Don't throw - runtime change was successful, persistence failure is non-critical
+      }
+    }
+  }
+
+  async function restart() {
+    if (!confirm('Restart the device now?')) return
+    setRestarting(true)
+    try { await sendCommand('[ESP444]RESTART') } finally { setRestarting(false) }
+  }
+
+  const categories = useMemo(() => buildCategories(settings), [settings])
+
+  const subKeys = useMemo(
+    () => (category === 'machine' || category === 'config' ? buildSubKeys(settings, category) : []),
+    [settings, category],
+  )
+
+  const visibleSettings = useMemo(() => {
+    if (filter.trim()) {
+      const tokens = filter.toLowerCase().trim().split(/\s+/).filter(Boolean)
+      return settings.filter(s => {
+        const parts = s.P.split('/').filter(Boolean)
+        // Split into discrete words so "x" matches axis "x" but not "axes"
+        const rawWords = [
+          ...parts.flatMap(p =>
+            p.replace(/([a-z])(\d)/gi, '$1 $2').replace(/(\d)([a-z])/gi, '$1 $2').split(/[\s_]+/)
+          ),
+          ...displayLabel(s).toLowerCase().split(/\s+/),
+          ...treeSubcat(s.P).toLowerCase().split(/\s+/),
+          ...(CAT_DEFS[catOf(s)]?.label ?? '').toLowerCase().split(/\s+/),
+        ]
+        const words = rawWords.map(w => w.toLowerCase()).filter(Boolean)
+        return tokens.every(t => words.some(w => w.startsWith(t)))
+      })
+    }
+    if (!category) return []
+    let list = settings.filter(s => catOf(s) === category)
+    if (category === 'machine' && subKey) {
+      if (subKey === 'General') {
+        list = list.filter(s => s.P.split('/').length < 3)
+      } else {
+        list = list.filter(s => s.P.split('/')[1] === subKey)
+      }
+    }
+    if (category === 'config' && subKey) {
+      list = list.filter(s => treeSubcat(s.P) === subKey)
+    }
+    return list
+  }, [settings, filter, category, subKey])
+
+  const groupedItems = useMemo((): ListItem[] => {
+    if (category !== 'config' || filter.trim()) {
+      return visibleSettings.map(s => ({ type: 'setting', setting: s }))
+    }
+    return buildGroupedItems(visibleSettings, subKey)
+  }, [visibleSettings, category, subKey, filter])
+
+  const isSearching = filter.trim().length > 0
+  const activeCat = CAT_DEFS[category]
+
+  function selectCategory(id: string) {
+    setCategory(id)
+    setSubKey('')
+    setFilter('')
+  }
+
+  return (
+    <div className="flex flex-col h-full">
+
+      <div className="flex items-center gap-3 px-5 py-3.5 border-b border-border shrink-0">
+        <Settings size={18} className="text-accent shrink-0" />
+        <h2 className="text-base font-semibold text-text-primary flex-1">Settings</h2>
+        <div className="flex items-center gap-2">
+          <button
+            className="p-1.5 rounded hover:bg-elevated text-text-muted hover:text-text-primary
+                       transition-colors disabled:opacity-40"
+            onClick={load}
+            disabled={loading}
+            title="Reload settings"
+          >
+            <RefreshCw size={14} className={loading ? 'animate-spin' : ''} />
+          </button>
+          <button
+            className="flex items-center gap-1.5 px-2.5 py-1.5 rounded text-xs font-medium
+                       text-text-muted hover:text-danger hover:bg-danger/10 border border-transparent
+                       hover:border-danger/30 transition-colors disabled:opacity-40"
+            onClick={restart}
+            disabled={restarting}
+            title="Restart device"
+          >
+            <RotateCcw size={12} />
+            {restarting ? 'Restarting…' : 'Restart'}
+          </button>
+          {onClose && (
+            <button
+              className="p-1.5 rounded-md text-text-muted hover:text-text-primary
+                         hover:bg-elevated transition-colors ml-1"
+              onClick={onClose}
+              title="Close (Esc)"
+            >
+              <X size={18} />
+            </button>
+          )}
+        </div>
+      </div>
+
+      {espInfo && (
+        <div className="flex items-center gap-4 px-5 py-2 border-b border-border
+                        bg-elevated/40 text-xs">
+          <span>
+            <span className="text-text-dim">Firmware </span>
+            <span className="text-text-primary font-mono">{espInfo.version || '—'}</span>
+          </span>
+          <span>
+            <span className="text-text-dim">Host </span>
+            <span className="text-text-primary font-mono">{espInfo.hostname || '—'}</span>
+          </span>
+          <span>
+            <span className="text-text-dim">Axes </span>
+            <span className="text-text-primary font-mono">{espInfo.axes}</span>
+          </span>
+        </div>
+      )}
+
+      <div className="sm:hidden px-4 py-2 border-b border-border shrink-0">
+        <div className="relative">
+          <Search size={12} className="absolute left-3 top-1/2 -translate-y-1/2 text-text-dim pointer-events-none" />
+          <input
+            className="input-field pr-3 py-1.5 text-xs"
+            style={{ paddingLeft: 32 }}
+            placeholder="Search settings…"
+            value={filter}
+            onChange={e => setFilter(e.target.value)}
+          />
+        </div>
+      </div>
+
+      <div className="flex flex-col sm:flex-row flex-1 min-h-0 overflow-hidden">
+
+        <div className="sm:w-48 shrink-0 sm:border-r border-b sm:border-b-0 border-border
+                        bg-[var(--bg)] flex flex-row sm:flex-col
+                        overflow-x-auto sm:overflow-x-hidden sm:overflow-y-auto">
+          <div className="hidden sm:block p-3 shrink-0">
+            <div className="relative">
+              <Search size={12} className="absolute left-3 top-1/2 -translate-y-1/2 text-text-dim pointer-events-none" />
+              <input
+                className="input-field pr-3 py-1.5 text-xs"
+                style={{ paddingLeft: 32 }}
+                placeholder="Search…"
+                value={filter}
+                onChange={e => setFilter(e.target.value)}
+              />
+            </div>
+          </div>
+
+          <nav className="flex flex-row sm:flex-col flex-1 sm:flex-none
+                          px-2 py-1.5 sm:pb-3 sm:py-0 sm:space-y-0.5
+                          gap-1 sm:gap-0" style={{ scrollbarWidth: 'none' }}>
+            {categories.map(cat => {
+              const Icon = cat.icon
+              const active = !isSearching && category === cat.id
+              return (
+                <button
+                  key={cat.id}
+                  onClick={() => selectCategory(cat.id)}
+                  className={`flex items-center gap-1.5 sm:gap-2.5 sm:w-full
+                              px-2.5 sm:px-3 py-1.5 sm:py-2 rounded
+                              text-xs sm:text-sm whitespace-nowrap
+                              transition-all text-left ${
+                    active
+                      ? 'bg-accent/[0.12] text-accent font-medium'
+                      : 'text-text-muted hover:text-text-primary hover:bg-elevated'
+                  }`}
+                >
+                  <Icon size={14} className="shrink-0" />
+                  {cat.label}
+                </button>
+              )
+            })}
+          </nav>
+        </div>
+
+        <div className="flex-1 flex flex-col min-h-0 overflow-hidden">
+
+          {!isSearching && activeCat && (
+            <div className="shrink-0">
+              <div className="px-5 py-3 border-b border-border">
+                <h3 className="text-sm font-semibold text-text-primary flex items-center gap-2">
+                  <activeCat.icon size={14} className="text-accent" />
+                  {activeCat.label}
+                </h3>
+              </div>
+
+              {(category === 'machine' || category === 'config') && subKeys.length > 1 && (
+                <div className="flex border-b border-border overflow-x-auto px-2"
+                     style={{ scrollbarWidth: 'none' }}>
+                  {subKeys.map(k => (
+                    <button
+                      key={k}
+                      onClick={() => setSubKey(k)}
+                      className={`py-2 px-3 text-xs font-semibold uppercase tracking-wider whitespace-nowrap
+                                  transition-colors border-b-2 -mb-px ${
+                        subKey === k
+                          ? 'border-accent text-accent'
+                          : 'border-transparent text-text-muted hover:text-text-primary'
+                      }`}
+                    >
+                      {k}
+                    </button>
+                  ))}
+                </div>
+              )}
+
+              {category === 'config' && (
+                <div className="flex items-start gap-2 px-4 py-2.5 border-b border-border
+                                bg-accent/5 text-xs text-text-dim">
+                  <Info size={12} className="text-accent shrink-0 mt-px" />
+                  <span>
+                    These settings come from <span className="font-mono text-text-primary">config.yaml</span>.
+                    Changes made here will take place immediately and also update the <span className="font-mono text-text-primary">config.yaml</span> file.
+                  </span>
+                </div>
+              )}
+            </div>
+          )}
+
+          {isSearching && visibleSettings.length > 0 && (
+            <div className="px-5 py-2.5 text-xs text-text-dim border-b border-border shrink-0">
+              {visibleSettings.length} result{visibleSettings.length !== 1 ? 's' : ''}
+            </div>
+          )}
+
+          <div className="flex-1 overflow-y-auto min-h-0">
+
+            {!isSearching && category === 'workspace' && (
+              <div className="divide-y divide-border">
+                {([
+                  {
+                    label: 'Units',
+                    control: (['mm', 'in'] as const).map(unit => (
+                      <button
+                        key={unit}
+                        onClick={() => setUnits(unit)}
+                        className={`px-3 py-1.5 text-xs rounded-sm transition-colors ${
+                          units === unit
+                            ? 'bg-surface border border-border text-text-primary shadow-sm'
+                            : 'text-text-muted hover:text-text-primary'
+                        }`}
+                      >{unit}</button>
+                    )),
+                  },
+                  {
+                    label: 'Layout',
+                    control: (['auto', 'tablet', 'desktop'] as const).map(mode => (
+                      <button
+                        key={mode}
+                        onClick={() => setLayoutMode(mode)}
+                        className={`px-3 py-1.5 text-xs rounded-sm transition-colors capitalize ${
+                          layoutMode === mode
+                            ? 'bg-surface border border-border text-text-primary shadow-sm'
+                            : 'text-text-muted hover:text-text-primary'
+                        }`}
+                      >{mode}</button>
+                    )),
+                  },
+                  {
+                    label: 'Theme',
+                    control: ([
+                      { id: 'light' as Theme, label: 'Light' },
+                      { id: 'dark' as Theme, label: 'Dark' },
+                      { id: 'anthracite-dark' as Theme, label: 'Anthracite' },
+                      { id: 'midnight-dark' as Theme, label: 'Midnight' },
+                    ]).map(({ id, label }) => (
+                      <button
+                        key={id}
+                        onClick={() => setTheme(id)}
+                        className={`px-3 py-1.5 text-xs rounded-sm transition-colors ${
+                          theme === id
+                            ? 'bg-surface border border-border text-text-primary shadow-sm'
+                            : 'text-text-muted hover:text-text-primary'
+                        }`}
+                      >{label}</button>
+                    )),
+                  },
+                ]).map(({ label, control }) => (
+                  <div key={label} className="flex items-center justify-between px-5 py-3.5">
+                    <span className="text-sm text-text-primary">{label}</span>
+                    <div className="flex items-center gap-0.5 bg-elevated rounded-sm border border-border p-0.5">
+                      {control}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+
+            {(isSearching || category !== 'workspace') && error && (
+              <div className="m-4 p-3 rounded bg-danger/10 border border-danger/30 text-danger text-xs leading-relaxed whitespace-pre-wrap font-mono">
+                {error}
+              </div>
+            )}
+
+            {(isSearching || category !== 'workspace') && loading && !error && (
+              <div className="flex items-center justify-center h-32 gap-2 text-text-muted text-xs">
+                <RefreshCw size={14} className="animate-spin" />
+                Loading settings…
+              </div>
+            )}
+
+            {(isSearching || category !== 'workspace') && !loading && !error && visibleSettings.length === 0 && (
+              <div className="flex flex-col items-center justify-center h-32 gap-2 text-text-dim text-xs">
+                {isSearching
+                  ? <>No settings match <span className="font-mono">"{filter}"</span></>
+                  : 'Select a category'
+                }
+              </div>
+            )}
+
+            {(isSearching || category !== 'workspace') && groupedItems.map((item, i) =>
+              item.type === 'header'
+                ? <SectionHeader key={`h-${i}`} label={item.label} level={item.level} />
+                : <SettingRow
+                    key={item.setting.P}
+                    setting={item.setting}
+                    showPath={isSearching}
+                    onSave={saveSetting}
+                  />
+            )}
+
+          </div>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+function buildCategories(settings: Setting[]) {
+  const seen = new Set<string>()
+  for (const s of settings) seen.add(catOf(s))
+  const deviceCats = [...seen]
+    .map(id => ({ id, ...(CAT_DEFS[id] ?? { label: id, icon: Hash, order: 99 }) }))
+    .sort((a, b) => a.order - b.order || a.label.localeCompare(b.label))
+  return [{ id: 'workspace', ...CAT_DEFS.workspace }, ...deviceCats]
+}
+
+function buildSubKeys(settings: Setting[], category: string): string[] {
+  if (category === 'machine') {
+    const seen = new Set<string>()
+    for (const s of settings) {
+      if (catOf(s) !== 'machine') continue
+      const parts = s.P.split('/')
+      seen.add(parts.length >= 3 ? parts[1] : 'General')
+    }
+    const keys = [...seen].sort()
+    const gi = keys.indexOf('General')
+    if (gi > 0) { keys.splice(gi, 1); keys.unshift('General') }
+    return keys
+  }
+
+  if (category === 'config') {
+    const seen = new Set<string>()
+    for (const s of settings) {
+      if (catOf(s) !== 'config') continue
+      seen.add(treeSubcat(s.P))
+    }
+    return [...seen].sort((a, b) => {
+      const ai = SUBCAT_ORDER.indexOf(a), bi = SUBCAT_ORDER.indexOf(b)
+      if (ai === -1 && bi === -1) return a.localeCompare(b)
+      if (ai === -1) return 1
+      if (bi === -1) return -1
+      return ai - bi
+    })
+  }
+
+  return []
+}
