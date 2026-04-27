@@ -143,7 +143,7 @@ Build the project and copy the output to the controller's filesystem:
 
 ```bash
 npm install
-npm run build
+npm run build:esp32
 ```
 
 The `dist/` directory contains the static index.html.gz file you can upload to the internal filesystem of the ESP32. Simply refresh the page to show changes.

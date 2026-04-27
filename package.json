@@ -1,6 +1,6 @@
 {
-  "name": "fluidnc-webui-v4",
-  "version": "4.0.0",
+  "name": "fluidui",
+  "version": "1.0.0",
   "private": true,
   "type": "module",
   "scripts": {

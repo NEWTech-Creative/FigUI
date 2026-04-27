@@ -9,7 +9,7 @@ function hr() { console.log('─'.repeat(50)) }
 function fmt(bytes) { return `${(bytes / KB).toFixed(1)} KB` }
 
 hr()
-console.log('FluidNC WebUI V4 — ESP32 Build Pipeline')
+console.log('FluidUI — ESP32 Build Pipeline')
 hr()
 
 console.log('\n[1/3] Compiling & bundling (vite esp32 mode)…\n')
