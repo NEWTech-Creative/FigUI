@@ -122,46 +122,46 @@ function FileRow({ entry, path, fs, canLoadGcode, onNavigate, onRefresh, onEdit 
       )}
 
       {!renaming && (
-        <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity shrink-0 w-20">
-
-          {!entry.isDir && isEditable(entry.name) && (
-            <button
-              className="p-1.5 rounded text-info hover:bg-info/10 transition-colors"
-              onClick={() => onEdit(fullPath, entry.name)}
-              title="Edit file"
-            >
-              <FileCode size={12} />
-            </button>
-          )}
+        <div className="shrink-0 w-28 flex items-center justify-end">
           {!entry.isDir && (
-            <button
-              className="p-1.5 rounded text-info hover:bg-info/10 transition-colors"
-              onClick={handleDownload}
-              title="Download"
-            >
-              <Download size={12} />
-            </button>
+            <span className="text-xs text-text-dim font-mono text-right group-hover:hidden">{fmtSize(entry.size)}</span>
           )}
-          <button
-            className="p-1.5 rounded text-text-muted hover:text-text-primary hover:bg-elevated transition-colors"
-            onClick={startRename}
-            title="Rename"
-          >
-            <Pencil size={12} />
-          </button>
-          <button
-            className="p-1.5 rounded text-danger hover:bg-danger/10 transition-colors"
-            onClick={handleDelete}
-            disabled={deleting}
-            title="Delete"
-          >
-            <Trash2 size={12} />
-          </button>
+          <div className="hidden group-hover:flex items-center gap-1">
+            {!entry.isDir && isEditable(entry.name) && (
+              <button
+                className="p-1.5 rounded text-info hover:bg-info/10 transition-colors"
+                onClick={() => onEdit(fullPath, entry.name)}
+                title="Edit file"
+              >
+                <FileCode size={12} />
+              </button>
+            )}
+            {!entry.isDir && (
+              <button
+                className="p-1.5 rounded text-info hover:bg-info/10 transition-colors"
+                onClick={handleDownload}
+                title="Download"
+              >
+                <Download size={12} />
+              </button>
+            )}
+            <button
+              className="p-1.5 rounded text-text-muted hover:text-text-primary hover:bg-elevated transition-colors"
+              onClick={startRename}
+              title="Rename"
+            >
+              <Pencil size={12} />
+            </button>
+            <button
+              className="p-1.5 rounded text-danger hover:bg-danger/10 transition-colors"
+              onClick={handleDelete}
+              disabled={deleting}
+              title="Delete"
+            >
+              <Trash2 size={12} />
+            </button>
+          </div>
         </div>
-      )}
-
-      {!entry.isDir && !renaming && (
-        <span className="text-xs text-text-dim font-mono shrink-0 w-16 text-right">{fmtSize(entry.size)}</span>
       )}
 
       {renaming && (
