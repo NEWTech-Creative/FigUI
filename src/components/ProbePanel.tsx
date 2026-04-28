@@ -60,7 +60,8 @@ export function ProbePanel() {
   const [retract, setRetract]     = usePersisted('probe.retract', 3)
   const [plateThick, setPlateThick] = usePersisted('probe.plate', 0.8)
 
-  const { status, units } = useMachineStore()
+  const status = useMachineStore(s => s.status)
+  const units = useMachineStore(s => s.units)
   const canProbe = status.state === 'Idle'
 
   function runProbe() {

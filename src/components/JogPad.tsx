@@ -542,7 +542,10 @@ function FeedButton({
 
 
 export function JogPad() {
-  const { status, axes, units, setActiveStepJog } = useMachineStore()
+  const status = useMachineStore(s => s.status)
+  const axes = useMachineStore(s => s.axes)
+  const units = useMachineStore(s => s.units)
+  const setActiveStepJog = useMachineStore(s => s.setActiveStepJog)
   const [spindleTarget, setSpindleTarget] = useState(24000)
   const [spindleOn, setSpindleOn] = useState(false)
   const [xyFeed, setXyFeed] = useState(() => loadPersistedJogFeed('jog.xyFeed', 1000))

@@ -1,5 +1,5 @@
 import { useMachineStore } from '../store'
-import { sendRealtime } from './ws'
+import { sendRealtime, onConnectionHealth } from './ws'
 
 const WATCHDOG_INTERVAL_MS = 50
 
@@ -366,4 +366,7 @@ export function resetWatchdogAlert(): void {
 }
 
 if (typeof window !== 'undefined') {
+  onConnectionHealth((health) => {
+    updateConnectionHealth(health.lastResponseTime, health.missedPings)
+  })
 }

@@ -1,10 +1,10 @@
 import { useEffect, useRef, useState } from 'react'
 import { useMachineStore } from './store'
 import { useGCodeStore } from './store/gcode'
-import { connect, sendRealtime, onConnectionHealth, isSocketOpen } from './lib/ws'
+import { connect, isSocketOpen } from './lib/ws'
 import { setBase, getDeviceInfo, getDeviceInfoFast } from './lib/http'
 import { parseESP800 } from './lib/parser'
-import { startWatchdog, stopWatchdog, updateConnectionHealth } from './lib/jogWatchdog'
+import { startWatchdog, stopWatchdog } from './lib/jogWatchdog'
 import { Header } from './components/Header'
 import { DRO } from './components/DRO'
 import { JogPad } from './components/JogPad'
@@ -28,10 +28,34 @@ type MobilePanel = 'control' | 'viewer' | 'right' | 'terminal'
 type TabletRightTab = 'viewer' | 'files' | 'macros' | 'terminal'
 
 type Phase = 'connecting' | 'error' | 'ready'
+type ActiveLayout = 'mobile' | 'tablet' | 'desktop'
+
+function useActiveLayout(layoutMode: 'auto' | 'tablet' | 'desktop'): ActiveLayout {
+  const [width, setWidth] = useState(() =>
+    typeof window === 'undefined' ? 1270 : window.innerWidth,
+  )
+  useEffect(() => {
+    const onResize = () => setWidth(window.innerWidth)
+    window.addEventListener('resize', onResize)
+    return () => window.removeEventListener('resize', onResize)
+  }, [])
+
+  if (width < 768) return 'mobile'
+  if (layoutMode === 'tablet') return 'tablet'
+  if (layoutMode === 'desktop') return 'desktop'
+  return width < 1270 ? 'tablet' : 'desktop'
+}
 
 export function App() {
-  const { connected, restarting, sidebarTab, setSidebarTab, setEspInfo, setRestarting: setStoreRestarting, layoutMode } = useMachineStore()
+  const connected = useMachineStore(s => s.connected)
+  const restarting = useMachineStore(s => s.restarting)
+  const sidebarTab = useMachineStore(s => s.sidebarTab)
+  const layoutMode = useMachineStore(s => s.layoutMode)
+  const setSidebarTab = useMachineStore(s => s.setSidebarTab)
+  const setEspInfo = useMachineStore(s => s.setEspInfo)
+  const setStoreRestarting = useMachineStore(s => s.setRestarting)
   const machineState = useMachineStore(s => s.status.state)
+  const activeLayout = useActiveLayout(layoutMode)
   const loadGCodeFile = useGCodeStore(s => s.loadFile)
   const [phase, setPhase]   = useState<Phase>('connecting')
   const [errMsg, setErrMsg] = useState('')
@@ -186,6 +210,30 @@ export function App() {
     return () => clearTimeout(t)
   }, [connected, phase])
 
+  useEffect(() => {
+    function kick() {
+      if (isSocketOpen()) return
+      if (reconnectTimer.current) {
+        clearTimeout(reconnectTimer.current)
+        reconnectTimer.current = null
+      }
+      backoffMs.current = 0
+      attemptConnect().then(() => {
+        if (!isSocketOpen()) scheduleReconnect()
+      })
+    }
+    function onVisibility() {
+      if (document.visibilityState === 'visible') kick()
+    }
+    window.addEventListener('online', kick)
+    document.addEventListener('visibilitychange', onVisibility)
+    return () => {
+      window.removeEventListener('online', kick)
+      document.removeEventListener('visibilitychange', onVisibility)
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
+
   // Manual retry from the error screen.
   async function retryFromError() {
     setPhase('connecting')
@@ -198,26 +246,11 @@ export function App() {
   }
 
   useEffect(() => {
-    if (!connected) return
-    const id = setInterval(() => sendRealtime(0x3F), 500)
-    return () => clearInterval(id)
-  }, [connected])
-
-  useEffect(() => {
     if (!connected) {
       stopWatchdog()
       return
     }
-
     startWatchdog()
-
-    const unsubscribeHealth = onConnectionHealth((health) => {
-      updateConnectionHealth(health.lastResponseTime, health.missedPings)
-    })
-
-    return () => {
-      unsubscribeHealth()
-    }
   }, [connected])
 
   useEffect(() => {
@@ -309,7 +342,7 @@ export function App() {
       />
 
 
-      <div className="md:hidden flex flex-col">
+      {activeLayout === 'mobile' && <div className="flex flex-col">
         {mobilePanel === 'control' && (
           <div className="flex flex-col gap-3 p-3 pb-20">
             <DRO />
@@ -342,10 +375,10 @@ export function App() {
             </div>
           </div>
         )}
-      </div>
+      </div>}
 
       {/* ── Mobile bottom nav ───────────────────────────────────────────── */}
-      <nav className="md:hidden fixed bottom-0 left-0 right-0 z-40 h-16 bg-surface border-t border-border flex items-stretch">
+      {activeLayout === 'mobile' && <nav className="fixed bottom-0 left-0 right-0 z-40 h-16 bg-surface border-t border-border flex items-stretch">
         {([
           { id: 'control'  as MobilePanel, Icon: Crosshair,    label: 'Control' },
           { id: 'viewer'   as MobilePanel, Icon: Monitor,      label: 'Viewer'  },
@@ -364,14 +397,10 @@ export function App() {
             {label}
           </button>
         ))}
-      </nav>
+      </nav>}
 
 
-      <div className={`flex-1 min-h-0 grid-cols-[340px_1fr] gap-3 p-3 overflow-hidden ${
-        layoutMode === 'tablet'  ? 'hidden md:grid'
-        : layoutMode === 'desktop' ? 'hidden'
-        : 'hidden md:grid xl:hidden'
-      }`}>
+      {activeLayout === 'tablet' && <div className="flex-1 min-h-0 grid grid-cols-[340px_1fr] gap-3 p-3 overflow-hidden">
 
         {/* Left: DRO + JogPad */}
         <div className="flex flex-col gap-3 min-h-0 overflow-y-auto">
@@ -416,14 +445,10 @@ export function App() {
           </div>
         </div>
 
-      </div>
+      </div>}
 
 
-      <div className={`flex-1 min-h-0 grid-cols-[380px_1fr_340px] gap-3 p-3 overflow-hidden ${
-        layoutMode === 'desktop' ? 'hidden md:grid'
-        : layoutMode === 'tablet'  ? 'hidden'
-        : 'hidden xl:grid'
-      }`}>
+      {activeLayout === 'desktop' && <div className="flex-1 min-h-0 grid grid-cols-[380px_1fr_340px] gap-3 p-3 overflow-hidden">
 
         {/* Left: DRO + jog controls */}
         <div className="flex flex-col gap-3 min-h-0 overflow-y-auto">
@@ -452,7 +477,7 @@ export function App() {
           </div>
         </div>
 
-      </div>
+      </div>}
 
       {/* ── Settings Modal ── */}
       {settingsOpen && (

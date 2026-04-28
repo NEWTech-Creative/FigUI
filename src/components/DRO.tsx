@@ -40,7 +40,11 @@ type PendingAxisAction = {
 const MOTION_STATES = new Set(['Jog', 'Hold', 'Home'])
 
 export function DRO() {
-  const { status, positionMode, setPositionMode, axes, units } = useMachineStore()
+  const status = useMachineStore(s => s.status)
+  const positionMode = useMachineStore(s => s.positionMode)
+  const setPositionMode = useMachineStore(s => s.setPositionMode)
+  const axes = useMachineStore(s => s.axes)
+  const units = useMachineStore(s => s.units)
   const [pendingAxisAction, setPendingAxisAction] = useState<PendingAxisAction | null>(null)
   const [pendingAxisActionStarted, setPendingAxisActionStarted] = useState(false)
   const pos = activePosition(status, positionMode)

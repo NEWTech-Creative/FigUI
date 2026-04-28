@@ -10,8 +10,10 @@ interface Props {
 }
 
 export function Header({ onSettingsClick, onAboutClick }: Props) {
-  const { connected, status, theme, toggleTheme } =
-    useMachineStore()
+  const connected = useMachineStore(s => s.connected)
+  const status = useMachineStore(s => s.status)
+  const theme = useMachineStore(s => s.theme)
+  const toggleTheme = useMachineStore(s => s.toggleTheme)
   const [isFullscreen, setIsFullscreen] = useState(false)
 
   useEffect(() => {

@@ -7,6 +7,7 @@ let generation = 0
 
 let pingTimer: ReturnType<typeof setInterval> | null = null
 let livenessTimer: ReturnType<typeof setInterval> | null = null
+let statusPollTimer: ReturnType<typeof setInterval> | null = null
 let suppressNextOk = false
 
 function loadStablePageId(): string {
@@ -124,6 +125,9 @@ const PING_INTERVAL_MS = 5000
 const LIVENESS_CHECK_MS = 2000
 const LIVENESS_TIMEOUT_MS = 12000
 const OPEN_TIMEOUT_MS = 6000
+const STATUS_POLL_INTERVAL_MS = 500
+// 0x3F = '?' — FluidNC's real-time status request byte.
+const STATUS_REPORT_BYTE = 0x3F
 
 export function connect(host: string): Promise<void> {
   return new Promise((resolve, reject) => {
@@ -166,6 +170,7 @@ export function connect(host: string): Promise<void> {
       startCommandProcessor()
       startPing()
       startLivenessWatchdog()
+      startStatusPoll()
 
       // Replay startup log on (re)connect — version, WiFi status, warnings.
       try { ws.send(new TextEncoder().encode('$SS\n')) } catch { /* noop */ }
@@ -211,6 +216,7 @@ export function connect(host: string): Promise<void> {
 function handleDisconnect() {
   stopPing()
   stopLivenessWatchdog()
+  stopStatusPoll()
   stopCommandProcessor()
   // Drop pending acks — they'll never resolve now.
   pendingAcknowledgments.forEach(({ timeoutId }) => clearTimeout(timeoutId))
@@ -253,6 +259,24 @@ function startPing() {
 
 function stopPing() {
   if (pingTimer) { clearInterval(pingTimer); pingTimer = null }
+}
+
+function startStatusPoll() {
+  stopStatusPoll()
+  statusPollTimer = setInterval(() => {
+    if (socket?.readyState !== WebSocket.OPEN) return
+    try {
+      const buf = new Uint8Array(1)
+      buf[0] = STATUS_REPORT_BYTE
+      socket.send(buf)
+    } catch {
+      // Liveness watchdog will catch a dead socket.
+    }
+  }, STATUS_POLL_INTERVAL_MS)
+}
+
+function stopStatusPoll() {
+  if (statusPollTimer) { clearInterval(statusPollTimer); statusPollTimer = null }
 }
 
 function startLivenessWatchdog() {
@@ -428,6 +452,7 @@ export function disconnect() {
   generation++
   stopPing()
   stopLivenessWatchdog()
+  stopStatusPoll()
   stopCommandProcessor()
   pendingAcknowledgments.forEach(({ timeoutId }) => clearTimeout(timeoutId))
   pendingAcknowledgments.clear()

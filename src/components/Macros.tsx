@@ -554,7 +554,9 @@ function ImportPanel({ macro, onChange }: ImportPanelProps) {
 
 
 export function Macros() {
-  const { macros, setMacros, connected } = useMachineStore()
+  const macros = useMachineStore(s => s.macros)
+  const setMacros = useMachineStore(s => s.setMacros)
+  const connected = useMachineStore(s => s.connected)
   const [editing, setEditing]             = useState(false)
   const [showAddMenu, setShowAddMenu]     = useState(false)
   const [showBrowser, setShowBrowser]     = useState(false)

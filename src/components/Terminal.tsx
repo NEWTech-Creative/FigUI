@@ -1,17 +1,9 @@
-import { useState, useEffect, useRef, useCallback } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { Trash2, ChevronsDown, Clipboard, ClipboardCheck } from 'lucide-react'
-import { onLine, sendRaw } from '../lib/ws'
-import { classifyLine } from '../lib/parser'
+import { sendRaw } from '../lib/ws'
+import { useTerminalStore, type LineKind } from '../store/terminal'
 
-interface LogLine {
-  id: number
-  text: string
-  kind: ReturnType<typeof classifyLine>
-}
-
-let lineId = 0
-
-const KIND_CLASS: Record<LogLine['kind'], string> = {
+const KIND_CLASS: Record<LineKind, string> = {
   error: 'text-danger',
   alarm: 'text-warn',
   info: 'text-info',
@@ -21,25 +13,20 @@ const KIND_CLASS: Record<LogLine['kind'], string> = {
 }
 
 export function Terminal() {
-  const [lines, setLines] = useState<LogLine[]>([])
+  const lines = useTerminalStore(s => s.lines)
+  const history = useTerminalStore(s => s.history)
+  const verbose = useTerminalStore(s => s.verbose)
+  const autoScroll = useTerminalStore(s => s.autoScroll)
+  const setVerbose = useTerminalStore(s => s.setVerbose)
+  const setAutoScroll = useTerminalStore(s => s.setAutoScroll)
+  const pushHistory = useTerminalStore(s => s.pushHistory)
+  const appendLine = useTerminalStore(s => s.appendLine)
+  const clear = useTerminalStore(s => s.clear)
+
   const [input, setInput] = useState('')
-  const [history, setHistory] = useState<string[]>([])
   const [histIdx, setHistIdx] = useState(-1)
-  const [autoScroll, setAutoScroll] = useState(true)
-  const [verbose, setVerbose] = useState(false)
   const [copied, setCopied] = useState(false)
   const logRef = useRef<HTMLDivElement>(null)
-
-  const addLine = useCallback((text: string) => {
-    const kind = classifyLine(text)
-    if (!verbose && (kind === 'status' || kind === 'ok')) return
-    setLines(prev => {
-      const next = [...prev, { id: lineId++, text, kind }]
-      return next.length > 1000 ? next.slice(-1000) : next
-    })
-  }, [verbose])
-
-  useEffect(() => onLine(addLine), [addLine])
 
   useEffect(() => {
     if (autoScroll && logRef.current) {
@@ -84,9 +71,9 @@ export function Terminal() {
   function submit() {
     const cmd = input.trim()
     if (!cmd) return
-    addLine(`> ${cmd}`)
+    appendLine(`> ${cmd}`)
     sendRaw(cmd)
-    setHistory(h => [cmd, ...h.slice(0, 99)])
+    pushHistory(cmd)
     setInput('')
     setHistIdx(-1)
   }
@@ -130,7 +117,7 @@ export function Terminal() {
           </button>
           <button
             className="p-1 rounded hover:bg-elevated text-text-muted hover:text-danger transition-colors"
-            onClick={() => setLines([])}
+            onClick={clear}
             title="Clear"
           >
             <Trash2 size={12} />
