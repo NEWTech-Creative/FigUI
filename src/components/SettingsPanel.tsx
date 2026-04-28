@@ -661,7 +661,10 @@ export function SettingsPanel({ onClose }: SettingsPanelProps) {
   async function restart() {
     if (!confirm('Restart the device now?')) return
     setRestarting(true)
-    try { await sendCommand('[ESP444]RESTART') } finally { setRestarting(false) }
+    useMachineStore.getState().setRestarting(true)
+    onClose?.()
+    // Expected: the controller tears down TCP mid-response, so fetch rejects.
+    try { await sendCommand('[ESP444]RESTART') } catch { /* ignore — restart kills the connection */ } finally { setRestarting(false) }
   }
 
   const categories = useMemo(() => buildCategories(settings), [settings])

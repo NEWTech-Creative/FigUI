@@ -2,10 +2,25 @@ import { parseStatusReport } from './parser'
 import { useMachineStore } from '../store'
 
 let socket: WebSocket | null = null
+
+let generation = 0
+
 let pingTimer: ReturnType<typeof setInterval> | null = null
-let pageId = String(Math.floor(Math.random() * 9000) + 1000)
+let livenessTimer: ReturnType<typeof setInterval> | null = null
 let suppressNextOk = false
 
+function loadStablePageId(): string {
+  try {
+    const existing = sessionStorage.getItem('fluidui_pageid')
+    if (existing && /^\d{4,}$/.test(existing)) return existing
+    const fresh = String(Math.floor(Math.random() * 9000) + 1000)
+    sessionStorage.setItem('fluidui_pageid', fresh)
+    return fresh
+  } catch {
+    return String(Math.floor(Math.random() * 9000) + 1000)
+  }
+}
+let pageId = loadStablePageId()
 
 interface ConnectionHealth {
   lastPingTime: number
@@ -16,7 +31,7 @@ interface ConnectionHealth {
 let connectionHealth: ConnectionHealth = {
   lastPingTime: 0,
   lastResponseTime: Date.now(),
-  missedPings: 0
+  missedPings: 0,
 }
 
 type ConnectionHealthCallback = (health: ConnectionHealth) => void
@@ -28,7 +43,7 @@ export function onConnectionHealth(callback: ConnectionHealthCallback): () => vo
 }
 
 function updateConnectionHealth() {
-  connectionCallbacks.forEach(callback => callback({ ...connectionHealth }))
+  connectionCallbacks.forEach(cb => cb({ ...connectionHealth }))
 }
 
 
@@ -43,11 +58,11 @@ interface QueuedCommand {
 
 const commandQueue: QueuedCommand[] = []
 let commandProcessor: ReturnType<typeof setInterval> | null = null
-let pendingAcknowledgments = new Map<string, { callback: () => void, timeoutId: ReturnType<typeof setTimeout> }>()
+const pendingAcknowledgments = new Map<string, { callback: () => void, timeoutId: ReturnType<typeof setTimeout> }>()
 
 function startCommandProcessor() {
   if (commandProcessor) return
-  commandProcessor = setInterval(processCommandQueue, 10) // 10ms processing interval
+  commandProcessor = setInterval(processCommandQueue, 10)
 }
 
 function stopCommandProcessor() {
@@ -60,36 +75,34 @@ function stopCommandProcessor() {
 function processCommandQueue() {
   if (commandQueue.length === 0 || socket?.readyState !== WebSocket.OPEN) return
 
-  // Sort by priority: emergency > high > normal, then by timestamp for same priority
   commandQueue.sort((a, b) => {
-    const priorityOrder = { 'emergency': 0, 'high': 1, 'normal': 2 }
-    const priorityDiff = priorityOrder[a.priority] - priorityOrder[b.priority]
-    return priorityDiff !== 0 ? priorityDiff : a.timestamp - b.timestamp
+    const order = { emergency: 0, high: 1, normal: 2 }
+    const diff = order[a.priority] - order[b.priority]
+    return diff !== 0 ? diff : a.timestamp - b.timestamp
   })
 
   const command = commandQueue.shift()
   if (!command) return
 
-  // Send the command
-  if (command.isRealtime) {
-    const buf = new Uint8Array(1)
-    buf[0] = parseInt(command.command)
-    socket!.send(buf)
-  } else {
-    socket!.send(new TextEncoder().encode(command.command + '\n'))
+  try {
+    if (command.isRealtime) {
+      const buf = new Uint8Array(1)
+      buf[0] = parseInt(command.command)
+      socket!.send(buf)
+    } else {
+      socket!.send(new TextEncoder().encode(command.command + '\n'))
+    }
+  } catch {
+    // Socket transitioned mid-send — drop quietly; reconnect handles it.
+    return
   }
 
-  // Set up acknowledgment tracking if provided
   if (command.acknowledgmentCallback) {
     const ackKey = `${command.command}_${command.timestamp}`
     const timeoutId = setTimeout(() => {
       pendingAcknowledgments.delete(ackKey)
     }, command.timeoutMs || 5000)
-
-    pendingAcknowledgments.set(ackKey, {
-      callback: command.acknowledgmentCallback,
-      timeoutId
-    })
+    pendingAcknowledgments.set(ackKey, { callback: command.acknowledgmentCallback, timeoutId })
   }
 }
 
@@ -107,117 +120,182 @@ export function onLine(fn: LineHandler): () => void {
   return () => { lineHandlers.delete(fn) }
 }
 
+const PING_INTERVAL_MS = 5000
+const LIVENESS_CHECK_MS = 2000
+const LIVENESS_TIMEOUT_MS = 12000
+const OPEN_TIMEOUT_MS = 6000
+
 export function connect(host: string): Promise<void> {
-  const MAX_ATTEMPTS = 4   // try up to 4 times before giving up
-  const RETRY_DELAY  = 1500 // ms between retries
-
   return new Promise((resolve, reject) => {
-    let attempts = 0
-    let settled  = false
 
-    function tryOnce() {
-      // Detach stale handlers then close the old socket before creating a new one
-      if (socket) {
-        const stale = socket
-        stale.onopen = stale.onclose = stale.onerror = stale.onmessage = null
-        stale.close()
-        socket = null
+    closeCurrentSocket()
+    generation++
+    const myGen = generation
+
+    let ws: WebSocket
+    try {
+      ws = new WebSocket(`ws://${host}/`, 'arduino')
+    } catch (e) {
+      reject(e instanceof Error ? e : new Error('WebSocket constructor failed'))
+      return
+    }
+    ws.binaryType = 'arraybuffer'
+    socket = ws
+
+    let settled = false
+    const openTimeout = setTimeout(() => {
+      if (settled) return
+      settled = true
+      // Mark generation stale so any late onopen/onerror is ignored.
+      if (socket === ws) {
+        try { ws.close() } catch { /* noop */ }
       }
-      clearPing()
+      reject(new Error('WebSocket connection timed out'))
+    }, OPEN_TIMEOUT_MS)
 
-      const ws = new WebSocket(`ws://${host}/`, 'arduino')
-      ws.binaryType = 'arraybuffer'
-      socket = ws
+    ws.onopen = () => {
+      if (myGen !== generation || settled) return
+      settled = true
+      clearTimeout(openTimeout)
 
-      const timeout = setTimeout(() => {
-        onFailure(new Error('WebSocket connection timed out'))
-      }, 5000)
+      connectionHealth.lastResponseTime = Date.now()
+      connectionHealth.missedPings = 0
+      updateConnectionHealth()
 
-      function onFailure(err: Error) {
-        clearTimeout(timeout)
-        if (settled) return
-        attempts++
-        if (attempts < MAX_ATTEMPTS) {
-          setTimeout(tryOnce, RETRY_DELAY)
-        } else {
-          settled = true
-          reject(err)
-        }
-      }
+      useMachineStore.getState().setConnected(true)
+      startCommandProcessor()
+      startPing()
+      startLivenessWatchdog()
 
-      ws.onopen = () => {
-        if (ws !== socket || settled) return
-        clearTimeout(timeout)
+      // Replay startup log on (re)connect — version, WiFi status, warnings.
+      try { ws.send(new TextEncoder().encode('$SS\n')) } catch { /* noop */ }
+
+      resolve()
+    }
+
+    ws.onclose = () => {
+      if (myGen !== generation) return
+      handleDisconnect()
+      if (!settled) {
         settled = true
-        useMachineStore.getState().setConnected(true)
-
-        // Reset connection health
-        connectionHealth.lastResponseTime = Date.now()
-        connectionHealth.missedPings = 0
-        updateConnectionHealth()
-
-        // Start command processor
-        startCommandProcessor()
-
-        // Ask FluidNC to replay its startup log so the terminal shows
-        // version, WiFi status, config warnings, etc. on every (re)connect.
-        ws.send(new TextEncoder().encode('$SS\n'))
-
-        pingTimer = setInterval(() => {
-          if (socket?.readyState === WebSocket.OPEN) {
-            suppressNextOk = true
-            connectionHealth.lastPingTime = Date.now()
-            socket.send(`PING:${pageId}\n`)
-
-            // Check if too much time has passed since last response
-            const timeSinceResponse = Date.now() - connectionHealth.lastResponseTime
-            if (timeSinceResponse > 15000) { // 15 seconds
-              connectionHealth.missedPings++
-              updateConnectionHealth()
-            }
-          }
-        }, 10_000)
-        resolve()
-      }
-
-      ws.onclose = () => {
-        if (ws !== socket) return
-        clearTimeout(timeout)
-        clearPing()
-        stopCommandProcessor()
-        useMachineStore.getState().setConnected(false)
-      }
-
-      ws.onerror = () => {
-        if (ws !== socket) return
-        onFailure(new Error(`Could not connect to ws://${host}/`))
-      }
-
-      ws.onmessage = (ev) => {
-        if (ws !== socket) return
-        const text =
-          ev.data instanceof ArrayBuffer
-            ? new TextDecoder().decode(ev.data)
-            : String(ev.data)
-        text.split('\n').forEach(raw => {
-          const line = raw.trim()
-          if (line) handleLine(line)
-        })
+        clearTimeout(openTimeout)
+        reject(new Error('WebSocket closed before opening'))
       }
     }
 
-    tryOnce()
+    ws.onerror = () => {
+      if (myGen !== generation) return
+      // Don't tear down here — onclose will follow and do the cleanup.
+      if (!settled) {
+        settled = true
+        clearTimeout(openTimeout)
+        try { ws.close() } catch { /* noop */ }
+        reject(new Error(`WebSocket error connecting to ws://${host}/`))
+      }
+    }
+
+    ws.onmessage = (ev) => {
+      if (myGen !== generation) return
+      const text =
+        ev.data instanceof ArrayBuffer
+          ? new TextDecoder().decode(ev.data)
+          : String(ev.data)
+      text.split('\n').forEach(raw => {
+        const line = raw.trim()
+        if (line) handleLine(line)
+      })
+    }
   })
 }
 
+function handleDisconnect() {
+  stopPing()
+  stopLivenessWatchdog()
+  stopCommandProcessor()
+  // Drop pending acks — they'll never resolve now.
+  pendingAcknowledgments.forEach(({ timeoutId }) => clearTimeout(timeoutId))
+  pendingAcknowledgments.clear()
+  // Drop queued commands — sending them on a future reconnect would be
+  // surprising (e.g. queued jog moves shouldn't auto-resume).
+  commandQueue.length = 0
+  if (useMachineStore.getState().connected) {
+    useMachineStore.getState().setConnected(false)
+  }
+}
+
+function closeCurrentSocket() {
+  const stale = socket
+  if (!stale) return
+  // Detach all handlers so the close event can't double-fire downstream.
+  stale.onopen = null
+  stale.onclose = null
+  stale.onerror = null
+  stale.onmessage = null
+  socket = null
+  try { stale.close() } catch { /* noop */ }
+  // No need to call handleDisconnect() — generation bump prevents stale
+  // events, and the caller (connect or disconnect) owns post-close cleanup.
+}
+
+function startPing() {
+  stopPing()
+  pingTimer = setInterval(() => {
+    if (socket?.readyState !== WebSocket.OPEN) return
+    suppressNextOk = true
+    connectionHealth.lastPingTime = Date.now()
+    try {
+      socket.send(`PING:${pageId}\n`)
+    } catch {
+      // Send failed — let the liveness watchdog catch it.
+    }
+  }, PING_INTERVAL_MS)
+}
+
+function stopPing() {
+  if (pingTimer) { clearInterval(pingTimer); pingTimer = null }
+}
+
+function startLivenessWatchdog() {
+  stopLivenessWatchdog()
+  livenessTimer = setInterval(() => {
+    if (!socket) return
+    const ws = socket
+    if (ws.readyState === WebSocket.CLOSING || ws.readyState === WebSocket.CLOSED) {
+      // Browser hasn't fired onclose for some reason — force the cleanup.
+      handleDisconnect()
+      return
+    }
+    if (ws.readyState !== WebSocket.OPEN) return
+    const silentFor = Date.now() - connectionHealth.lastResponseTime
+    if (silentFor > LIVENESS_TIMEOUT_MS) {
+      // Connection is dead — terminate so the App-level reconnect kicks in.
+      // Bump generation first so the impending onclose is ignored as stale,
+      // then run the cleanup ourselves.
+      generation++
+      try { ws.close() } catch { /* noop */ }
+      socket = null
+      handleDisconnect()
+    }
+  }, LIVENESS_CHECK_MS)
+}
+
+function stopLivenessWatchdog() {
+  if (livenessTimer) { clearInterval(livenessTimer); livenessTimer = null }
+}
+
+// ──────────────────────────────────────────────────────────────────────────
+// Inbound line handling
+// ──────────────────────────────────────────────────────────────────────────
+
 function handleLine(line: string) {
-  // Update connection health on any received message
   connectionHealth.lastResponseTime = Date.now()
-  connectionHealth.missedPings = 0
+  if (connectionHealth.missedPings !== 0) {
+    connectionHealth.missedPings = 0
+  }
   updateConnectionHealth()
 
-  if (line.startsWith('currentID:')) { pageId = line.slice(10); return }  // webui3
-  if (line.startsWith('CURRENT_ID:')) { pageId = line.slice(11); return } // webui2
+  if (line.startsWith('currentID:')) { pageId = line.slice(10); persistPageId(); return }
+  if (line.startsWith('CURRENT_ID:')) { pageId = line.slice(11); persistPageId(); return }
   if (line.startsWith('activeID:') || line.startsWith('ACTIVE_ID:')) return
   if (line === 'PING' || line.startsWith('PING:')) return
 
@@ -227,7 +305,6 @@ function handleLine(line: string) {
     return
   }
 
-  // Parse $A response: "Active alarm: 3 (Abort Cycle)"
   const alarmMatch = line.match(/^Active alarm:\s*(\d+)\s*\(([^)]+)\)/)
   if (alarmMatch) {
     useMachineStore.getState().updateStatus({ alarmName: alarmMatch[2] })
@@ -235,7 +312,6 @@ function handleLine(line: string) {
     return
   }
 
-  // Parse "ALARM:3" — set alarmCode immediately before status report arrives
   const alarmCodeMatch = line.match(/^ALARM:(\d+)$/)
   if (alarmCodeMatch) {
     useMachineStore.getState().updateStatus({ alarmCode: parseInt(alarmCodeMatch[1], 10) })
@@ -243,7 +319,6 @@ function handleLine(line: string) {
     return
   }
 
-  // Parse "[MSG:INFO: ALARM: Abort Cycle]" — capture alarm name immediately
   const msgAlarmMatch = line.match(/\[MSG:INFO:\s*ALARM:\s*(.+?)\]/)
   if (msgAlarmMatch) {
     useMachineStore.getState().updateStatus({ alarmName: msgAlarmMatch[1].trim() })
@@ -251,123 +326,93 @@ function handleLine(line: string) {
     return
   }
 
-  // Suppress large settings blobs broadcast to WS by /command
   if (line.startsWith('{"EEPROM":') || line.startsWith('{"cmd":"400"')) return
 
-  // Handle command acknowledgments
   if (line === 'ok' || line === 'error') {
-    // Try to match pending acknowledgments
     for (const [ackKey, ackData] of pendingAcknowledgments.entries()) {
       clearTimeout(ackData.timeoutId)
       ackData.callback()
       pendingAcknowledgments.delete(ackKey)
-      break // Only handle one acknowledgment per response
+      break
     }
   }
 
-  // Suppress the ok echoed back for our PING keepalive
   if (line === 'ok' && suppressNextOk) { suppressNextOk = false; return }
 
   lineHandlers.forEach(fn => fn(line))
 }
 
+function persistPageId() {
+  try { sessionStorage.setItem('fluidui_pageid', pageId) } catch { /* noop */ }
+}
+
+// ──────────────────────────────────────────────────────────────────────────
+// Public send API
+// ──────────────────────────────────────────────────────────────────────────
+
 export function sendRaw(cmd: string) {
-  const command: QueuedCommand = {
-    command: cmd,
-    isRealtime: false,
-    priority: 'normal',
-    timestamp: Date.now()
-  }
-  queueCommand(command)
+  queueCommand({ command: cmd, isRealtime: false, priority: 'normal', timestamp: Date.now() })
   return socket?.readyState === WebSocket.OPEN
 }
 
 export function sendRealtime(byte: number) {
-  const command: QueuedCommand = {
-    command: byte.toString(),
-    isRealtime: true,
-    priority: 'normal',
-    timestamp: Date.now()
-  }
-  queueCommand(command)
+  queueCommand({ command: byte.toString(), isRealtime: true, priority: 'normal', timestamp: Date.now() })
   return socket?.readyState === WebSocket.OPEN
 }
 
-
 export function sendPriorityCancel(): Promise<boolean> {
   return new Promise((resolve) => {
-    const command: QueuedCommand = {
-      command: '133', // 0x85 in decimal
+    let resolved = false
+    const done = (ok: boolean) => { if (!resolved) { resolved = true; resolve(ok) } }
+    queueCommand({
+      command: '133',
       isRealtime: true,
       priority: 'high',
       timestamp: Date.now(),
-      acknowledgmentCallback: () => resolve(true),
-      timeoutMs: 1000
-    }
-    queueCommand(command)
-
-    // Timeout fallback
-    setTimeout(() => resolve(false), 1000)
+      acknowledgmentCallback: () => done(true),
+      timeoutMs: 1000,
+    })
+    setTimeout(() => done(false), 1000)
   })
 }
 
 export function sendBurstCancel(): Promise<boolean> {
   return new Promise((resolve) => {
-    let completedCount = 0
-    const expectedCount = 5
-
-    function onCancelComplete() {
-      completedCount++
-      if (completedCount >= expectedCount) {
-        resolve(true)
-      }
-    }
-
-    // Send burst of 5 cancel commands
-    for (let i = 0; i < expectedCount; i++) {
-      const command: QueuedCommand = {
-        command: '133', // 0x85 in decimal
+    let resolved = false
+    let completed = 0
+    const expected = 5
+    const done = (ok: boolean) => { if (!resolved) { resolved = true; resolve(ok) } }
+    for (let i = 0; i < expected; i++) {
+      queueCommand({
+        command: '133',
         isRealtime: true,
         priority: 'high',
-        timestamp: Date.now() + i, // Slightly different timestamps
-        acknowledgmentCallback: onCancelComplete,
-        timeoutMs: 1000
-      }
-      queueCommand(command)
+        timestamp: Date.now() + i,
+        acknowledgmentCallback: () => { if (++completed >= expected) done(true) },
+        timeoutMs: 1000,
+      })
     }
-
-    // Timeout fallback
-    setTimeout(() => resolve(false), 2000)
+    setTimeout(() => done(false), 2000)
   })
 }
 
 export function sendAggressiveBurstCancel(): Promise<boolean> {
   return new Promise((resolve) => {
-    let completedCount = 0
-    const expectedCount = 10
-
-    function onCancelComplete() {
-      completedCount++
-      if (completedCount >= expectedCount) {
-        resolve(true)
-      }
-    }
-
-    // Send aggressive burst of 10 cancel commands
-    for (let i = 0; i < expectedCount; i++) {
-      const command: QueuedCommand = {
-        command: '133', // 0x85 in decimal
+    let resolved = false
+    let completed = 0
+    const expected = 10
+    const done = (ok: boolean) => { if (!resolved) { resolved = true; resolve(ok) } }
+    for (let i = 0; i < expected; i++) {
+      queueCommand({
+        command: '133',
         isRealtime: true,
         priority: 'emergency',
-        timestamp: Date.now() + i, // Slightly different timestamps
-        acknowledgmentCallback: onCancelComplete,
-        timeoutMs: 500
-      }
-      queueCommand(command)
+        timestamp: Date.now() + i,
+        acknowledgmentCallback: () => { if (++completed >= expected) done(true) },
+        timeoutMs: 500,
+      })
     }
-
-    // Timeout fallback
-    setTimeout(() => resolve(false), 1000)
+    setTimeout(() => done(false), 1000)
   })
 }
 
@@ -375,21 +420,20 @@ export function getConnectionHealth(): ConnectionHealth {
   return { ...connectionHealth }
 }
 
-export function disconnect() {
-  clearPing()
-  stopCommandProcessor()
-
-  // Clear pending acknowledgments
-  pendingAcknowledgments.forEach(({ timeoutId }) => clearTimeout(timeoutId))
-  pendingAcknowledgments.clear()
-
-  // Clear command queue
-  commandQueue.length = 0
-
-  socket?.close()
-  socket = null
+export function isSocketOpen(): boolean {
+  return socket?.readyState === WebSocket.OPEN
 }
 
-function clearPing() {
-  if (pingTimer) { clearInterval(pingTimer); pingTimer = null }
+export function disconnect() {
+  generation++
+  stopPing()
+  stopLivenessWatchdog()
+  stopCommandProcessor()
+  pendingAcknowledgments.forEach(({ timeoutId }) => clearTimeout(timeoutId))
+  pendingAcknowledgments.clear()
+  commandQueue.length = 0
+  closeCurrentSocket()
+  if (useMachineStore.getState().connected) {
+    useMachineStore.getState().setConnected(false)
+  }
 }

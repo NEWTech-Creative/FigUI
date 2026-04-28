@@ -96,6 +96,7 @@ const DEFAULT_WATCHDOG_STATE: WatchdogState = {
 
 interface Store {
   connected: boolean
+  restarting: boolean
   status: MachineStatus
   espInfo: ESPInfo | null
   theme: Theme
@@ -115,6 +116,7 @@ interface Store {
   } | null
 
   setConnected: (v: boolean) => void
+  setRestarting: (v: boolean) => void
   updateStatus: (s: Partial<MachineStatus>) => void
   setEspInfo: (info: ESPInfo) => void
   setTheme: (theme: Theme) => void
@@ -132,6 +134,7 @@ interface Store {
 
 export const useMachineStore = create<Store>((set) => ({
   connected: false,
+  restarting: false,
   status: DEFAULT_STATUS,
   espInfo: null,
   theme: _initialTheme,
@@ -149,6 +152,7 @@ export const useMachineStore = create<Store>((set) => ({
   activeStepJog: null,
 
   setConnected: (connected) => set({ connected }),
+  setRestarting: (restarting) => set({ restarting }),
 
   updateStatus: (s) =>
     set(state => {

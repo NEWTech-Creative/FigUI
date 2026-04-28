@@ -38,11 +38,20 @@ function parseSize(val: unknown): number {
   return Math.round(n * (mul[unit] ?? 1))
 }
 
-async function get(path: string, params: Record<string, string>): Promise<string> {
+async function get(path: string, params: Record<string, string>, timeoutMs?: number): Promise<string> {
   const q = new URLSearchParams({ ...params, PAGEID: getPageId() })
-  const res = await fetch(`${base}${path}?${q}`)
-  if (!res.ok) throw new Error(`HTTP ${res.status}`)
-  return res.text()
+  const ctl = timeoutMs ? new AbortController() : null
+  const timer = ctl ? setTimeout(() => ctl.abort(), timeoutMs) : null
+  try {
+    const res = await fetch(`${base}${path}?${q}`, ctl ? { signal: ctl.signal } : undefined)
+    if (!res.ok) throw new Error(`HTTP ${res.status}`)
+    return await res.text()
+  } catch (e) {
+    if (ctl?.signal.aborted) throw new Error('HTTP timeout')
+    throw e
+  } finally {
+    if (timer) clearTimeout(timer)
+  }
 }
 
 export const sendCommand = (cmd: string) =>
@@ -50,6 +59,9 @@ export const sendCommand = (cmd: string) =>
 
 export const sendSilent = (cmd: string) =>
   get('/command_silent', { plain: cmd })
+
+export const getDeviceInfoFast = () =>
+  get('/command', { plain: '[ESP800]' }, 4000)
 
 export async function listFiles(path: string, fs: 'sd' | 'local' = 'sd'): Promise<FileListResult> {
   const apiPath = fs === 'sd' ? sdRelPath(path) : path

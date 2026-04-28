@@ -1,8 +1,8 @@
 import { useEffect, useRef, useState } from 'react'
 import { useMachineStore } from './store'
 import { useGCodeStore } from './store/gcode'
-import { connect, sendRealtime, onConnectionHealth } from './lib/ws'
-import { setBase, getDeviceInfo } from './lib/http'
+import { connect, sendRealtime, onConnectionHealth, isSocketOpen } from './lib/ws'
+import { setBase, getDeviceInfo, getDeviceInfoFast } from './lib/http'
 import { parseESP800 } from './lib/parser'
 import { startWatchdog, stopWatchdog, updateConnectionHealth } from './lib/jogWatchdog'
 import { Header } from './components/Header'
@@ -30,7 +30,7 @@ type TabletRightTab = 'viewer' | 'files' | 'macros' | 'terminal'
 type Phase = 'connecting' | 'error' | 'ready'
 
 export function App() {
-  const { connected, sidebarTab, setSidebarTab, setEspInfo, layoutMode } = useMachineStore()
+  const { connected, restarting, sidebarTab, setSidebarTab, setEspInfo, setRestarting: setStoreRestarting, layoutMode } = useMachineStore()
   const machineState = useMachineStore(s => s.status.state)
   const loadGCodeFile = useGCodeStore(s => s.loadFile)
   const [phase, setPhase]   = useState<Phase>('connecting')
@@ -39,59 +39,163 @@ export function App() {
   const [aboutOpen, setAboutOpen] = useState(false)
   const [mobilePanel, setMobilePanel]     = useState<MobilePanel>('control')
   const [tabletTab,   setTabletTab]       = useState<TabletRightTab>('viewer')
+
   const reconnectTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const inFlightPromise = useRef<Promise<boolean> | null>(null)
+  const backoffMs = useRef(0)
+  const cachedWsHost = useRef<string | null>(null)
+  const cachedHostFailures = useRef(0)
+  const [showReconnectOverlay, setShowReconnectOverlay] = useState(false)
+  const restartSawDisconnect = useRef(false)
 
-  async function doConnect() {
-    setPhase('connecting')
-    setErrMsg('')
-    try {
-      const httpHost = window.location.host
-      setBase(`http://${httpHost}`)
-
-      const raw  = await getDeviceInfo()
-      const info = parseESP800(raw)
-
-      const wsComm  = info['webcommunication']?.trim() ?? ''
-      const parts   = wsComm.split(':')
-      const wsPort  = parts[1]?.trim() ?? '80'
-      const wsIp    = parts[2]?.trim() ?? httpHost.split(':')[0]
-      const wsHost  = wsPort === '80' ? wsIp : `${wsIp}:${wsPort}`
-
-      await connect(wsHost)
-
-      const axes = parseInt(info['axis'] ?? '3', 10)
-      setEspInfo({
-        version:        info['FW version']?.trim()     ?? '',
-        hostname:       info['hostname']?.trim()        ?? httpHost,
-        authentication: info['authentication']?.trim()  === 'yes',
-        asyncMode:      parts[0]?.trim()               === 'Async',
-        wsPort:         parseInt(wsPort, 10),
-        wsIp,
-        axes:           isNaN(axes) ? 3 : axes,
-        primarySd:      info['primary sd']?.trim()     ?? '/sd/',
-        secondarySd:    info['secondary sd']?.trim()   ?? '/ext/',
-      })
-
-      setPhase('ready')
-    } catch (e) {
-      setErrMsg(e instanceof Error ? e.message : 'Connection failed')
-      setPhase('error')
+  async function resolveWsHost(httpHost: string): Promise<{ wsHost: string; info: ReturnType<typeof parseESP800> | null }> {
+    if (cachedWsHost.current && cachedHostFailures.current < 3) {
+      return { wsHost: cachedWsHost.current, info: null }
     }
+
+    const raw  = cachedWsHost.current === null && cachedHostFailures.current > 0
+      ? await getDeviceInfoFast()
+      : await getDeviceInfo()
+    const info = parseESP800(raw)
+    const wsComm = info['webcommunication']?.trim() ?? ''
+    const parts  = wsComm.split(':')
+    const wsPort = parts[1]?.trim() ?? '80'
+    const wsIp   = parts[2]?.trim() ?? httpHost.split(':')[0]
+    const wsHost = wsPort === '80' ? wsIp : `${wsIp}:${wsPort}`
+    cachedWsHost.current = wsHost
+    cachedHostFailures.current = 0
+    // Only refresh ESP info on a fresh probe.
+    const axes = parseInt(info['axis'] ?? '3', 10)
+    setEspInfo({
+      version:        info['FW version']?.trim()     ?? '',
+      hostname:       info['hostname']?.trim()        ?? httpHost,
+      authentication: info['authentication']?.trim()  === 'yes',
+      asyncMode:      parts[0]?.trim()               === 'Async',
+      wsPort:         parseInt(wsPort, 10),
+      wsIp,
+      axes:           isNaN(axes) ? 3 : axes,
+      primarySd:      info['primary sd']?.trim()     ?? '/sd/',
+      secondarySd:    info['secondary sd']?.trim()   ?? '/ext/',
+    })
+    return { wsHost, info }
   }
 
+  function attemptConnect(): Promise<boolean> {
+    if (inFlightPromise.current) return inFlightPromise.current
+    const p = (async () => {
+      try {
+        const httpHost = window.location.host
+        setBase(`http://${httpHost}`)
+        const { wsHost } = await resolveWsHost(httpHost)
+        await connect(wsHost)
+        backoffMs.current = 0
+        cachedHostFailures.current = 0
+        return true
+      } catch (e) {
+        cachedHostFailures.current++
+        if (cachedHostFailures.current >= 3) cachedWsHost.current = null
+        if (phase !== 'ready') {
+          setErrMsg(e instanceof Error ? e.message : 'Connection failed')
+        }
+        return false
+      } finally {
+        inFlightPromise.current = null
+      }
+    })()
+    inFlightPromise.current = p
+    return p
+  }
+
+  function scheduleReconnect() {
+    if (reconnectTimer.current) clearTimeout(reconnectTimer.current)
+    // Exponential backoff, cap @ 30s.
+    const next = backoffMs.current === 0 ? 1000 : Math.min(backoffMs.current * 2, 30000)
+    backoffMs.current = next
+    reconnectTimer.current = setTimeout(async () => {
+      reconnectTimer.current = null
+      if (isSocketOpen()) return
+      await attemptConnect()
+      if (!isSocketOpen()) scheduleReconnect()
+    }, next)
+  }
+
+  // Initial connect (runs once).
   useEffect(() => {
-    doConnect()
+    let cancelled = false
+    ;(async () => {
+      const ok = await attemptConnect()
+      if (cancelled) return
+      if (ok || isSocketOpen()) {
+        setPhase('ready')
+      } else {
+        setPhase('error')
+      }
+    })()
+    return () => { cancelled = true }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
   useEffect(() => {
     if (phase !== 'ready') return
-    if (!connected) {
-      reconnectTimer.current = setTimeout(doConnect, 3000)
-    }
-    return () => {
-      if (reconnectTimer.current) clearTimeout(reconnectTimer.current)
+    if (connected) {
+      if (reconnectTimer.current) {
+        clearTimeout(reconnectTimer.current)
+        reconnectTimer.current = null
+      }
+      backoffMs.current = 0
+    } else if (!reconnectTimer.current) {
+      reconnectTimer.current = setTimeout(async () => {
+        reconnectTimer.current = null
+        if (isSocketOpen()) return
+        await attemptConnect()
+        if (!isSocketOpen()) scheduleReconnect()
+      }, 300)
     }
   }, [connected, phase])
+
+  useEffect(() => {
+    if (!restarting) {
+      restartSawDisconnect.current = false
+      return
+    }
+    if (!connected) {
+      restartSawDisconnect.current = true
+    } else if (restartSawDisconnect.current) {
+      restartSawDisconnect.current = false
+      setStoreRestarting(false)
+    }
+  }, [restarting, connected, setStoreRestarting])
+
+  useEffect(() => {
+    if (!restarting) return
+    const t = setTimeout(() => setStoreRestarting(false), 60_000)
+    return () => clearTimeout(t)
+  }, [restarting, setStoreRestarting])
+
+  // Debounce the "Reconnecting…" overlay so transient drops don't flash it.
+  useEffect(() => {
+    if (phase !== 'ready') {
+      setShowReconnectOverlay(false)
+      return
+    }
+    if (connected) {
+      setShowReconnectOverlay(false)
+      return
+    }
+    const t = setTimeout(() => setShowReconnectOverlay(true), 1500)
+    return () => clearTimeout(t)
+  }, [connected, phase])
+
+  // Manual retry from the error screen.
+  async function retryFromError() {
+    setPhase('connecting')
+    setErrMsg('')
+    backoffMs.current = 0
+    cachedWsHost.current = null
+    cachedHostFailures.current = 0
+    const ok = await attemptConnect()
+    setPhase(ok ? 'ready' : 'error')
+  }
 
   useEffect(() => {
     if (!connected) return
@@ -156,7 +260,7 @@ export function App() {
         <span className="text-text-primary text-sm font-medium">Could not connect</span>
         <span className="text-danger text-xs max-w-xs text-center">{errMsg}</span>
         <span className="text-text-dim text-xs font-mono">{window.location.host}</span>
-        <button className="btn-primary mt-2" onClick={doConnect}>
+        <button className="btn-primary mt-2" onClick={retryFromError}>
           Retry
         </button>
       </div>
@@ -184,7 +288,14 @@ export function App() {
 
   return (
     <div className="flex flex-col min-h-[100svh] md:h-full md:overflow-hidden bg-[var(--bg)] relative">
-      {!connected && (
+      {restarting ? (
+        <div className="fixed md:absolute inset-0 z-50 bg-[var(--bg)]/80 backdrop-blur-sm
+                        flex flex-col items-center justify-center gap-3">
+          <RefreshCw size={24} className="text-accent animate-spin" />
+          <span className="text-text-primary text-sm font-medium">Restarting controller…</span>
+          <span className="text-text-muted text-xs">Waiting for FluidNC to come back online</span>
+        </div>
+      ) : showReconnectOverlay && (
         <div className="fixed md:absolute inset-0 z-50 bg-[var(--bg)]/80 backdrop-blur-sm
                         flex flex-col items-center justify-center gap-3">
           <RefreshCw size={24} className="text-accent animate-spin" />
