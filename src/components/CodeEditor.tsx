@@ -43,26 +43,25 @@ function highlightYaml(editor: HTMLElement) {
   editor.innerHTML = code
     .split('\n')
     .map(line => {
-      const safe = escapeHtml(line)
       let result = ''
       let last = 0
       const re = new RegExp(TOKEN.source, 'gm')
       let m: RegExpExecArray | null
-      while ((m = re.exec(safe)) !== null) {
-        result += safe.slice(last, m.index)
-        if (m[1])      result += `<span class="hl-string">${m[1]}</span>`
-        else if (m[2]) result += `<span class="hl-comment">${m[2]}</span>`
-        else if (m[3]) result += `<span class="hl-anchor">${m[3]}</span>`
-        else if (m[4]) result += `<span class="hl-bool">${m[4]}</span>`
+      while ((m = re.exec(line)) !== null) {
+        result += escapeHtml(line.slice(last, m.index))
+        if (m[1])      result += `<span class="hl-string">${escapeHtml(m[1])}</span>`
+        else if (m[2]) result += `<span class="hl-comment">${escapeHtml(m[2])}</span>`
+        else if (m[3]) result += `<span class="hl-anchor">${escapeHtml(m[3])}</span>`
+        else if (m[4]) result += `<span class="hl-bool">${escapeHtml(m[4])}</span>`
         else if (m[6]) {
-          result += m[5]
-          result += `<span class="hl-key">${m[6]}</span><span class="hl-punct">${m[7]}</span>`
+          result += escapeHtml(m[5])
+          result += `<span class="hl-key">${escapeHtml(m[6])}</span><span class="hl-punct">${escapeHtml(m[7])}</span>`
         }
-        else if (m[8]) result += `<span class="hl-number">${m[8]}</span>`
-        else           result += m[0]
+        else if (m[8]) result += `<span class="hl-number">${escapeHtml(m[8])}</span>`
+        else           result += escapeHtml(m[0])
         last = m.index + m[0].length
       }
-      result += safe.slice(last)
+      result += escapeHtml(line.slice(last))
       return result
     })
     .join('\n')
