@@ -20,6 +20,7 @@ export interface MachineStatus {
   wco: Position
   feed: number
   spindle: number
+  spindleRunning?: boolean
   feedOverride: number
   rapidOverride: number
   spindleOverride: number

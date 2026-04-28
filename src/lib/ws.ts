@@ -1,4 +1,4 @@
-import { parseControllerSettingLine, parseStatusReport } from './parser'
+import { parseControllerSettingLine, parseGcStateLine, parseStatusReport } from './parser'
 import { useMachineStore } from '../store'
 
 let socket: WebSocket | null = null
@@ -378,6 +378,14 @@ function handleLine(line: string) {
   if (line.startsWith('<') && line.endsWith('>')) {
     const parsed = parseStatusReport(line)
     if (parsed) useMachineStore.getState().updateStatus(parsed)
+    return
+  }
+
+  const gcState = parseGcStateLine(line)
+  if (gcState) {
+    useMachineStore.getState().updateStatus(gcState)
+    if (isSilentLine) return
+    lineHandlers.forEach(fn => fn(line))
     return
   }
 

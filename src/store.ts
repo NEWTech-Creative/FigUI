@@ -80,6 +80,7 @@ const DEFAULT_STATUS: MachineStatus = {
   wco: { x: 0, y: 0, z: 0 },
   feed: 0,
   spindle: 0,
+  spindleRunning: false,
   feedOverride: 100,
   rapidOverride: 100,
   spindleOverride: 100,

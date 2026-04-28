@@ -68,6 +68,32 @@ export function parseESP800(raw: string): Record<string, string> {
   return result
 }
 
+export function parseGcStateLine(line: string): Partial<MachineStatus> | null {
+  const match = line.match(/^\[GC:(.+)\]$/)
+  if (!match) return null
+
+  const words = match[1].trim().split(/\s+/)
+  const modal = new Set(words)
+  const spindleWord = words.find(word => /^S-?\d+(?:\.\d+)?$/.test(word))
+  const spindleValue = spindleWord ? Number.parseFloat(spindleWord.slice(1)) : undefined
+
+  if (modal.has('M5')) {
+    return {
+      spindleRunning: false,
+      spindle: spindleValue ?? 0,
+    }
+  }
+
+  if (modal.has('M3') || modal.has('M4')) {
+    return {
+      spindleRunning: true,
+      ...(spindleValue != null ? { spindle: spindleValue } : {}),
+    }
+  }
+
+  return null
+}
+
 const CONTROLLER_SETTING_MAP: Record<string, keyof ControllerSettings> = {
   '30': 'spindleMax',
   '31': 'spindleMin',

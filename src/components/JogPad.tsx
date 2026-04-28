@@ -578,7 +578,7 @@ export function JogPad() {
   const controllerSettings = useMachineStore(s => s.controllerSettings)
   const setActiveStepJog = useMachineStore(s => s.setActiveStepJog)
   const [spindleTarget, setSpindleTarget] = useState(24000)
-  const [spindleOn, setSpindleOn] = useState(false)
+  const [spindleOverrideState, setSpindleOverrideState] = useState<'on' | 'off' | null>(null)
   const [xyFeed, setXyFeed] = useState(() => loadPersistedJogFeed('jog.xyFeed', 1000))
   const [zFeed, setZFeed]   = useState(() => loadPersistedJogFeed('jog.zFeed', 200))
   const [abcFeed, setAbcFeed] = useState(() => loadPersistedJogFeed('jog.abcFeed', 500))
@@ -605,6 +605,12 @@ export function JogPad() {
   const xyFeedPresetValues = buildLimitedFeedPresets(linearFeedPresetValues, xyFeedMax)
   const zFeedPresetValues = buildLimitedFeedPresets(linearFeedPresetValues, zFeedMax)
   const spindlePresetValues = buildSpindlePresets(spindleMin, spindleMax)
+  const controllerSpindleActive = status.spindleRunning ?? status.spindle > 0
+  const spindleActive = spindleOverrideState === 'off'
+    ? false
+    : spindleOverrideState === 'on'
+      ? true
+      : controllerSpindleActive
   const linearFeedFormatter = useCallback(
     (value: number) => formatDisplayNumber(mmToDisplay(value, units), 0),
     [units],
@@ -646,6 +652,23 @@ export function JogPad() {
       return clamp(prev, spindleMin, spindleMax)
     })
   }, [spindleMin, spindleMax])
+
+  useEffect(() => {
+    if (status.spindle <= 0) return
+    setSpindleTarget(prev => {
+      const next = spindleMax != null
+        ? clamp(status.spindle, spindleMin, spindleMax)
+        : Math.max(spindleMin, status.spindle)
+      return prev === next ? prev : next
+    })
+    setSpindleOverrideState(null)
+  }, [status.spindle, spindleMin, spindleMax])
+
+  useEffect(() => {
+    if (status.spindle <= 0 || status.spindleRunning === false) {
+      setSpindleOverrideState(null)
+    }
+  }, [status.spindle, status.spindleRunning])
 
   useEffect(() => {
     if (status.state !== 'Jog') {
@@ -862,15 +885,15 @@ export function JogPad() {
             const actualRpm = Math.round(status.spindle * status.spindleOverride / 100)
             return (
               <div className={`ml-auto inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded text-xs font-medium normal-case tracking-normal ${
-                spindleOn
+                spindleActive
                   ? 'bg-ok/10 text-ok border border-ok/20'
                   : 'bg-elevated text-text-muted border border-border'
               }`}>
-                {spindleOn && (
+                {spindleActive && (
                   <div className="w-1.5 h-1.5 rounded-full bg-ok animate-pulse" />
                 )}
-                {spindleOn ? `${actualRpm} RPM` : 'STOPPED'}
-                {spindleOn && status.spindleOverride !== 100 && (
+                {spindleActive ? `${actualRpm} RPM` : 'STOPPED'}
+                {spindleActive && status.spindleOverride !== 100 && (
                   <span className="opacity-60">(cmd: {status.spindle})</span>
                 )}
               </div>
@@ -908,7 +931,7 @@ export function JogPad() {
                 key={rpm}
                 onClick={() => {
                   setSpindleTarget(rpm)
-                  if (spindleOn) {
+                  if (spindleActive) {
                     sendRaw(`M3 S${rpm}`)
                     sendRealtime(0x99)
                   }
@@ -927,9 +950,12 @@ export function JogPad() {
           <OverrideRow label="Override" value={status.spindleOverride}
             onMinus={() => sendRealtime(0x9B)} onReset={() => sendRealtime(0x99)} onPlus={() => sendRealtime(0x9A)} />
 
-          {spindleOn ? (
+          {spindleActive ? (
             <button
-              onClick={() => { sendRaw('M5'); setSpindleOn(false) }}
+              onClick={() => {
+                sendRaw('M5')
+                setSpindleOverrideState('off')
+              }}
               className="btn w-full justify-center bg-danger/20 hover:bg-danger/30 text-danger border-danger/50"
             >
               <Square className="w-3.5 h-3.5 shrink-0 fill-current" />
@@ -937,7 +963,10 @@ export function JogPad() {
             </button>
           ) : (
             <button
-              onClick={() => { sendRaw(`M3 S${spindleTarget}`); setSpindleOn(true) }}
+              onClick={() => {
+                sendRaw(`M3 S${spindleTarget}`)
+                setSpindleOverrideState('on')
+              }}
               className="btn w-full gap-1.5 justify-center bg-ok/20 hover:bg-ok/30 text-ok border-ok/50"
             >
               <Play className="w-3.5 h-3.5 shrink-0 fill-current" />
