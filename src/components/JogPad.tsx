@@ -471,28 +471,28 @@ function AxisBar({ axis, color, steps, feed, continuous, disabled, activeKeys, u
 }
 
 
-function OverrideRow({ label, value, maxValue = 200, onMinus, onReset, onPlus }: {
-  label: string; value: number; maxValue?: number; onMinus: () => void; onReset: () => void; onPlus: () => void
+function OverrideRow({ label, value, maxValue = 200, onMinus, onReset, onPlus, isTablet }: {
+  label: string; value: number; maxValue?: number; onMinus: () => void; onReset: () => void; onPlus: () => void; isTablet?: boolean
 }) {
   const pct = Math.min(value, maxValue)
   const color = value > 100 ? 'var(--ok)' : value < 100 ? 'var(--warn)' : 'var(--accent)'
   return (
-    <div className="flex items-center gap-1.5">
-      <span className="text-text-muted text-xs font-medium w-14 shrink-0">{label}</span>
-      <button className="w-6 h-6 rounded border border-border text-text-muted hover:text-text-primary
-                         hover:bg-elevated flex items-center justify-center" onClick={onReset} title="Reset to 100%">
-        <RotateCcw className="w-3 h-3" />
+    <div className={`flex items-center ${isTablet ? 'gap-3 py-2' : 'gap-1.5'}`}>
+      <span className={`text-text-muted font-medium shrink-0 ${isTablet ? 'text-xl w-24' : 'text-xs w-14'}`}>{label}</span>
+      <button className={`${isTablet ? 'w-12 h-12 rounded-lg' : 'w-6 h-6 rounded'} border border-border text-text-muted hover:text-text-primary
+                         hover:bg-elevated flex items-center justify-center`} onClick={onReset} title="Reset to 100%">
+        <RotateCcw className={isTablet ? 'w-5 h-5' : 'w-3 h-3'} />
       </button>
-      <button className="w-6 h-6 rounded border border-border text-text-muted hover:text-text-primary
-                         hover:bg-elevated flex items-center justify-center text-sm leading-none" onClick={onMinus}>−</button>
-      <div className="flex-1 flex items-center gap-1.5 min-w-0">
-        <div className="flex-1 h-3 bg-elevated rounded-full overflow-hidden">
+      <button className={`${isTablet ? 'w-12 h-12 rounded-lg text-2xl' : 'w-6 h-6 rounded text-sm'} border border-border text-text-muted hover:text-text-primary
+                         hover:bg-elevated flex items-center justify-center leading-none`} onClick={onMinus}>−</button>
+      <div className={`flex-1 flex items-center min-w-0 ${isTablet ? 'gap-3' : 'gap-1.5'}`}>
+        <div className={`flex-1 bg-elevated rounded-full overflow-hidden ${isTablet ? 'h-6' : 'h-3'}`}>
           <div className="h-full rounded-full transition-all" style={{ width: `${(pct / maxValue) * 100}%`, background: color }} />
         </div>
-        <span className="font-mono text-xs w-10 text-center shrink-0" style={{ color }}>{value}%</span>
+        <span className={`font-mono text-center shrink-0 ${isTablet ? 'text-xl w-20' : 'text-xs w-10'}`} style={{ color }}>{value}%</span>
       </div>
-      <button className="w-6 h-6 rounded border border-border text-text-muted hover:text-text-primary
-                         hover:bg-elevated flex items-center justify-center text-sm leading-none" onClick={onPlus}>+</button>
+      <button className={`${isTablet ? 'w-12 h-12 rounded-lg text-2xl' : 'w-6 h-6 rounded text-sm'} border border-border text-text-muted hover:text-text-primary
+                         hover:bg-elevated flex items-center justify-center leading-none`} onClick={onPlus}>+</button>
     </div>
   )
 }
@@ -979,3 +979,266 @@ export function JogPad() {
     </>
   )
 }
+
+export function SpindlePanel({ className, isTablet }: { className?: string; isTablet?: boolean }) {
+  const status = useMachineStore(s => s.status)
+  const controllerSettings = useMachineStore(s => s.controllerSettings)
+  const spindleMin = controllerSettings.spindleMin ?? 0
+  const spindleMax = controllerSettings.spindleMax
+
+  const [spindleTarget, setSpindleTarget] = useState(24000)
+  const [spindleOverrideState, setSpindleOverrideState] = useState<'on' | 'off' | null>(null)
+
+  const spindlePresetValues = buildSpindlePresets(spindleMin, spindleMax)
+  const controllerSpindleActive = status.spindleRunning ?? status.spindle > 0
+
+  const spindleActive = spindleOverrideState === 'off'
+    ? false
+    : spindleOverrideState === 'on'
+      ? true
+      : controllerSpindleActive
+
+  useEffect(() => {
+    if (spindleMax == null || !Number.isFinite(spindleMax) || spindleMax < spindleMin) return
+    setSpindleTarget(prev => {
+      if (prev === 24000 && spindleMax !== 24000) return spindleMax
+      return clamp(prev, spindleMin, spindleMax)
+    })
+  }, [spindleMin, spindleMax])
+
+  useEffect(() => {
+    if (status.spindle <= 0) return
+    setSpindleTarget(prev => {
+      const next = spindleMax != null
+        ? clamp(status.spindle, spindleMin, spindleMax)
+        : Math.max(spindleMin, status.spindle)
+      return prev === next ? prev : next
+    })
+    setSpindleOverrideState(null)
+  }, [status.spindle, spindleMin, spindleMax])
+
+  useEffect(() => {
+    if (status.spindle <= 0 || status.spindleRunning === false) {
+      setSpindleOverrideState(null)
+    }
+  }, [status.spindle, status.spindleRunning])
+
+  return (
+      <div className={`panel flex flex-col ${className ?? ''}`}>
+        <div className="panel-header">
+          Spindle
+          {(() => {
+            const actualRpm = Math.round(status.spindle * status.spindleOverride / 100)
+            return (
+              <div className={`ml-auto inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded text-xs font-medium normal-case tracking-normal ${
+                spindleActive
+                  ? 'bg-ok/10 text-ok border border-ok/20'
+                  : 'bg-elevated text-text-muted border border-border'
+              }`}>
+                {spindleActive && (
+                  <div className="w-1.5 h-1.5 rounded-full bg-ok animate-pulse" />
+                )}
+                {spindleActive ? `${actualRpm} RPM` : 'STOPPED'}
+                {spindleActive && status.spindleOverride !== 100 && (
+                  <span className="opacity-60">(cmd: {status.spindle})</span>
+                )}
+              </div>
+            )
+          })()}
+        </div>
+        <div className="flex flex-col p-3 gap-3">
+
+          <div className="flex items-center gap-2">
+            <span className={`${isTablet ? 'text-xl' : 'text-xs'} text-text-muted font-medium shrink-0`}>RPM</span>
+            <input
+              type="number"
+              value={spindleTarget}
+              onChange={e => {
+                const next = Number(e.target.value)
+                if (!Number.isFinite(next)) {
+                  setSpindleTarget(spindleMin)
+                  return
+                }
+                setSpindleTarget(spindleMax != null
+                  ? clamp(next, spindleMin, spindleMax)
+                  : Math.max(spindleMin, next))
+              }}
+              min={spindleMin}
+              max={spindleMax}
+              step={100}
+              className={`input-field font-mono text-right flex-1 ${isTablet ? 'py-3 text-2xl' : 'py-1.5 text-sm'}`}
+              placeholder="0"
+            />
+          </div>
+
+          <div className="grid grid-cols-4 gap-1">
+            {spindlePresetValues.map(rpm => (
+              <button
+                key={rpm}
+                onClick={() => {
+                  setSpindleTarget(rpm)
+                  if (spindleActive) {
+                    sendRaw(`M3 S${rpm}`)
+                    sendRealtime(0x99)
+                  }
+                }}
+                className={`btn font-medium justify-center ${isTablet ? 'text-xl py-3' : 'text-xs py-2'} ${
+                  spindleTarget === rpm
+                    ? 'bg-accent/20 border-accent/60 text-accent'
+                    : 'btn-ghost'
+                }`}
+              >
+                {rpm >= 1000 ? `${rpm/1000}K` : rpm}
+              </button>
+            ))}
+          </div>
+
+          <OverrideRow label="Override" value={status.spindleOverride} isTablet={isTablet}
+            onMinus={() => sendRealtime(0x9B)} onReset={() => sendRealtime(0x99)} onPlus={() => sendRealtime(0x9A)} />
+
+          {spindleActive ? (
+            <button
+              onClick={() => {
+                sendRaw('M5')
+                setSpindleOverrideState('off')
+              }}
+              className={`btn w-full justify-center bg-danger/20 hover:bg-danger/30 text-danger border-danger/50 ${isTablet ? 'h-16 text-xl' : ''}`}
+            >
+              <Square className={`${isTablet ? 'w-5 h-5' : 'w-3.5 h-3.5'} shrink-0 fill-current`} />
+              Stop Spindle
+            </button>
+          ) : (
+            <button
+              onClick={() => {
+                sendRaw(`M3 S${spindleTarget}`)
+                setSpindleOverrideState('on')
+              }}
+              className={`btn w-full gap-1.5 justify-center bg-ok/20 hover:bg-ok/30 text-ok border-ok/50 ${isTablet ? 'h-16 text-xl' : ''}`}
+            >
+              <Play className={`${isTablet ? 'w-5 h-5' : 'w-3.5 h-3.5'} shrink-0 fill-current`} />
+              Start Spindle (CW)
+            </button>
+          )}
+
+        </div>
+      </div>
+  )
+}
+
+export function OverridesPanel({ className, isTablet }: { className?: string; isTablet?: boolean }) {
+  const status = useMachineStore(s => s.status)
+  return (
+      <div className={`panel flex flex-col ${className ?? ''}`}>
+        <div className={`panel-header ${isTablet ? 'text-xl py-4' : ''}`}>Overrides</div>
+        <div className={`flex flex-col p-3 ${isTablet ? 'gap-4' : 'gap-2'}`}>
+          <OverrideRow label="Feed" value={status.feedOverride} isTablet={isTablet}
+            onMinus={() => sendRealtime(0x92)} onReset={() => sendRealtime(0x90)} onPlus={() => sendRealtime(0x91)} />
+          <OverrideRow label="Rapid" value={status.rapidOverride} maxValue={100} isTablet={isTablet}
+            onMinus={() => sendRealtime(status.rapidOverride >= 100 ? 0x96 : 0x97)}
+            onReset={() => sendRealtime(0x95)}
+            onPlus={() => sendRealtime(status.rapidOverride <= 25 ? 0x96 : 0x95)} />
+        </div>
+      </div>
+  )
+}
+
+export function TabletJogPad() {
+  const status = useMachineStore(s => s.status)
+  const units = useMachineStore(s => s.units)
+  
+  const [xyFeed] = useState(() => loadPersistedJogFeed('jog.xyFeed', 1000))
+  const [zFeed]   = useState(() => loadPersistedJogFeed('jog.zFeed', 200))
+  const [continuous, setContinuous] = useState(false)
+  const [stepSize, setStepSize] = useState(1)
+
+  const canJog = status.state === 'Idle' || status.state === 'Jog'
+  const jobRunning = status.state === 'Run' || status.state === 'Hold'
+
+  const { start: startYp, stop: stopYp } = useHoldJog('Y', 1, xyFeed, stepSize, continuous, !canJog)
+  const { start: startYm, stop: stopYm } = useHoldJog('Y', -1, xyFeed, stepSize, continuous, !canJog)
+  const { start: startXp, stop: stopXp } = useHoldJog('X', 1, xyFeed, stepSize, continuous, !canJog)
+  const { start: startXm, stop: stopXm } = useHoldJog('X', -1, xyFeed, stepSize, continuous, !canJog)
+  const { start: startZp, stop: stopZp } = useHoldJog('Z', 1, zFeed, stepSize, continuous, !canJog)
+  const { start: startZm, stop: stopZm } = useHoldJog('Z', -1, zFeed, stepSize, continuous, !canJog)
+
+  const steps = units === 'in' ? [0.001, 0.01, 0.1, 1] : [0.1, 1, 10, 100]
+
+  useEffect(() => {
+    if (!steps.includes(stepSize)) setStepSize(steps[1])
+  }, [units])
+
+  if (jobRunning) return null
+
+  return (
+    <div className="panel flex flex-col flex-1 min-h-0 portrait:flex-none portrait:h-[440px]">
+      <div className="panel-header flex flex-row items-stretch justify-between shrink-0 !p-0 border-b border-border overflow-hidden">
+        <div className="flex items-center px-4 py-3 font-bold text-xl tracking-wider border-r border-border">JOG</div>
+        <div className="flex flex-1 items-stretch divide-x divide-border bg-surface">
+          {steps.map(s => (
+            <button
+              key={s}
+              className={`flex-1 px-2 sm:px-4 portrait:px-4 portrait:py-4 font-bold text-base sm:text-lg portrait:text-xl transition-colors ${!continuous && stepSize === s ? 'bg-accent text-white shadow-inner' : 'bg-transparent text-text-primary hover:bg-elevated'}`}
+              onClick={() => { setContinuous(false); setStepSize(s); }}
+            >
+              {s}
+            </button>
+          ))}
+          <button
+            className={`flex-1 px-2 sm:px-4 portrait:px-4 portrait:py-4 font-bold text-base sm:text-lg portrait:text-xl transition-colors ${continuous ? 'bg-accent text-white shadow-inner' : 'bg-transparent text-text-primary hover:bg-elevated'}`}
+            onClick={() => setContinuous(true)}
+          >
+            Cont
+          </button>
+        </div>
+      </div>
+      <div className="p-2 sm:p-4 portrait:p-5 flex-1 min-h-0 flex gap-4 sm:gap-8 portrait:gap-6 justify-center items-center overflow-hidden">
+        <div className="grid grid-cols-3 grid-rows-3 gap-2 sm:gap-4 portrait:gap-4 landscape:h-full landscape:max-h-[16rem] portrait:h-[320px] portrait:max-h-none aspect-square">
+          <div />
+          <button
+            onPointerDown={e => { alwaysCapturePointer(e); startYp(); }}
+            onPointerUp={stopYp} onPointerCancel={stopYp} onPointerLeave={stopYp}
+            className="flex items-center justify-center w-full h-full bg-elevated border border-border rounded-xl text-xl sm:text-3xl font-bold text-ok shadow-md active:scale-95 active:shadow-inner transition-transform"
+          >Y+</button>
+          <div />
+          <button
+            onPointerDown={e => { alwaysCapturePointer(e); startXm(); }}
+            onPointerUp={stopXm} onPointerCancel={stopXm} onPointerLeave={stopXm}
+            className="flex items-center justify-center w-full h-full bg-elevated border border-border rounded-xl text-xl sm:text-3xl font-bold text-danger shadow-md active:scale-95 active:shadow-inner transition-transform"
+          >X-</button>
+          <button
+            onClick={() => sendRealtime(0x85)}
+            className="flex items-center justify-center w-full h-full bg-surface border border-border rounded-xl shadow-md active:scale-95 transition-transform"
+          >
+            <Square className="w-8 h-8 sm:w-10 sm:h-10 text-danger fill-current" />
+          </button>
+          <button
+            onPointerDown={e => { alwaysCapturePointer(e); startXp(); }}
+            onPointerUp={stopXp} onPointerCancel={stopXp} onPointerLeave={stopXp}
+            className="flex items-center justify-center w-full h-full bg-elevated border border-border rounded-xl text-xl sm:text-3xl font-bold text-danger shadow-md active:scale-95 active:shadow-inner transition-transform"
+          >X+</button>
+          <div />
+          <button
+            onPointerDown={e => { alwaysCapturePointer(e); startYm(); }}
+            onPointerUp={stopYm} onPointerCancel={stopYm} onPointerLeave={stopYm}
+            className="flex items-center justify-center w-full h-full bg-elevated border border-border rounded-xl text-xl sm:text-3xl font-bold text-ok shadow-md active:scale-95 active:shadow-inner transition-transform"
+          >Y-</button>
+          <div />
+        </div>
+        <div className="flex flex-col gap-2 sm:gap-4 portrait:gap-4 landscape:h-full landscape:max-h-[16rem] portrait:h-[320px] portrait:max-h-none justify-between aspect-[1/3]">
+          <button
+            onPointerDown={e => { alwaysCapturePointer(e); startZp(); }}
+            onPointerUp={stopZp} onPointerCancel={stopZp} onPointerLeave={stopZp}
+            className="flex flex-1 items-center justify-center w-full bg-elevated border border-border rounded-xl text-xl sm:text-3xl font-bold text-info shadow-md active:scale-95 active:shadow-inner transition-transform"
+          >Z+</button>
+          <div className="flex-1" />
+          <button
+            onPointerDown={e => { alwaysCapturePointer(e); startZm(); }}
+            onPointerUp={stopZm} onPointerCancel={stopZm} onPointerLeave={stopZm}
+            className="flex flex-1 items-center justify-center w-full bg-elevated border border-border rounded-xl text-xl sm:text-3xl font-bold text-info shadow-md active:scale-95 active:shadow-inner transition-transform"
+          >Z-</button>
+        </div>
+      </div>
+    </div>
+  )
+}
+

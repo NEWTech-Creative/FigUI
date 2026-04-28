@@ -29,9 +29,10 @@ interface FileRowProps {
   onNavigate: (path: string) => void
   onRefresh: () => void
   onEdit: (fullPath: string, filename: string) => void
+  isTablet?: boolean
 }
 
-function FileRow({ entry, path, fs, canLoadGcode, onNavigate, onRefresh, onEdit }: FileRowProps) {
+function FileRow({ entry, path, fs, canLoadGcode, onNavigate, onRefresh, onEdit, isTablet }: FileRowProps) {
   const [deleting, setDeleting] = useState(false)
   const [renaming, setRenaming] = useState(false)
   const [newName, setNewName]   = useState(entry.name)
@@ -79,17 +80,17 @@ function FileRow({ entry, path, fs, canLoadGcode, onNavigate, onRefresh, onEdit 
   }
 
   return (
-    <div className="flex items-center gap-2 px-3 py-2 hover:bg-elevated group transition-colors">
+    <div className={`flex items-center gap-2 px-3 ${isTablet ? 'py-3' : 'py-2'} hover:bg-elevated group transition-colors`}>
       <div className="text-text-dim shrink-0">
         {entry.isDir
-          ? <Folder size={14} className="text-accent/70" />
-          : <File size={14} />}
+          ? <Folder size={isTablet ? 20 : 14} className="text-accent/70" />
+          : <File size={isTablet ? 20 : 14} />}
       </div>
 
       {renaming ? (
         <input
           ref={renameRef}
-          className="flex-1 input-field py-0.5 text-sm"
+          className={`flex-1 input-field py-0.5 ${isTablet ? 'text-lg' : 'text-sm'}`}
           value={newName}
           onChange={e => setNewName(e.target.value)}
           onKeyDown={e => {
@@ -101,14 +102,14 @@ function FileRow({ entry, path, fs, canLoadGcode, onNavigate, onRefresh, onEdit 
         />
       ) : entry.isDir ? (
         <button
-          className="flex-1 text-left text-sm text-text-primary hover:text-accent truncate"
+          className={`flex-1 text-left ${isTablet ? 'text-lg' : 'text-sm'} text-text-primary hover:text-accent truncate`}
           onClick={() => onNavigate(`${fullPath}${entry.name}`)}
         >
           {entry.name}
         </button>
       ) : isGcode(entry.name) ? (
         <button
-          className={`flex-1 text-left text-sm truncate ${canLoadGcode ? 'text-text-primary hover:text-accent' : 'text-text-dim cursor-not-allowed'}`}
+          className={`flex-1 text-left ${isTablet ? 'text-lg' : 'text-sm'} truncate ${canLoadGcode ? 'text-text-primary hover:text-accent' : 'text-text-dim cursor-not-allowed'}`}
           onClick={() => {
             if (!canLoadGcode) return
             window.dispatchEvent(new CustomEvent('gcode:load', { detail: fullName }))
@@ -118,47 +119,47 @@ function FileRow({ entry, path, fs, canLoadGcode, onNavigate, onRefresh, onEdit 
           {entry.name}
         </button>
       ) : (
-        <span className="flex-1 text-sm text-text-primary truncate">{entry.name}</span>
+        <span className={`flex-1 ${isTablet ? 'text-lg' : 'text-sm'} text-text-primary truncate`}>{entry.name}</span>
       )}
 
       {!renaming && (
-        <div className="shrink-0 w-28 flex items-center justify-end">
+        <div className={`${isTablet ? 'w-36' : 'w-28'} shrink-0 flex items-center justify-end`}>
           {!entry.isDir && (
-            <span className="text-xs text-text-dim font-mono text-right group-hover:hidden">{fmtSize(entry.size)}</span>
+            <span className={`${isTablet ? 'text-sm' : 'text-xs'} text-text-dim font-mono text-right group-hover:hidden`}>{fmtSize(entry.size)}</span>
           )}
           <div className="hidden group-hover:flex items-center gap-1">
             {!entry.isDir && isEditable(entry.name) && (
               <button
-                className="p-1.5 rounded text-info hover:bg-info/10 transition-colors"
+                className={`${isTablet ? 'p-2.5' : 'p-1.5'} rounded text-info hover:bg-info/10 transition-colors`}
                 onClick={() => onEdit(fullPath, entry.name)}
                 title="Edit file"
               >
-                <FileCode size={12} />
+                <FileCode size={isTablet ? 18 : 12} />
               </button>
             )}
             {!entry.isDir && (
               <button
-                className="p-1.5 rounded text-info hover:bg-info/10 transition-colors"
+                className={`${isTablet ? 'p-2.5' : 'p-1.5'} rounded text-info hover:bg-info/10 transition-colors`}
                 onClick={handleDownload}
                 title="Download"
               >
-                <Download size={12} />
+                <Download size={isTablet ? 18 : 12} />
               </button>
             )}
             <button
-              className="p-1.5 rounded text-text-muted hover:text-text-primary hover:bg-elevated transition-colors"
+              className={`${isTablet ? 'p-2.5' : 'p-1.5'} rounded text-text-muted hover:text-text-primary hover:bg-elevated transition-colors`}
               onClick={startRename}
               title="Rename"
             >
-              <Pencil size={12} />
+              <Pencil size={isTablet ? 18 : 12} />
             </button>
             <button
-              className="p-1.5 rounded text-danger hover:bg-danger/10 transition-colors"
+              className={`${isTablet ? 'p-2.5' : 'p-1.5'} rounded text-danger hover:bg-danger/10 transition-colors`}
               onClick={handleDelete}
               disabled={deleting}
               title="Delete"
             >
-              <Trash2 size={12} />
+              <Trash2 size={isTablet ? 18 : 12} />
             </button>
           </div>
         </div>
@@ -177,7 +178,7 @@ function FileRow({ entry, path, fs, canLoadGcode, onNavigate, onRefresh, onEdit 
   )
 }
 
-export function FileManager() {
+export function FileManager({ isTablet }: { isTablet?: boolean }) {
   const espInfo = useMachineStore(s => s.espInfo)
   const machineState = useMachineStore(s => s.status.state)
   const primarySd   = espInfo?.primarySd   ?? '/sd/'
@@ -304,14 +305,14 @@ export function FileManager() {
             <button
               key={id}
               onClick={() => switchFs(id)}
-              className={`flex-1 flex items-center justify-center gap-1.5 py-2 text-sm font-medium
+              className={`flex-1 flex items-center justify-center gap-1.5 ${isTablet ? 'py-3 text-lg' : 'py-2 text-sm'} font-medium
                           uppercase tracking-wide transition-colors border-b-2 -mb-px ${
                 fs === id
                   ? 'border-accent text-accent'
                   : 'border-transparent text-text-muted hover:text-text-primary'
               }`}
             >
-              <Icon size={11} />
+              <Icon size={isTablet ? 18 : 11} />
               {label}
             </button>
           )
@@ -319,18 +320,18 @@ export function FileManager() {
       </div>
 
       <div className="panel-header justify-between">
-        <div className="flex items-center gap-1.5 flex-wrap min-w-0 normal-case tracking-normal font-normal">
+        <div className={`flex items-center gap-1.5 flex-wrap min-w-0 normal-case tracking-normal font-normal ${isTablet ? 'text-lg' : ''}`}>
           <button
-            className="hover:text-accent transition-colors"
+            className={`hover:text-accent transition-colors ${isTablet ? 'p-2' : ''}`}
             onClick={() => load(root, fs)}
           >
-            {fs === 'sd' ? <HardDrive size={13} /> : <Server size={13} />}
+            {fs === 'sd' ? <HardDrive size={isTablet ? 20 : 13} /> : <Server size={isTablet ? 20 : 13} />}
           </button>
           {breadcrumbs.map((seg, i) => (
             <div key={i} className="flex items-center gap-1">
-              <ChevronRight size={10} className="text-text-dim" />
+              <ChevronRight size={isTablet ? 16 : 10} className="text-text-dim" />
               <button
-                className="hover:text-accent transition-colors max-w-[80px] truncate"
+                className={`hover:text-accent transition-colors max-w-[80px] truncate ${isTablet ? 'p-2' : ''}`}
                 onClick={() => load('/' + breadcrumbs.slice(0, i + 1).join('/') + '/', fs)}
               >
                 {seg}
@@ -338,34 +339,34 @@ export function FileManager() {
             </div>
           ))}
         </div>
-        <div className="flex items-center gap-1 shrink-0">
+        <div className={`flex items-center ${isTablet ? 'gap-2' : 'gap-1'} shrink-0`}>
           <button
-            className="p-1 rounded hover:bg-elevated text-text-muted hover:text-text-primary transition-colors"
+            className={`rounded hover:bg-elevated text-text-muted hover:text-text-primary transition-colors ${isTablet ? 'p-3' : 'p-1'}`}
             onClick={() => { setShowNewFile(v => !v); setShowNewDir(false) }}
             title="New file"
           >
-            <FilePlus size={13} />
+            <FilePlus size={isTablet ? 20 : 13} />
           </button>
           <button
-            className="p-1 rounded hover:bg-elevated text-text-muted hover:text-text-primary transition-colors"
+            className={`rounded hover:bg-elevated text-text-muted hover:text-text-primary transition-colors ${isTablet ? 'p-3' : 'p-1'}`}
             onClick={() => { setShowNewDir(v => !v); setShowNewFile(false) }}
             title="New folder"
           >
-            <FolderPlus size={13} />
+            <FolderPlus size={isTablet ? 20 : 13} />
           </button>
           <button
-            className="p-1 rounded hover:bg-elevated text-text-muted hover:text-text-primary transition-colors"
+            className={`rounded hover:bg-elevated text-text-muted hover:text-text-primary transition-colors ${isTablet ? 'p-3' : 'p-1'}`}
             onClick={() => fileInput.current?.click()}
             title="Upload file"
           >
-            <Upload size={13} />
+            <Upload size={isTablet ? 20 : 13} />
           </button>
           <button
-            className="p-1 rounded hover:bg-elevated text-text-muted hover:text-accent transition-colors"
+            className={`rounded hover:bg-elevated text-text-muted hover:text-accent transition-colors ${isTablet ? 'p-3' : 'p-1'}`}
             onClick={() => load(path, fs)}
             title="Refresh"
           >
-            <RefreshCw size={13} className={loading ? 'animate-spin' : ''} />
+            <RefreshCw size={isTablet ? 20 : 13} className={loading ? 'animate-spin' : ''} />
           </button>
         </div>
       </div>
@@ -451,7 +452,7 @@ export function FileManager() {
           return a.name.localeCompare(b.name)
         }).map(entry => (
           <div key={entry.name} className="border-b border-border last:border-b-0">
-            <FileRow
+            <FileRow isTablet={isTablet}
               entry={entry}
               path={path}
               fs={fs}

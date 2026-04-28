@@ -7,9 +7,10 @@ import { useState, useEffect } from 'react'
 interface Props {
   onSettingsClick: () => void
   onAboutClick: () => void
+  isTablet?: boolean
 }
 
-export function Header({ onSettingsClick, onAboutClick }: Props) {
+export function Header({ onSettingsClick, onAboutClick, isTablet }: Props) {
   const connected = useMachineStore(s => s.connected)
   const status = useMachineStore(s => s.status)
   const theme = useMachineStore(s => s.theme)
@@ -75,18 +76,18 @@ export function Header({ onSettingsClick, onAboutClick }: Props) {
 
       <div className="ml-auto flex items-center gap-1">
         {connected ? (
-          <div className="flex items-center gap-1 text-xs text-ok mr-2">
-            <Wifi size={14} />
+          <div className={`flex items-center gap-1 ${isTablet ? 'text-sm' : 'text-xs'} text-ok mr-2`}>
+            <Wifi size={isTablet ? 18 : 14} />
             <span className="hidden sm:inline">Connected</span>
           </div>
         ) : (
-          <div className="flex items-center gap-1 text-xs text-text-muted mr-2">
-            <WifiOff size={14} />
+          <div className={`flex items-center gap-1 ${isTablet ? 'text-sm' : 'text-xs'} text-text-muted mr-2`}>
+            <WifiOff size={isTablet ? 18 : 14} />
           </div>
         )}
 
         <button
-          className="btn-ghost px-2 py-1.5 text-xs"
+          className={`btn-ghost ${isTablet ? 'px-3 py-2 text-sm' : 'px-2 py-1.5 text-xs'}`}
           onClick={handleSoftReset}
           title="Soft Reset"
         >
@@ -94,35 +95,35 @@ export function Header({ onSettingsClick, onAboutClick }: Props) {
         </button>
 
         <button
-          className="btn-ghost px-2 py-1.5"
+          className={`btn-ghost ${isTablet ? 'px-3 py-2' : 'px-2 py-1.5'}`}
           onClick={toggleTheme}
           title="Toggle theme"
         >
-          {theme !== 'light' ? <Sun size={14} /> : <Moon size={14} />}
+          {theme !== 'light' ? <Sun size={isTablet ? 18 : 14} /> : <Moon size={isTablet ? 18 : 14} />}
         </button>
 
         <button
-          className="hidden md:inline-flex btn-ghost px-2 py-1.5"
+          className={`hidden md:inline-flex btn-ghost ${isTablet ? 'px-3 py-2' : 'px-2 py-1.5'}`}
           onClick={toggleFullscreen}
           title={isFullscreen ? 'Exit fullscreen' : 'Enter fullscreen'}
         >
-          {isFullscreen ? <Minimize size={14} /> : <Maximize size={14} />}
+          {isFullscreen ? <Minimize size={isTablet ? 18 : 14} /> : <Maximize size={isTablet ? 18 : 14} />}
         </button>
 
         <button
-          className="btn-ghost px-2 py-1.5"
+          className={`btn-ghost ${isTablet ? 'px-3 py-2' : 'px-2 py-1.5'}`}
           onClick={onAboutClick}
           title="About"
         >
-          <HelpCircle size={14} />
+          <HelpCircle size={isTablet ? 18 : 14} />
         </button>
 
         <button
-          className="btn-ghost px-2 py-1.5"
+          className={`btn-ghost ${isTablet ? 'px-3 py-2' : 'px-2 py-1.5'}`}
           onClick={onSettingsClick}
           title="Settings"
         >
-          <Settings size={14} />
+          <Settings size={isTablet ? 18 : 14} />
         </button>
       </div>
     </header>

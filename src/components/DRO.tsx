@@ -39,7 +39,20 @@ type PendingAxisAction = {
 
 const MOTION_STATES = new Set(['Jog', 'Hold', 'Home'])
 
-export function DRO() {
+function useIsPortrait() {
+  const [portrait, setPortrait] = useState(() =>
+    typeof window !== 'undefined' && window.matchMedia('(orientation: portrait)').matches
+  )
+  useEffect(() => {
+    const mq = window.matchMedia('(orientation: portrait)')
+    const handler = (e: MediaQueryListEvent) => setPortrait(e.matches)
+    mq.addEventListener('change', handler)
+    return () => mq.removeEventListener('change', handler)
+  }, [])
+  return portrait
+}
+
+export function DRO({ isTablet = false }: { isTablet?: boolean }) {
   const status = useMachineStore(s => s.status)
   const positionMode = useMachineStore(s => s.positionMode)
   const setPositionMode = useMachineStore(s => s.setPositionMode)
@@ -48,6 +61,10 @@ export function DRO() {
   const [pendingAxisAction, setPendingAxisAction] = useState<PendingAxisAction | null>(null)
   const [pendingAxisActionStarted, setPendingAxisActionStarted] = useState(false)
   const pos = activePosition(status, positionMode)
+  const isPortrait = useIsPortrait()
+  const tabletBtnSize = isTablet && isPortrait ? 'w-20 h-20' : isTablet ? 'w-14 h-14' : 'w-8 h-8'
+  const tabletIconSize = isTablet && isPortrait ? 22 : isTablet ? 16 : 11
+  const tabletHomeIconSize = isTablet && isPortrait ? 30 : isTablet ? 22 : 13
 
   const wCoords: Record<string, number> = {
     X: status.wpos.x, Y: status.wpos.y, Z: status.wpos.z,
@@ -155,20 +172,20 @@ export function DRO() {
               <span className="text-right">W</span>
               <span className="text-right">M</span>
             </div>
-            {!shouldHideMotionControls && <div className="w-8 h-8 shrink-0 invisible" />}
+            {!shouldHideMotionControls && <div className={`shrink-0 invisible ${tabletBtnSize}`} />}
             {!shouldHideMotionControls && (
-              <div className="h-8 px-1.5 shrink-0 invisible flex items-center gap-0.5">
-                <ArrowRightToLine size={11} />
-                <span className="font-mono text-[11px]">0</span>
+              <div className={`shrink-0 invisible flex items-center justify-center gap-0.5 ${tabletBtnSize}`}>
+                <ArrowRightToLine size={tabletIconSize} />
+                <span className={`font-mono ${isTablet ? 'text-lg' : 'text-[11px]'}`}>0</span>
               </div>
             )}
-            {!shouldHideMotionControls && <div className="w-8 h-8 shrink-0 invisible" />}
+            {!shouldHideMotionControls && <div className={`shrink-0 invisible ${tabletBtnSize}`} />}
           </div>
         )}
         {visibleAxes.map(ax => (
           <div key={ax} className="flex items-center gap-2">
             <span
-              className="text-sm font-black uppercase tracking-widest w-4 shrink-0 select-none"
+              className={`font-black uppercase tracking-widest w-4 shrink-0 select-none ${isTablet ? 'text-2xl' : 'text-sm'}`}
               style={{ color: AXIS_COLOR[ax] ?? 'var(--text-muted)' }}
             >
               {ax}
@@ -176,13 +193,13 @@ export function DRO() {
             {positionMode === 'Both' ? (
               <div className="flex-1 grid grid-cols-2 gap-2 min-w-0">
                 <span
-                  className="text-right font-mono tabular-nums tracking-tight text-[1.05rem] min-w-0 overflow-hidden"
+                  className={`text-right font-mono tabular-nums tracking-tight min-w-0 overflow-hidden ${isTablet ? 'text-[2.25rem]' : 'text-[1.05rem]'}`}
                   style={{ fontWeight: 300, lineHeight: 1.2, color: 'var(--text-primary)' }}
                 >
                   {formatAxisCoord(wCoords[ax], ax, units)}
                 </span>
                 <span
-                  className="text-right font-mono tabular-nums tracking-tight text-[1.05rem] min-w-0 overflow-hidden"
+                  className={`text-right font-mono tabular-nums tracking-tight min-w-0 overflow-hidden ${isTablet ? 'text-[2.25rem]' : 'text-[1.05rem]'}`}
                   style={{ fontWeight: 300, lineHeight: 1.2, color: 'var(--text-muted)' }}
                 >
                   {formatAxisCoord(mCoords[ax], ax, units)}
@@ -190,7 +207,7 @@ export function DRO() {
               </div>
             ) : (
             <span
-              className="flex-1 text-right font-mono tabular-nums tracking-tight text-[1.75rem]"
+              className={`flex-1 text-right font-mono tabular-nums tracking-tight ${isTablet ? 'text-[3rem]' : 'text-[1.75rem]'}`}
               style={{ fontWeight: 300, lineHeight: 1.2, color: 'var(--text-primary)' }}
             >
               {formatAxisCoord(coordValues[ax], ax, units)}
@@ -198,11 +215,11 @@ export function DRO() {
             )}
             {!shouldHideMotionControls && (
               <button
-                className="shrink-0 w-8 h-8 flex items-center justify-center rounded-sm
-                           border border-border text-text-muted text-xs font-bold
+                className={`shrink-0 flex items-center justify-center rounded-sm
+                           border border-border text-text-muted font-bold
                            hover:text-accent hover:border-accent/50 hover:bg-accent/5
                            disabled:opacity-45 disabled:cursor-not-allowed disabled:hover:text-text-muted disabled:hover:border-border disabled:hover:bg-transparent
-                           transition-all duration-100"
+                           transition-all duration-100 ${tabletBtnSize} ${isTablet ? 'text-xl' : 'text-xs'}`}
                 onClick={() => zeroAxis(ax)}
                 title={`Zero ${ax}`}
                 disabled={areAxisButtonsDisabled}
@@ -212,32 +229,32 @@ export function DRO() {
             )}
             {!shouldHideMotionControls && (
               <button
-                className="shrink-0 h-8 px-1.5 flex items-center justify-center gap-0.5 rounded-sm
+                className={`shrink-0 flex items-center justify-center gap-0.5 rounded-sm
                            border border-border text-text-muted
                            hover:text-accent hover:border-accent/50 hover:bg-accent/5
                            disabled:opacity-45 disabled:cursor-not-allowed disabled:hover:text-text-muted disabled:hover:border-border disabled:hover:bg-transparent
-                           transition-all duration-100"
+                           transition-all duration-100 ${tabletBtnSize}`}
                 onClick={() => goToZero(ax)}
                 title={`Go to ${ax} zero`}
                 disabled={areAxisButtonsDisabled}
               >
-                <ArrowRightToLine size={11} />
-                <span className="font-mono text-[11px]">0</span>
+                <ArrowRightToLine size={tabletIconSize} />
+                <span className={`font-mono ${isTablet ? 'text-lg' : 'text-[11px]'}`}>0</span>
               </button>
             )}
             {!shouldHideMotionControls && (
               <button
-                className="shrink-0 w-8 h-8 flex items-center justify-center rounded-sm
+                className={`shrink-0 flex items-center justify-center rounded-sm
                            border border-border text-text-muted
                            disabled:opacity-45 disabled:cursor-not-allowed disabled:hover:border-border disabled:hover:bg-transparent
                            hover:border-current hover:bg-current/5
-                           transition-all duration-100"
+                           transition-all duration-100 ${tabletBtnSize}`}
                 style={{ ['--tw-text-opacity' as string]: '1' } as React.CSSProperties}
                 onClick={() => homeAxis(ax)}
                 title={`Home ${ax}`}
                 disabled={areAxisButtonsDisabled}
               >
-                <Home size={13} style={{ color: AXIS_COLOR[ax] ?? 'var(--text-muted)' }} />
+                <Home size={tabletHomeIconSize} style={{ color: AXIS_COLOR[ax] ?? 'var(--text-muted)' }} />
               </button>
             )}
           </div>
@@ -248,7 +265,7 @@ export function DRO() {
       <div className="border-t border-border px-3 py-2 flex gap-2">
         {!shouldHideMotionControls && !isPendingAxisActionInMotion && (
           <button
-            className="btn btn-warn flex-1 h-7 text-xs font-bold"
+            className={`btn btn-warn flex-1 font-bold ${isTablet && isPortrait ? 'h-20 text-xl' : isTablet ? 'h-14 text-lg' : 'h-7 text-xs'}`}
             onClick={zeroAll}
             title="Set current position as work zero for all axes"
             disabled={areAxisButtonsDisabled}
@@ -258,18 +275,18 @@ export function DRO() {
         )}
         {!shouldHideMotionControls && !isPendingAxisActionInMotion && (
           <button
-            className="btn btn-ghost flex-1 h-7 text-xs font-bold flex items-center justify-center gap-1.5"
+            className={`btn btn-ghost flex-1 font-bold flex items-center justify-center gap-1.5 ${isTablet && isPortrait ? 'h-20 text-xl' : isTablet ? 'h-14 text-lg' : 'h-7 text-xs'}`}
             onClick={homeAll}
             title="Home all axes"
             disabled={areAxisButtonsDisabled}
           >
-            <Home size={12} />
+            <Home size={isTablet && isPortrait ? 24 : isTablet ? 20 : 12} />
             Home All
           </button>
         )}
         {isPendingAxisActionInMotion && (
           <button
-            className="btn btn-warn flex-1 h-7 text-xs font-bold"
+            className={`btn btn-warn flex-1 font-bold ${isTablet && isPortrait ? 'h-20 text-xl' : isTablet ? 'h-14 text-lg' : 'h-7 text-xs'}`}
             onClick={cancelPendingAxisAction}
             title={pendingAxisAction?.kind === 'home'
               ? 'Cancel homing (soft reset controller)'
@@ -316,16 +333,16 @@ export function DRO() {
       )}
 
       {/* Feed / Spindle readout */}
-      <div className="border-t border-border px-3 py-2 flex justify-between text-xs font-mono text-text-muted">
+      <div className={`border-t border-border px-3 py-2 flex justify-between font-mono text-text-muted ${isTablet ? 'text-xl' : 'text-xs'}`}>
         <div className="flex items-center gap-1.5">
           <span>F</span>
           <span className="text-text-primary">{formatFeedRate(status.feed, units)}</span>
-          <span className="text-text-dim text-[10px]">{droFeedUnitLabel(units)}</span>
+          <span className={`text-text-dim ${isTablet ? 'text-base' : 'text-[10px]'}`}>{droFeedUnitLabel(units)}</span>
         </div>
         <div className="flex items-center gap-1.5">
           <span>S</span>
           <span className="text-text-primary">{status.spindle}</span>
-          <span className="text-text-dim text-[10px]">rpm</span>
+          <span className={`text-text-dim ${isTablet ? 'text-base' : 'text-[10px]'}`}>rpm</span>
         </div>
       </div>
     </div>

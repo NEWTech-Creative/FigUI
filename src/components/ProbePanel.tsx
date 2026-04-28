@@ -26,12 +26,13 @@ interface ParamRowProps {
   unit: string
   step?: number
   min?: number
+  isTablet?: boolean
 }
 
-function ParamRow({ label, value, onChange, unit, step = 0.1, min = 0 }: ParamRowProps) {
+function ParamRow({ label, value, onChange, unit, step = 0.1, min = 0, isTablet }: ParamRowProps) {
   return (
     <div className="flex items-center justify-between gap-3">
-      <span className="text-xs text-text-muted shrink-0 w-24">{label}</span>
+      <span className={`text-text-muted shrink-0 ${isTablet ? 'text-xl w-36' : 'text-xs w-24'}`}>{label}</span>
       <div className="flex items-center gap-1.5">
         <input
           type="number"
@@ -39,9 +40,9 @@ function ParamRow({ label, value, onChange, unit, step = 0.1, min = 0 }: ParamRo
           onChange={e => onChange(Number(e.target.value))}
           step={step}
           min={min}
-          className="input-field w-24 py-1 text-xs font-mono text-right"
+          className={`input-field font-mono text-right ${isTablet ? 'w-36 py-2 text-xl' : 'w-24 py-1 text-xs'}`}
         />
-        <span className="text-xs text-text-dim w-12 shrink-0">{unit}</span>
+        <span className={`text-text-dim shrink-0 ${isTablet ? 'text-lg w-20' : 'text-xs w-12'}`}>{unit}</span>
       </div>
     </div>
   )
@@ -52,7 +53,7 @@ function toDisplayInput(value: number, units: 'mm' | 'in', decimals: number) {
   return Number(displayValue.toFixed(decimals))
 }
 
-export function ProbePanel() {
+export function ProbePanel({ isTablet }: { isTablet?: boolean }) {
   const [open, setOpen] = useState(false)
   const [probing, setProbing] = useState(false)
   const [probeFeed, setProbeFeed] = usePersisted('probe.feed', 100)
@@ -85,19 +86,20 @@ export function ProbePanel() {
         onClick={() => setOpen(v => !v)}
       >
         <div className="flex items-center gap-2">
-          <Target size={13} />
-          <span>Tool Probe</span>
+          <Target size={isTablet ? 20 : 13} />
+          <span className={isTablet ? 'text-xl' : ''}>Tool Probe</span>
         </div>
         <ChevronDown
-          size={13}
+          size={isTablet ? 20 : 13}
           className={`transition-transform duration-200 ${open ? 'rotate-180' : ''}`}
         />
       </button>
 
       {open && (
-        <div className="p-4 space-y-3">
-          <div className="space-y-2">
+        <div className={`p-4 space-y-3 ${isTablet ? 'space-y-4' : ''}`}>
+          <div className={`space-y-2 ${isTablet ? 'space-y-4' : ''}`}>
             <ParamRow
+              isTablet={isTablet}
               label="Probe feed"
               value={toDisplayInput(probeFeed, units, units === 'in' ? 2 : 0)}
               onChange={value => setProbeFeed(displayToMm(value, units))}
@@ -106,6 +108,7 @@ export function ProbePanel() {
               min={units === 'in' ? 0.1 : 1}
             />
             <ParamRow
+              isTablet={isTablet}
               label="Max travel"
               value={toDisplayInput(maxTravel, units, units === 'in' ? 3 : 1)}
               onChange={value => setMaxTravel(displayToMm(value, units))}
@@ -114,6 +117,7 @@ export function ProbePanel() {
               min={units === 'in' ? 0.1 : 1}
             />
             <ParamRow
+              isTablet={isTablet}
               label="Retract"
               value={toDisplayInput(retract, units, units === 'in' ? 4 : 2)}
               onChange={value => setRetract(displayToMm(value, units))}
@@ -122,6 +126,7 @@ export function ProbePanel() {
               min={units === 'in' ? 0.01 : 0.5}
             />
             <ParamRow
+              isTablet={isTablet}
               label="Plate thick."
               value={toDisplayInput(plateThick, units, units === 'in' ? 4 : 2)}
               onChange={value => setPlateThick(displayToMm(value, units))}
@@ -131,16 +136,17 @@ export function ProbePanel() {
           </div>
 
           <button
-            className={`btn w-full justify-center h-10 text-sm font-semibold gap-2
+            className={`btn w-full justify-center font-semibold gap-2
+                        ${isTablet ? 'h-16 text-xl' : 'h-10 text-sm'}
                         ${canProbe && !probing ? 'btn-warn' : 'btn-ghost'}`}
             onClick={runProbe}
             disabled={!canProbe || probing}
           >
-            <Target size={14} />
+            <Target size={isTablet ? 22 : 14} />
             {probing ? 'Probing…' : canProbe ? 'Probe Z' : 'Machine not Idle'}
           </button>
 
-          <p className="text-[10px] text-text-dim leading-relaxed">
+          <p className={`text-text-dim leading-relaxed ${isTablet ? 'text-sm' : 'text-[10px]'}`}>
             G38.2 probe cycle. Sets Z=0 at workpiece surface accounting for plate thickness.
             Ensure tip is above plate before probing.
           </p>

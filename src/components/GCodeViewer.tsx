@@ -766,9 +766,10 @@ function drawToolPosition(
 
 interface Props {
   className?: string
+  isTablet?: boolean
 }
 
-export function GCodeViewer({ className }: Props) {
+export function GCodeViewer({ className, isTablet }: Props) {
   const canvasRef = useRef<HTMLCanvasElement>(null)
   const webglCanvasRef = useRef<HTMLCanvasElement>(null)
   const containerRef = useRef<HTMLDivElement>(null)
@@ -1977,23 +1978,23 @@ export function GCodeViewer({ className }: Props) {
         <div className="flex gap-1.5 sm:flex-[6]">
           <button
             onClick={() => { sendRealtime(0xA0); setCoolantState('mist') }}
-            className={`btn gap-1.5 text-xs justify-center flex-1 ${coolantState === 'mist' ? 'border-accent/50 text-accent' : 'btn-ghost'}`}
+            className={`btn gap-1.5 ${isTablet ? 'text-xl py-3' : 'text-xs'} justify-center flex-1 ${coolantState === 'mist' ? 'border-accent/50 text-accent' : 'btn-ghost'}`}
           >
-            <CloudDrizzle size={13} />
+            <CloudDrizzle size={isTablet ? 18 : 13} />
             Mist
           </button>
           <button
             onClick={() => { sendRealtime(0xA1); setCoolantState('flood') }}
-            className={`btn gap-1.5 text-xs justify-center flex-1 ${coolantState === 'flood' ? 'border-info/50 text-info' : 'btn-ghost'}`}
+            className={`btn gap-1.5 ${isTablet ? 'text-xl py-3' : 'text-xs'} justify-center flex-1 ${coolantState === 'flood' ? 'border-info/50 text-info' : 'btn-ghost'}`}
           >
-            <Waves size={13} />
+            <Waves size={isTablet ? 18 : 13} />
             Flood
           </button>
           <button
             onClick={() => { sendRaw('M9'); setCoolantState('off') }}
-            className={`btn gap-1.5 text-xs justify-center flex-1 ${coolantState === 'off' ? 'border-danger/50 text-danger' : 'btn-ghost'}`}
+            className={`btn gap-1.5 ${isTablet ? 'text-xl py-3' : 'text-xs'} justify-center flex-1 ${coolantState === 'off' ? 'border-danger/50 text-danger' : 'btn-ghost'}`}
           >
-            <PowerOff size={13} />
+            <PowerOff size={isTablet ? 18 : 13} />
             Off
           </button>
         </div>
@@ -2003,30 +2004,30 @@ export function GCodeViewer({ className }: Props) {
         <div className="flex gap-1.5 sm:flex-[3]">
           {!isJobRunning && !isJobHeld && (
             <button
-              className="btn btn-ok-solid gap-2 justify-center font-bold text-sm flex-1"
+              className={`btn btn-ok-solid gap-2 justify-center font-bold ${isTablet ? 'text-xl py-3' : 'text-sm'} flex-1`}
               onClick={() => loadedPath && sendRaw(`$SD/Run=${loadedPath}`)}
               disabled={!loadedPath || isViewerStartBlocked}
               title={isViewerStartBlocked ? 'Wait for the file download and 2D processing to finish before starting the job' : 'Start job from loaded SD file'}
             >
-              <Play size={14} />
+              <Play size={isTablet ? 18 : 14} />
               Start
             </button>
           )}
           {isJobRunning && (
-            <button className="btn btn-warn-solid gap-1.5 text-xs justify-center flex-1" onClick={() => sendRealtime(0x21)}>
-              <Pause size={13} />
+            <button className={`btn btn-warn-solid gap-1.5 ${isTablet ? 'text-xl py-3' : 'text-xs'} justify-center flex-1`} onClick={() => sendRealtime(0x21)}>
+              <Pause size={isTablet ? 18 : 13} />
               Pause
             </button>
           )}
           {isJobHeld && (
-            <button className="btn btn-ok-solid gap-1.5 text-xs justify-center flex-1" onClick={() => sendRealtime(0x7e)}>
-              <Play size={13} />
+            <button className={`btn btn-ok-solid gap-1.5 ${isTablet ? 'text-xl py-3' : 'text-xs'} justify-center flex-1`} onClick={() => sendRealtime(0x7e)}>
+              <Play size={isTablet ? 18 : 13} />
               Resume
             </button>
           )}
           {(isJobRunning || isJobHeld) && (
-            <button className="btn btn-danger-solid gap-1.5 text-xs justify-center flex-1" onClick={() => sendRealtime(0x18)}>
-              <Square size={13} />
+            <button className={`btn btn-danger-solid gap-1.5 ${isTablet ? 'text-xl py-3' : 'text-xs'} justify-center flex-1`} onClick={() => sendRealtime(0x18)}>
+              <Square size={isTablet ? 18 : 13} />
               Abort
             </button>
           )}

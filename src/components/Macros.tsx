@@ -553,7 +553,7 @@ function ImportPanel({ macro, onChange }: ImportPanelProps) {
 }
 
 
-export function Macros() {
+export function Macros({ isTablet }: { isTablet?: boolean }) {
   const macros = useMachineStore(s => s.macros)
   const setMacros = useMachineStore(s => s.setMacros)
   const connected = useMachineStore(s => s.connected)
@@ -806,18 +806,18 @@ export function Macros() {
               </div>
             ) : (
               /* View mode */
-              <div className="grid grid-cols-3 gap-2">
+              <div className={`grid grid-cols-3 ${isTablet ? 'gap-3' : 'gap-2'}`}>
                 {macros.map(m => {
                   const Icon = getIcon(m.glyph)
                   return (
                     <button
                       key={m.id}
-                      className={`btn ${BTN_CLASS[m.color]} flex-col gap-1 w-full h-[72px] text-sm`}
+                      className={`btn ${BTN_CLASS[m.color]} flex-col gap-1.5 w-full ${isTablet ? 'h-[110px] text-xl' : 'h-[72px] text-sm'}`}
                       onClick={() => runMacro(m)}
                       disabled={!m.command.trim() && !m.filename}
                       title={m.label || (m.filename ? 'Ready' : 'No command set')}
                     >
-                      {Icon && <Icon size={20} className="shrink-0" />}
+                      {Icon && <Icon size={isTablet ? 28 : 20} className="shrink-0" />}
                       <span className="font-medium leading-tight text-center px-1 line-clamp-2">
                         {m.label || 'Unnamed'}
                       </span>

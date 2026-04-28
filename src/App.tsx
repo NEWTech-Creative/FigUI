@@ -7,8 +7,10 @@ import { parseESP800 } from './lib/parser'
 import { startWatchdog, stopWatchdog } from './lib/jogWatchdog'
 import { Header } from './components/Header'
 import { DRO } from './components/DRO'
-import { JogPad } from './components/JogPad'
+import { JogPad, TabletJogPad } from './components/JogPad'
 import { ProbePanel } from './components/ProbePanel'
+import { TabletAccordion } from './components/TabletAccordion'
+
 import { GCodeViewer } from './components/GCodeViewer'
 import { FileManager } from './components/FileManager'
 import { Terminal } from './components/Terminal'
@@ -320,7 +322,7 @@ export function App() {
   )
 
   return (
-    <div className="flex flex-col min-h-[100svh] md:h-full md:overflow-hidden bg-[var(--bg)] relative">
+    <div className="flex flex-col min-h-[100svh] md:h-[100svh] landscape:h-[100svh] md:overflow-hidden landscape:overflow-hidden bg-[var(--bg)] relative">
       {restarting ? (
         <div className="fixed md:absolute inset-0 z-50 bg-[var(--bg)]/80 backdrop-blur-sm
                         flex flex-col items-center justify-center gap-3">
@@ -400,55 +402,22 @@ export function App() {
       </nav>}
 
 
-      {activeLayout === 'tablet' && <div className="flex-1 min-h-0 grid grid-cols-[340px_1fr] gap-3 p-3 overflow-hidden">
+      {activeLayout === 'tablet' && <div className="flex-1 min-h-[0px] flex portrait:flex-col landscape:flex landscape:flex-row gap-3 p-3 overflow-y-auto landscape:overflow-hidden">
+  
+  <div className="flex flex-col gap-1 portrait:shrink-0 landscape:flex-1 landscape:basis-1/2 landscape:min-h-0 landscape:overflow-hidden">
+    <div className="flex flex-col landscape:flex-1 landscape:min-h-0 landscape:overflow-y-auto">
+      <DRO isTablet />
+    </div>
+    <div className="flex flex-col landscape:flex-1 landscape:min-h-0 landscape:overflow-y-auto">
+      <TabletJogPad />
+    </div>
+  </div>
 
-        {/* Left: DRO + JogPad */}
-        <div className="flex flex-col gap-3 min-h-0 overflow-y-auto">
-          <DRO />
-          <JogPad />
-        </div>
+  <TabletAccordion tabletTab={tabletTab} setTabletTab={setTabletTab} />
 
-        {/* Right: expanded tab panel */}
-        <div className="panel flex flex-col min-h-0 overflow-hidden">
-          {/* Tab bar */}
-          <div className="flex border-b border-border shrink-0 overflow-x-auto" style={{ scrollbarWidth: 'none' }}>
-            {([
-              { id: 'viewer'   as TabletRightTab, label: 'Viewer'   },
-              { id: 'files'    as TabletRightTab, label: 'Files'    },
-              { id: 'macros'   as TabletRightTab, label: 'Macros'   },
-              { id: 'terminal' as TabletRightTab, label: 'Terminal' },
-            ] as const).map(tab => (
-              <button
-                key={tab.id}
-                onClick={() => setTabletTab(tab.id)}
-                className={`px-5 py-2.5 text-sm font-medium uppercase tracking-wide whitespace-nowrap
-                            transition-colors border-b-2 -mb-px ${
-                  tabletTab === tab.id
-                    ? 'border-accent text-accent'
-                    : 'border-transparent text-text-muted hover:text-text-primary'
-                }`}
-              >
-                {tab.label}
-              </button>
-            ))}
-          </div>
+</div>}
 
-          {/* Tab content */}
-          <div className="flex-1 min-h-0 overflow-hidden">
-            <div className={`h-full flex flex-col gap-3 p-3 overflow-y-auto ${tabletTab !== 'viewer' ? 'hidden' : ''}`}>
-              <GCodeViewer className="flex-1 min-h-[300px]" />
-              <ProbePanel />
-            </div>
-            {tabletTab === 'files'    && <FileManager />}
-            {tabletTab === 'macros'   && <Macros />}
-            {tabletTab === 'terminal' && <Terminal />}
-          </div>
-        </div>
-
-      </div>}
-
-
-      {activeLayout === 'desktop' && <div className="flex-1 min-h-0 grid grid-cols-[380px_1fr_340px] gap-3 p-3 overflow-hidden">
+{activeLayout === 'desktop' && <div className="flex-1 min-h-0 grid grid-cols-[380px_1fr_340px] gap-3 p-3 overflow-hidden">
 
         {/* Left: DRO + jog controls */}
         <div className="flex flex-col gap-3 min-h-0 overflow-y-auto">
