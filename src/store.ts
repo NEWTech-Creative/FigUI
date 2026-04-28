@@ -1,5 +1,17 @@
 import { create } from 'zustand'
-import type { MachineStatus, MachineState, Position, ESPInfo, SidebarTab, PositionMode, JogStep, Macro, Units, LayoutMode } from './types'
+import type {
+  MachineStatus,
+  MachineState,
+  Position,
+  ESPInfo,
+  SidebarTab,
+  PositionMode,
+  JogStep,
+  Macro,
+  Units,
+  LayoutMode,
+  ControllerSettings,
+} from './types'
 
 export type Theme = 'light' | 'dark' | 'anthracite-dark' | 'midnight-dark'
 
@@ -99,6 +111,7 @@ interface Store {
   restarting: boolean
   status: MachineStatus
   espInfo: ESPInfo | null
+  controllerSettings: ControllerSettings
   theme: Theme
   units: Units
   layoutMode: LayoutMode
@@ -119,6 +132,7 @@ interface Store {
   setRestarting: (v: boolean) => void
   updateStatus: (s: Partial<MachineStatus>) => void
   setEspInfo: (info: ESPInfo) => void
+  updateControllerSettings: (settings: Partial<ControllerSettings>) => void
   setTheme: (theme: Theme) => void
   toggleTheme: () => void
   setUnits: (units: Units) => void
@@ -137,6 +151,7 @@ export const useMachineStore = create<Store>((set) => ({
   restarting: false,
   status: DEFAULT_STATUS,
   espInfo: null,
+  controllerSettings: {},
   theme: _initialTheme,
   units: localStorage.getItem('units') === 'in' ? 'in' : 'mm',
   layoutMode: ((): LayoutMode => {
@@ -179,6 +194,14 @@ export const useMachineStore = create<Store>((set) => ({
 
   setEspInfo: (espInfo) =>
     set(state => ({ espInfo, axes: espInfo.axes || state.axes })),
+
+  updateControllerSettings: (settings) =>
+    set(state => ({
+      controllerSettings: {
+        ...state.controllerSettings,
+        ...settings,
+      },
+    })),
 
   setTheme: (theme) =>
     set(() => {

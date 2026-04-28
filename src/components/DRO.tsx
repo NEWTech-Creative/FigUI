@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 import { ArrowRightToLine, Home, Power, TriangleAlert } from 'lucide-react'
 import { useMachineStore, activePosition } from '../store'
-import { sendRaw, sendRealtime } from '../lib/ws'
+import { sendRaw, sendRealtime, sendSilentAlarmQuery } from '../lib/ws'
 import { jogFeedKeyForAxis, loadPersistedJogFeed } from '../lib/jog'
 import { droFeedUnitLabel, formatAxisCoord, formatFeedRate } from '../lib/units'
 
@@ -71,7 +71,7 @@ export function DRO() {
   // Auto-query alarm details when entering alarm state without a name
   useEffect(() => {
     if (status.state === 'Alarm' && !status.alarmName) {
-      sendRaw('$A')
+      sendSilentAlarmQuery()
     }
   }, [status.state, status.alarmName])
 

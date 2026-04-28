@@ -55,6 +55,14 @@ export interface ESPInfo {
   secondarySd: string
 }
 
+export interface ControllerSettings {
+  spindleMin?: number
+  spindleMax?: number
+  maxRateX?: number
+  maxRateY?: number
+  maxRateZ?: number
+}
+
 export interface Macro {
   id: string
   label: string

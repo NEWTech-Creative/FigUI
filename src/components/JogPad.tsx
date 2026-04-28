@@ -73,6 +73,36 @@ function snapToNearestPreset(value: number, presets: readonly number[]) {
   , presets[0])
 }
 
+function clamp(value: number, min: number, max: number) {
+  return Math.min(Math.max(value, min), max)
+}
+
+function buildLimitedFeedPresets(presets: readonly number[], max?: number): number[] {
+  if (max == null || !Number.isFinite(max) || max <= 0) return [...presets]
+
+  const normalizedMax = Math.round(max * 1000) / 1000
+  const limited = presets.filter(preset => preset <= normalizedMax)
+  const next = limited.length > 0 ? [...limited] : [normalizedMax]
+  if (!next.some(preset => Math.abs(preset - normalizedMax) < 0.001)) next.push(normalizedMax)
+  return next
+}
+
+function buildSpindlePresets(min: number, max?: number): number[] {
+  if (max == null || !Number.isFinite(max) || max <= 0) return [6000, 12000, 18000, 24000]
+
+  const safeMin = Math.max(0, Math.round(min))
+  const safeMax = Math.max(safeMin, Math.round(max))
+  if (safeMax === 0) return [0]
+  if (safeMax === safeMin) return [safeMax]
+
+  const spread = safeMax - safeMin
+  const raw = safeMin > 0
+    ? [safeMin, safeMin + spread / 3, safeMin + (spread * 2) / 3, safeMax]
+    : [safeMax / 4, safeMax / 2, (safeMax * 3) / 4, safeMax]
+
+  return [...new Set(raw.map(value => Math.max(safeMin, Math.round(value))))]
+}
+
 
 function useHoldJog(
   axis: string, sign: 1 | -1, feed: number,
@@ -545,6 +575,7 @@ export function JogPad() {
   const status = useMachineStore(s => s.status)
   const axes = useMachineStore(s => s.axes)
   const units = useMachineStore(s => s.units)
+  const controllerSettings = useMachineStore(s => s.controllerSettings)
   const setActiveStepJog = useMachineStore(s => s.setActiveStepJog)
   const [spindleTarget, setSpindleTarget] = useState(24000)
   const [spindleOn, setSpindleOn] = useState(false)
@@ -564,7 +595,16 @@ export function JogPad() {
   const canJog = status.state === 'Idle' || status.state === 'Jog'
   const jobRunning = status.state === 'Run' || status.state === 'Hold'
   const zSteps = linearBarSteps(units)
+  const xyFeedMax = controllerSettings.maxRateX != null && controllerSettings.maxRateY != null
+    ? Math.min(controllerSettings.maxRateX, controllerSettings.maxRateY)
+    : controllerSettings.maxRateX ?? controllerSettings.maxRateY
+  const zFeedMax = controllerSettings.maxRateZ
+  const spindleMin = controllerSettings.spindleMin ?? 0
+  const spindleMax = controllerSettings.spindleMax
   const linearFeedPresetValues = linearFeedPresets(units)
+  const xyFeedPresetValues = buildLimitedFeedPresets(linearFeedPresetValues, xyFeedMax)
+  const zFeedPresetValues = buildLimitedFeedPresets(linearFeedPresetValues, zFeedMax)
+  const spindlePresetValues = buildSpindlePresets(spindleMin, spindleMax)
   const linearFeedFormatter = useCallback(
     (value: number) => formatDisplayNumber(mmToDisplay(value, units), 0),
     [units],
@@ -588,6 +628,24 @@ export function JogPad() {
     setZFeed((prev: number) => snapToNearestPreset(prev, presets))
     prevUnitsRef.current = units
   }, [units])
+
+  useEffect(() => {
+    if (xyFeedMax == null || !Number.isFinite(xyFeedMax) || xyFeedMax <= 0) return
+    setXyFeed(prev => Math.min(prev, xyFeedMax))
+  }, [xyFeedMax])
+
+  useEffect(() => {
+    if (zFeedMax == null || !Number.isFinite(zFeedMax) || zFeedMax <= 0) return
+    setZFeed(prev => Math.min(prev, zFeedMax))
+  }, [zFeedMax])
+
+  useEffect(() => {
+    if (spindleMax == null || !Number.isFinite(spindleMax) || spindleMax < spindleMin) return
+    setSpindleTarget(prev => {
+      if (prev === 24000 && spindleMax !== 24000) return spindleMax
+      return clamp(prev, spindleMin, spindleMax)
+    })
+  }, [spindleMin, spindleMax])
 
   useEffect(() => {
     if (status.state !== 'Jog') {
@@ -763,8 +821,8 @@ export function JogPad() {
             </div>
 
             <div className="flex gap-2 items-center">
-              <FeedButton label="XY" value={xyFeed} presets={linearFeedPresetValues} onChange={setXyFeed} formatValue={linearFeedFormatter} />
-              <FeedButton label="Z"  value={zFeed}  presets={linearFeedPresetValues} onChange={setZFeed} formatValue={linearFeedFormatter} />
+              <FeedButton label="XY" value={xyFeed} presets={xyFeedPresetValues} onChange={setXyFeed} formatValue={linearFeedFormatter} />
+              <FeedButton label="Z"  value={zFeed}  presets={zFeedPresetValues} onChange={setZFeed} formatValue={linearFeedFormatter} />
               {axes > 3 && <FeedButton label="ABC" value={abcFeed} presets={MM_FEED_PRESETS} onChange={setAbcFeed} formatValue={rotaryFeedFormatter} />}
               <span className="text-[10px] text-text-dim shrink-0">
                 {axes > 3 ? `XYZ ${feedUnitLabel(units)}` : feedUnitLabel(units)}
@@ -826,8 +884,18 @@ export function JogPad() {
             <input
               type="number"
               value={spindleTarget}
-              onChange={e => setSpindleTarget(Math.max(0, Number(e.target.value)))}
-              min={0}
+              onChange={e => {
+                const next = Number(e.target.value)
+                if (!Number.isFinite(next)) {
+                  setSpindleTarget(spindleMin)
+                  return
+                }
+                setSpindleTarget(spindleMax != null
+                  ? clamp(next, spindleMin, spindleMax)
+                  : Math.max(spindleMin, next))
+              }}
+              min={spindleMin}
+              max={spindleMax}
               step={100}
               className="input-field py-1.5 text-sm font-mono text-right flex-1"
               placeholder="0"
@@ -835,7 +903,7 @@ export function JogPad() {
           </div>
 
           <div className="grid grid-cols-4 gap-1">
-            {[6000, 12000, 18000, 24000].map(rpm => (
+            {spindlePresetValues.map(rpm => (
               <button
                 key={rpm}
                 onClick={() => {

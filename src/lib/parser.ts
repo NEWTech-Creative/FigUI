@@ -1,4 +1,4 @@
-import type { MachineStatus, MachineState, Position } from '../types'
+import type { ControllerSettings, MachineStatus, MachineState, Position } from '../types'
 
 export function parseStatusReport(raw: string): Partial<MachineStatus> | null {
   if (!raw.startsWith('<') || !raw.endsWith('>')) return null
@@ -66,6 +66,24 @@ export function parseESP800(raw: string): Record<string, string> {
     }
   })
   return result
+}
+
+const CONTROLLER_SETTING_MAP: Record<string, keyof ControllerSettings> = {
+  '30': 'spindleMax',
+  '31': 'spindleMin',
+  '110': 'maxRateX',
+  '111': 'maxRateY',
+  '112': 'maxRateZ',
+}
+
+export function parseControllerSettingLine(line: string): Partial<ControllerSettings> | null {
+  const match = line.match(/^\$(30|31|110|111|112)=(-?\d+(?:\.\d+)?)(?:\s|$)/)
+  if (!match) return null
+
+  const value = Number.parseFloat(match[2])
+  if (!Number.isFinite(value)) return null
+
+  return { [CONTROLLER_SETTING_MAP[match[1]]]: value }
 }
 
 export function classifyLine(line: string): 'error' | 'alarm' | 'info' | 'ok' | 'status' | 'normal' {

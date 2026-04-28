@@ -1,4 +1,4 @@
-import { parseStatusReport } from './parser'
+import { parseControllerSettingLine, parseStatusReport } from './parser'
 import { useMachineStore } from '../store'
 
 let socket: WebSocket | null = null
@@ -9,6 +9,24 @@ let pingTimer: ReturnType<typeof setInterval> | null = null
 let livenessTimer: ReturnType<typeof setInterval> | null = null
 let statusPollTimer: ReturnType<typeof setInterval> | null = null
 let suppressNextOk = false
+
+interface SilentResponseMatcher {
+  starts: (line: string) => boolean
+  consume: (line: string) => boolean
+  done: (line: string) => boolean
+}
+
+const SETTINGS_DUMP_SILENT_RESPONSE: SilentResponseMatcher = {
+  starts: (line) => /^\$\d+=/.test(line),
+  consume: (line) => /^\$\d+=/.test(line),
+  done: (line) => line === 'ok' || line === 'error',
+}
+
+const ALARM_QUERY_SILENT_RESPONSE: SilentResponseMatcher = {
+  starts: (line) => /^Active alarm:\s*\d+\s*\([^)]+\)/.test(line),
+  consume: (line) => /^Active alarm:\s*\d+\s*\([^)]+\)/.test(line),
+  done: (line) => line === 'ok' || line === 'error',
+}
 
 function loadStablePageId(): string {
   try {
@@ -53,6 +71,7 @@ interface QueuedCommand {
   isRealtime: boolean
   priority: 'normal' | 'high' | 'emergency'
   timestamp: number
+  silentResponseMatcher?: SilentResponseMatcher
   acknowledgmentCallback?: () => void
   timeoutMs?: number
 }
@@ -60,6 +79,8 @@ interface QueuedCommand {
 const commandQueue: QueuedCommand[] = []
 let commandProcessor: ReturnType<typeof setInterval> | null = null
 const pendingAcknowledgments = new Map<string, { callback: () => void, timeoutId: ReturnType<typeof setTimeout> }>()
+const pendingSilentResponses: SilentResponseMatcher[] = []
+let activeSilentResponse: SilentResponseMatcher | null = null
 
 function startCommandProcessor() {
   if (commandProcessor) return
@@ -96,6 +117,10 @@ function processCommandQueue() {
   } catch {
     // Socket transitioned mid-send — drop quietly; reconnect handles it.
     return
+  }
+
+  if (command.silentResponseMatcher) {
+    pendingSilentResponses.push(command.silentResponseMatcher)
   }
 
   if (command.acknowledgmentCallback) {
@@ -173,7 +198,9 @@ export function connect(host: string): Promise<void> {
       startStatusPoll()
 
       // Replay startup log on (re)connect — version, WiFi status, warnings.
-      try { ws.send(new TextEncoder().encode('$SS\n')) } catch { /* noop */ }
+      sendRaw('$SS')
+      // Refresh controller settings used by jog and spindle controls.
+      sendSilentRaw('$$', SETTINGS_DUMP_SILENT_RESPONSE)
 
       resolve()
     }
@@ -221,6 +248,8 @@ function handleDisconnect() {
   // Drop pending acks — they'll never resolve now.
   pendingAcknowledgments.forEach(({ timeoutId }) => clearTimeout(timeoutId))
   pendingAcknowledgments.clear()
+  pendingSilentResponses.length = 0
+  activeSilentResponse = null
   // Drop queued commands — sending them on a future reconnect would be
   // surprising (e.g. queued jog moves shouldn't auto-resume).
   commandQueue.length = 0
@@ -307,6 +336,27 @@ function stopLivenessWatchdog() {
   if (livenessTimer) { clearInterval(livenessTimer); livenessTimer = null }
 }
 
+function consumeSilentLine(line: string): boolean {
+  if (!activeSilentResponse && pendingSilentResponses.length > 0) {
+    const nextSilentResponse = pendingSilentResponses[0]
+    if (nextSilentResponse.starts(line)) {
+      activeSilentResponse = nextSilentResponse
+    }
+  }
+
+  if (!activeSilentResponse) return false
+
+  const shouldConsume = activeSilentResponse.consume(line)
+  const isDone = activeSilentResponse.done(line)
+
+  if (isDone) {
+    pendingSilentResponses.shift()
+    activeSilentResponse = null
+  }
+
+  return shouldConsume || isDone
+}
+
 // ──────────────────────────────────────────────────────────────────────────
 // Inbound line handling
 // ──────────────────────────────────────────────────────────────────────────
@@ -323,11 +373,23 @@ function handleLine(line: string) {
   if (line.startsWith('activeID:') || line.startsWith('ACTIVE_ID:')) return
   if (line === 'PING' || line.startsWith('PING:')) return
 
+  const isSilentLine = consumeSilentLine(line)
+
   if (line.startsWith('<') && line.endsWith('>')) {
     const parsed = parseStatusReport(line)
     if (parsed) useMachineStore.getState().updateStatus(parsed)
     return
   }
+
+  const controllerSettings = parseControllerSettingLine(line)
+  if (controllerSettings) {
+    useMachineStore.getState().updateControllerSettings(controllerSettings)
+    if (isSilentLine) return
+    lineHandlers.forEach(fn => fn(line))
+    return
+  }
+
+  if (isSilentLine) return
 
   const alarmMatch = line.match(/^Active alarm:\s*(\d+)\s*\(([^)]+)\)/)
   if (alarmMatch) {
@@ -377,6 +439,21 @@ function persistPageId() {
 export function sendRaw(cmd: string) {
   queueCommand({ command: cmd, isRealtime: false, priority: 'normal', timestamp: Date.now() })
   return socket?.readyState === WebSocket.OPEN
+}
+
+export function sendSilentRaw(cmd: string, silentResponseMatcher: SilentResponseMatcher) {
+  queueCommand({
+    command: cmd,
+    isRealtime: false,
+    priority: 'normal',
+    timestamp: Date.now(),
+    silentResponseMatcher,
+  })
+  return socket?.readyState === WebSocket.OPEN
+}
+
+export function sendSilentAlarmQuery() {
+  return sendSilentRaw('$A', ALARM_QUERY_SILENT_RESPONSE)
 }
 
 export function sendRealtime(byte: number) {
@@ -454,6 +531,8 @@ export function disconnect() {
   stopLivenessWatchdog()
   stopStatusPoll()
   stopCommandProcessor()
+  pendingSilentResponses.length = 0
+  activeSilentResponse = null
   pendingAcknowledgments.forEach(({ timeoutId }) => clearTimeout(timeoutId))
   pendingAcknowledgments.clear()
   commandQueue.length = 0
