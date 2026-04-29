@@ -1668,6 +1668,7 @@ export function GCodeViewer({ className, isTablet }: Props) {
   return (
     <div className={`panel flex flex-col overflow-hidden ${className ?? ''}`}>
       <div className="panel-header !flex-col !items-stretch sm:!flex-row sm:!items-center sm:justify-between gap-y-1.5">
+        {!isTablet && (
         <div className="flex items-center gap-2 min-w-0">
           {fileName ? (
             <span className="text-text-primary font-mono normal-case tracking-normal font-normal truncate text-xs">
@@ -1693,10 +1694,17 @@ export function GCodeViewer({ className, isTablet }: Props) {
             </span>
           )}
         </div>
+        )}
         {/* Right: toggle buttons with visible labels */}
-        <div className="flex items-center gap-1 flex-wrap justify-start sm:justify-end">
+        <div className="flex items-center gap-1 flex-wrap justify-start sm:justify-end ml-auto">
+          {(() => {
+            const btnCls = isTablet
+              ? 'flex items-center gap-1.5 px-3 py-1.5 rounded text-base transition-colors'
+              : 'flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] transition-colors'
+            const iconSize = isTablet ? 16 : 11
+            return (<>
           <button
-            className={`flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] transition-colors ${is3D ? 'text-ok bg-ok/10' : 'text-text-dim bg-elevated hover:text-text-primary'} ${is3DToggleDisabled ? 'opacity-50 cursor-not-allowed hover:text-text-dim hover:bg-elevated' : ''}`}
+            className={`${btnCls} ${is3D ? 'text-ok bg-ok/10' : 'text-text-dim bg-elevated hover:text-text-primary'} ${is3DToggleDisabled ? 'opacity-50 cursor-not-allowed hover:text-text-dim hover:bg-elevated' : ''}`}
             onClick={() => {
               if (is3DToggleDisabled) return
               setIs3D(v => !v)
@@ -1706,53 +1714,55 @@ export function GCodeViewer({ className, isTablet }: Props) {
             title={is3DToggleDisabled ? '3D preview is still being prepared' : 'Toggle 3D view'}
             disabled={is3DToggleDisabled}
           >
-            <Box size={11} />
+            <Box size={iconSize} />
             <span>3D</span>
           </button>
           {is3D && (
             <button
-              className={`flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] transition-colors ${projectionMode === 'orthographic' ? 'text-info bg-info/10' : 'text-text-dim bg-elevated hover:text-text-primary'}`}
+              className={`${btnCls} ${projectionMode === 'orthographic' ? 'text-info bg-info/10' : 'text-text-dim bg-elevated hover:text-text-primary'}`}
               onClick={() => setProjectionMode(mode => mode === 'perspective' ? 'orthographic' : 'perspective')}
               title={projectionMode === 'orthographic' ? 'Switch to perspective projection' : 'Switch to orthographic projection'}
             >
-              <Axis3D size={11} />
+              <Axis3D size={iconSize} />
               <span>{projectionMode === 'orthographic' ? 'Ortho' : 'Persp'}</span>
             </button>
           )}
           <button
-            className={`flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] transition-colors ${showRapids ? 'text-accent bg-accent/10' : 'text-text-dim bg-elevated hover:text-text-primary'}`}
+            className={`${btnCls} ${showRapids ? 'text-accent bg-accent/10' : 'text-text-dim bg-elevated hover:text-text-primary'}`}
             onClick={() => setShowRapids(!showRapids)}
             title="Toggle rapid moves (dashed blue lines)"
           >
-            <Eye size={11} />
+            <Eye size={iconSize} />
             <span>Rapids</span>
           </button>
           <button
-            className={`flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] transition-colors ${showTool ? 'text-danger bg-danger/10' : 'text-text-dim bg-elevated hover:text-text-primary'}`}
+            className={`${btnCls} ${showTool ? 'text-danger bg-danger/10' : 'text-text-dim bg-elevated hover:text-text-primary'}`}
             onClick={() => setShowTool(v => !v)}
             title="Toggle tool position marker"
           >
-            <Crosshair size={11} />
+            <Crosshair size={iconSize} />
             <span>Tool</span>
           </button>
           {!is3D && (
             <button
-              className={`flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] transition-colors ${autoFollow ? 'text-info bg-info/10' : 'text-text-dim bg-elevated hover:text-text-primary'}`}
+              className={`${btnCls} ${autoFollow ? 'text-info bg-info/10' : 'text-text-dim bg-elevated hover:text-text-primary'}`}
               onClick={() => setAutoFollow(v => !v)}
               title="Pan canvas to keep tool in view while running"
             >
-              <Navigation size={11} />
+              <Navigation size={iconSize} />
               <span>Follow</span>
             </button>
           )}
           <button
-            className="flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] text-text-muted hover:text-text-primary hover:bg-elevated transition-colors"
+            className={`${btnCls} text-text-muted hover:text-text-primary hover:bg-elevated`}
             onClick={() => fitToView()}
             title="Fit entire path to view"
           >
-            <Maximize2 size={11} />
+            <Maximize2 size={iconSize} />
             <span>Fit</span>
           </button>
+            </>)
+          })()}
         </div>
       </div>
 
@@ -2033,6 +2043,33 @@ export function GCodeViewer({ className, isTablet }: Props) {
           )}
         </div>
         </div>
+        {isTablet && (
+          <div className="flex items-center gap-2 min-w-0 pt-1 border-t border-border">
+            {fileName ? (
+              <span className="text-text-primary font-mono normal-case tracking-normal font-normal truncate text-sm">
+                {fileName}
+              </span>
+            ) : (
+              <span className="text-text-dim text-sm">No file loaded</span>
+            )}
+            {isLargeProgressOverlayDisabled && (
+              <span
+                className="px-1.5 py-0.5 rounded text-xs text-text-dim bg-elevated shrink-0"
+                title={`Toolpath completion overlay disabled above ${LARGE_PROGRESS_OVERLAY_SEGMENT_LIMIT.toLocaleString()} segments while a job is running`}
+              >
+                Progress overlay off
+              </span>
+            )}
+            {!loading && isProcessing3D && (
+              <span
+                className="px-1.5 py-0.5 rounded text-xs text-text-dim bg-elevated shrink-0"
+                title="3D preview is still being prepared in the background"
+              >
+                3D {processing3DProgress}%
+              </span>
+            )}
+          </div>
+        )}
       </div>
     </div>
   )

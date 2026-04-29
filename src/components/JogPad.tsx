@@ -1046,10 +1046,10 @@ export function SpindlePanel({ className, isTablet }: { className?: string; isTa
             )
           })()}
         </div>
-        <div className="flex flex-col p-3 gap-3">
+        <div className={`flex flex-col p-3 ${isTablet ? 'gap-2' : 'gap-3'}`}>
 
           <div className="flex items-center gap-2">
-            <span className={`${isTablet ? 'text-xl' : 'text-xs'} text-text-muted font-medium shrink-0`}>RPM</span>
+            <span className={`${isTablet ? 'text-base' : 'text-xs'} text-text-muted font-medium shrink-0`}>RPM</span>
             <input
               type="number"
               value={spindleTarget}
@@ -1066,7 +1066,7 @@ export function SpindlePanel({ className, isTablet }: { className?: string; isTa
               min={spindleMin}
               max={spindleMax}
               step={100}
-              className={`input-field font-mono text-right flex-1 ${isTablet ? 'py-3 text-2xl' : 'py-1.5 text-sm'}`}
+              className={`input-field font-mono text-right flex-1 ${isTablet ? 'py-2 text-xl' : 'py-1.5 text-sm'}`}
               placeholder="0"
             />
           </div>
@@ -1082,7 +1082,7 @@ export function SpindlePanel({ className, isTablet }: { className?: string; isTa
                     sendRealtime(0x99)
                   }
                 }}
-                className={`btn font-medium justify-center ${isTablet ? 'text-xl py-3' : 'text-xs py-2'} ${
+                className={`btn font-medium justify-center ${isTablet ? 'text-lg py-2' : 'text-xs py-2'} ${
                   spindleTarget === rpm
                     ? 'bg-accent/20 border-accent/60 text-accent'
                     : 'btn-ghost'
@@ -1102,9 +1102,9 @@ export function SpindlePanel({ className, isTablet }: { className?: string; isTa
                 sendRaw('M5')
                 setSpindleOverrideState('off')
               }}
-              className={`btn w-full justify-center bg-danger/20 hover:bg-danger/30 text-danger border-danger/50 ${isTablet ? 'h-16 text-xl' : ''}`}
+              className={`btn w-full justify-center bg-danger/20 hover:bg-danger/30 text-danger border-danger/50 ${isTablet ? 'h-12 text-lg' : ''}`}
             >
-              <Square className={`${isTablet ? 'w-5 h-5' : 'w-3.5 h-3.5'} shrink-0 fill-current`} />
+              <Square className={`${isTablet ? 'w-4 h-4' : 'w-3.5 h-3.5'} shrink-0 fill-current`} />
               Stop Spindle
             </button>
           ) : (
@@ -1113,9 +1113,9 @@ export function SpindlePanel({ className, isTablet }: { className?: string; isTa
                 sendRaw(`M3 S${spindleTarget}`)
                 setSpindleOverrideState('on')
               }}
-              className={`btn w-full gap-1.5 justify-center bg-ok/20 hover:bg-ok/30 text-ok border-ok/50 ${isTablet ? 'h-16 text-xl' : ''}`}
+              className={`btn w-full gap-1.5 justify-center bg-ok/20 hover:bg-ok/30 text-ok border-ok/50 ${isTablet ? 'h-12 text-lg' : ''}`}
             >
-              <Play className={`${isTablet ? 'w-5 h-5' : 'w-3.5 h-3.5'} shrink-0 fill-current`} />
+              <Play className={`${isTablet ? 'w-4 h-4' : 'w-3.5 h-3.5'} shrink-0 fill-current`} />
               Start Spindle (CW)
             </button>
           )}
@@ -1129,8 +1129,8 @@ export function OverridesPanel({ className, isTablet }: { className?: string; is
   const status = useMachineStore(s => s.status)
   return (
       <div className={`panel flex flex-col ${className ?? ''}`}>
-        <div className={`panel-header ${isTablet ? 'text-xl py-4' : ''}`}>Overrides</div>
-        <div className={`flex flex-col p-3 ${isTablet ? 'gap-4' : 'gap-2'}`}>
+        <div className={`panel-header ${isTablet ? 'text-lg py-3' : ''}`}>Overrides</div>
+        <div className={`flex flex-col p-3 ${isTablet ? 'gap-3' : 'gap-2'}`}>
           <OverrideRow label="Feed" value={status.feedOverride} isTablet={isTablet}
             onMinus={() => sendRealtime(0x92)} onReset={() => sendRealtime(0x90)} onPlus={() => sendRealtime(0x91)} />
           <OverrideRow label="Rapid" value={status.rapidOverride} maxValue={100} isTablet={isTablet}
