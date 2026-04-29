@@ -405,12 +405,8 @@ export function App() {
       {activeLayout === 'tablet' && <div className="flex-1 min-h-[0px] flex portrait:flex-col landscape:flex landscape:flex-row gap-3 p-3 overflow-y-auto landscape:overflow-hidden">
   
   <div className="flex flex-col gap-1 portrait:shrink-0 landscape:flex-1 landscape:basis-1/2 landscape:min-h-0 landscape:overflow-hidden">
-    <div className="flex flex-col landscape:flex-1 landscape:min-h-0 landscape:overflow-y-auto">
-      <DRO isTablet />
-    </div>
-    <div className="flex flex-col landscape:flex-1 landscape:min-h-0 landscape:overflow-y-auto">
-      <TabletJogPad />
-    </div>
+    <DRO isTablet />
+    <TabletJogPad />
   </div>
 
   <TabletAccordion tabletTab={tabletTab} setTabletTab={setTabletTab} />

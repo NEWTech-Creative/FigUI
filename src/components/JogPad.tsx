@@ -1145,11 +1145,43 @@ export function OverridesPanel({ className, isTablet }: { className?: string; is
 export function TabletJogPad() {
   const status = useMachineStore(s => s.status)
   const units = useMachineStore(s => s.units)
-  
-  const [xyFeed] = useState(() => loadPersistedJogFeed('jog.xyFeed', 1000))
-  const [zFeed]   = useState(() => loadPersistedJogFeed('jog.zFeed', 200))
+  const controllerSettings = useMachineStore(s => s.controllerSettings)
+
+  const [xyFeed, setXyFeed] = useState(() => loadPersistedJogFeed('jog.xyFeed', 1000))
+  const [zFeed, setZFeed]   = useState(() => loadPersistedJogFeed('jog.zFeed', 200))
   const [continuous, setContinuous] = useState(false)
   const [stepSize, setStepSize] = useState(1)
+  const [feedModal, setFeedModal] = useState<'xy' | 'z' | null>(null)
+  const prevUnitsRef = useRef(units)
+
+  const xyFeedMax = controllerSettings.maxRateX != null && controllerSettings.maxRateY != null
+    ? Math.min(controllerSettings.maxRateX, controllerSettings.maxRateY)
+    : controllerSettings.maxRateX ?? controllerSettings.maxRateY
+  const zFeedMax = controllerSettings.maxRateZ
+  const linearFeedPresetValues = linearFeedPresets(units)
+  const xyFeedPresetValues = buildLimitedFeedPresets(linearFeedPresetValues, xyFeedMax)
+  const zFeedPresetValues  = buildLimitedFeedPresets(linearFeedPresetValues, zFeedMax)
+
+  useEffect(() => { localStorage.setItem('jog.xyFeed', JSON.stringify(xyFeed)) }, [xyFeed])
+  useEffect(() => { localStorage.setItem('jog.zFeed',  JSON.stringify(zFeed))  }, [zFeed])
+
+  useEffect(() => {
+    if (prevUnitsRef.current === units) return
+    const presets = linearFeedPresets(units)
+    setXyFeed(prev => snapToNearestPreset(prev, presets))
+    setZFeed(prev  => snapToNearestPreset(prev, presets))
+    prevUnitsRef.current = units
+  }, [units])
+
+  useEffect(() => {
+    if (xyFeedMax == null || !Number.isFinite(xyFeedMax) || xyFeedMax <= 0) return
+    setXyFeed(prev => Math.min(prev, xyFeedMax))
+  }, [xyFeedMax])
+
+  useEffect(() => {
+    if (zFeedMax == null || !Number.isFinite(zFeedMax) || zFeedMax <= 0) return
+    setZFeed(prev => Math.min(prev, zFeedMax))
+  }, [zFeedMax])
 
   const canJog = status.state === 'Idle' || status.state === 'Jog'
   const jobRunning = status.state === 'Run' || status.state === 'Hold'
@@ -1170,9 +1202,10 @@ export function TabletJogPad() {
   if (jobRunning) return null
 
   return (
+    <>
     <div className="panel flex flex-col flex-1 min-h-0 portrait:flex-none portrait:h-[440px]">
       <div className="panel-header flex flex-row items-stretch justify-between shrink-0 !p-0 border-b border-border overflow-hidden">
-        <div className="flex items-center px-4 py-3 font-bold text-xl tracking-wider border-r border-border">JOG</div>
+        <div className="flex items-center justify-center w-16 py-3 font-bold text-xl tracking-wider border-r border-border shrink-0">JOG</div>
         <div className="flex flex-1 items-stretch divide-x divide-border bg-surface">
           {steps.map(s => (
             <button
@@ -1191,54 +1224,144 @@ export function TabletJogPad() {
           </button>
         </div>
       </div>
-      <div className="p-2 sm:p-4 portrait:p-5 flex-1 min-h-0 flex gap-4 sm:gap-8 portrait:gap-6 justify-center items-center overflow-hidden">
-        <div className="grid grid-cols-3 grid-rows-3 gap-2 sm:gap-4 portrait:gap-4 landscape:h-full landscape:max-h-[16rem] portrait:h-[320px] portrait:max-h-none aspect-square">
-          <div />
+      <div className="flex flex-row flex-1 min-h-0 overflow-hidden">
+
+        <div className="flex flex-col w-16 border-r border-border py-2 shrink-0">
           <button
-            onPointerDown={e => { alwaysCapturePointer(e); startYp(); }}
-            onPointerUp={stopYp} onPointerCancel={stopYp} onPointerLeave={stopYp}
-            className="flex items-center justify-center w-full h-full bg-elevated border border-border rounded-xl text-xl sm:text-3xl font-bold text-ok shadow-md active:scale-95 active:shadow-inner transition-transform"
-          >Y+</button>
-          <div />
-          <button
-            onPointerDown={e => { alwaysCapturePointer(e); startXm(); }}
-            onPointerUp={stopXm} onPointerCancel={stopXm} onPointerLeave={stopXm}
-            className="flex items-center justify-center w-full h-full bg-elevated border border-border rounded-xl text-xl sm:text-3xl font-bold text-danger shadow-md active:scale-95 active:shadow-inner transition-transform"
-          >X-</button>
-          <button
-            onClick={() => sendRealtime(0x85)}
-            className="flex items-center justify-center w-full h-full bg-surface border border-border rounded-xl shadow-md active:scale-95 transition-transform"
+            onClick={() => setFeedModal('xy')}
+            className="flex flex-col items-center justify-center gap-3 flex-1 rounded-lg hover:bg-accent/5 transition-all group mx-1"
           >
-            <Square className="w-8 h-8 sm:w-10 sm:h-10 text-danger fill-current" />
+            <span className="text-xl font-extrabold text-text-muted tracking-wider leading-none">XY</span>
+            <div className="flex items-center">
+              <span
+                className="font-mono text-2xl font-semibold text-text-primary leading-none"
+                style={{ writingMode: 'vertical-rl', transform: 'rotate(180deg)' }}
+              >
+                {formatDisplayNumber(mmToDisplay(xyFeed, units), 0)}
+              </span>
+              <span
+                className="text-xl text-text-dim leading-none"
+                style={{ writingMode: 'vertical-rl', transform: 'rotate(180deg)' }}
+              >{feedUnitLabel(units)}</span>
+            </div>
           </button>
+          <div className="h-px bg-border mx-2 shrink-0" />
           <button
-            onPointerDown={e => { alwaysCapturePointer(e); startXp(); }}
-            onPointerUp={stopXp} onPointerCancel={stopXp} onPointerLeave={stopXp}
-            className="flex items-center justify-center w-full h-full bg-elevated border border-border rounded-xl text-xl sm:text-3xl font-bold text-danger shadow-md active:scale-95 active:shadow-inner transition-transform"
-          >X+</button>
-          <div />
-          <button
-            onPointerDown={e => { alwaysCapturePointer(e); startYm(); }}
-            onPointerUp={stopYm} onPointerCancel={stopYm} onPointerLeave={stopYm}
-            className="flex items-center justify-center w-full h-full bg-elevated border border-border rounded-xl text-xl sm:text-3xl font-bold text-ok shadow-md active:scale-95 active:shadow-inner transition-transform"
-          >Y-</button>
-          <div />
+            onClick={() => setFeedModal('z')}
+            className="flex flex-col items-center justify-center gap-3 flex-1 rounded-lg hover:bg-accent/5 transition-all group mx-1"
+          >
+            <span className="text-xl font-extrabold text-text-muted tracking-wider leading-none">Z</span>
+            <div className="flex items-center">
+              <span
+                className="font-mono text-2xl font-semibold text-text-primary leading-none"
+                style={{ writingMode: 'vertical-rl', transform: 'rotate(180deg)' }}
+              >
+                {formatDisplayNumber(mmToDisplay(zFeed, units), 0)}
+              </span>
+              <span
+                className="text-xl text-text-dim leading-none"
+                style={{ writingMode: 'vertical-rl', transform: 'rotate(180deg)' }}
+              >{feedUnitLabel(units)}</span>
+            </div>
+          </button>
         </div>
-        <div className="flex flex-col gap-2 sm:gap-4 portrait:gap-4 landscape:h-full landscape:max-h-[16rem] portrait:h-[320px] portrait:max-h-none justify-between aspect-[1/3]">
-          <button
-            onPointerDown={e => { alwaysCapturePointer(e); startZp(); }}
-            onPointerUp={stopZp} onPointerCancel={stopZp} onPointerLeave={stopZp}
-            className="flex flex-1 items-center justify-center w-full bg-elevated border border-border rounded-xl text-xl sm:text-3xl font-bold text-info shadow-md active:scale-95 active:shadow-inner transition-transform"
-          >Z+</button>
-          <div className="flex-1" />
-          <button
-            onPointerDown={e => { alwaysCapturePointer(e); startZm(); }}
-            onPointerUp={stopZm} onPointerCancel={stopZm} onPointerLeave={stopZm}
-            className="flex flex-1 items-center justify-center w-full bg-elevated border border-border rounded-xl text-xl sm:text-3xl font-bold text-info shadow-md active:scale-95 active:shadow-inner transition-transform"
-          >Z-</button>
+
+        {/* Jog controls */}
+        <div className="p-2 sm:p-4 portrait:p-5 landscape:p-6 flex-1 min-h-0 flex justify-center items-center overflow-hidden">
+          <div className="flex flex-row items-stretch justify-center portrait:h-[320px] portrait:gap-6 landscape:gap-5 landscape:w-full landscape:aspect-[7/5] landscape:max-h-full">
+          <div className="grid grid-cols-3 grid-rows-3 gap-2 sm:gap-4 portrait:gap-4 landscape:shrink-0 aspect-square">
+            <div />
+            <button
+              onPointerDown={e => { alwaysCapturePointer(e); startYp(); }}
+              onPointerUp={stopYp} onPointerCancel={stopYp} onPointerLeave={stopYp}
+              className="flex items-center justify-center w-full h-full bg-elevated border border-border rounded-xl text-xl sm:text-3xl font-bold text-ok shadow-md active:scale-95 active:shadow-inner transition-transform"
+            >Y+</button>
+            <div />
+            <button
+              onPointerDown={e => { alwaysCapturePointer(e); startXm(); }}
+              onPointerUp={stopXm} onPointerCancel={stopXm} onPointerLeave={stopXm}
+              className="flex items-center justify-center w-full h-full bg-elevated border border-border rounded-xl text-xl sm:text-3xl font-bold text-danger shadow-md active:scale-95 active:shadow-inner transition-transform"
+            >X-</button>
+            <button
+              onClick={() => sendRealtime(0x85)}
+              className="flex items-center justify-center w-full h-full bg-surface border border-border rounded-xl shadow-md active:scale-95 transition-transform"
+            >
+              <Square className="w-8 h-8 sm:w-10 sm:h-10 text-danger fill-current" />
+            </button>
+            <button
+              onPointerDown={e => { alwaysCapturePointer(e); startXp(); }}
+              onPointerUp={stopXp} onPointerCancel={stopXp} onPointerLeave={stopXp}
+              className="flex items-center justify-center w-full h-full bg-elevated border border-border rounded-xl text-xl sm:text-3xl font-bold text-danger shadow-md active:scale-95 active:shadow-inner transition-transform"
+            >X+</button>
+            <div />
+            <button
+              onPointerDown={e => { alwaysCapturePointer(e); startYm(); }}
+              onPointerUp={stopYm} onPointerCancel={stopYm} onPointerLeave={stopYm}
+              className="flex items-center justify-center w-full h-full bg-elevated border border-border rounded-xl text-xl sm:text-3xl font-bold text-ok shadow-md active:scale-95 active:shadow-inner transition-transform"
+            >Y-</button>
+            <div />
+          </div>
+          <div className="flex flex-col gap-2 sm:gap-4 portrait:gap-4 landscape:shrink-0 justify-between aspect-[1/3]">
+            <button
+              onPointerDown={e => { alwaysCapturePointer(e); startZp(); }}
+              onPointerUp={stopZp} onPointerCancel={stopZp} onPointerLeave={stopZp}
+              className="flex flex-1 items-center justify-center w-full bg-elevated border border-border rounded-xl text-xl sm:text-3xl font-bold text-info shadow-md active:scale-95 active:shadow-inner transition-transform"
+            >Z+</button>
+            <div className="flex-1" />
+            <button
+              onPointerDown={e => { alwaysCapturePointer(e); startZm(); }}
+              onPointerUp={stopZm} onPointerCancel={stopZm} onPointerLeave={stopZm}
+              className="flex flex-1 items-center justify-center w-full bg-elevated border border-border rounded-xl text-xl sm:text-3xl font-bold text-info shadow-md active:scale-95 active:shadow-inner transition-transform"
+            >Z-</button>
+          </div>
+          </div>
         </div>
+
       </div>
     </div>
+
+    {/* Feed preset modal */}
+    {feedModal && (
+      <div
+        className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm"
+        onClick={() => setFeedModal(null)}
+      >
+        <div
+          className="bg-surface border border-border rounded-2xl shadow-2xl p-8 w-[480px]"
+          onClick={e => e.stopPropagation()}
+        >
+          <div className="flex items-center justify-between mb-6">
+            <span className="text-3xl font-bold">
+              {feedModal === 'xy' ? 'XY' : 'Z'} Feedrate
+            </span>
+            <span className="text-2xl text-text-muted font-mono">{feedUnitLabel(units)}</span>
+          </div>
+          <div className="grid grid-cols-2 gap-4">
+            {(feedModal === 'xy' ? xyFeedPresetValues : zFeedPresetValues).map(preset => {
+              const active = preset === (feedModal === 'xy' ? xyFeed : zFeed)
+              return (
+                <button
+                  key={preset}
+                  onClick={() => {
+                    if (feedModal === 'xy') setXyFeed(preset)
+                    else setZFeed(preset)
+                    setFeedModal(null)
+                  }}
+                  className={`btn py-6 text-3xl font-mono justify-center ${
+                    active
+                      ? 'bg-accent/20 border-accent/60 text-accent'
+                      : 'btn-ghost'
+                  }`}
+                >
+                  {formatDisplayNumber(mmToDisplay(preset, units), 0)}
+                </button>
+              )
+            })}
+          </div>
+        </div>
+      </div>
+    )}
+    </>
   )
 }
 
