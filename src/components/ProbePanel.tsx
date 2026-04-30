@@ -32,7 +32,7 @@ interface ParamRowProps {
 function ParamRow({ label, value, onChange, unit, step = 0.1, min = 0, isTablet }: ParamRowProps) {
   return (
     <div className="flex items-center justify-between gap-3">
-      <span className={`text-text-muted shrink-0 ${isTablet ? 'text-xl w-36' : 'text-xs w-24'}`}>{label}</span>
+      <span className={`text-text-muted font-semibold shrink-0 ${isTablet ? 'text-xl w-36' : 'text-lg w-24'}`}>{label}</span>
       <div className="flex items-center gap-1.5">
         <input
           type="number"
@@ -40,7 +40,7 @@ function ParamRow({ label, value, onChange, unit, step = 0.1, min = 0, isTablet 
           onChange={e => onChange(Number(e.target.value))}
           step={step}
           min={min}
-          className={`input-field font-mono text-right ${isTablet ? 'w-36 py-2 text-xl' : 'w-24 py-1 text-xs'}`}
+          className={`input-field font-mono text-right ${isTablet ? 'w-36 py-2 text-xl' : 'w-36 py-1 text-xl'}`}
         />
         <span className={`text-text-dim shrink-0 ${isTablet ? 'text-lg w-20' : 'text-xs w-12'}`}>{unit}</span>
       </div>
@@ -87,7 +87,7 @@ export function ProbePanel({ isTablet }: { isTablet?: boolean }) {
       >
         <div className="flex items-center gap-2">
           <Target size={isTablet ? 20 : 13} />
-          <span className={isTablet ? 'text-xl' : ''}>Tool Probe</span>
+          <span className={'text-lg font-semibold'}>Tool Probe</span>
         </div>
         <ChevronDown
           size={isTablet ? 20 : 13}
@@ -146,10 +146,6 @@ export function ProbePanel({ isTablet }: { isTablet?: boolean }) {
             {probing ? 'Probing…' : canProbe ? 'Probe Z' : 'Machine not Idle'}
           </button>
 
-          <p className={`text-text-dim leading-relaxed ${isTablet ? 'text-sm' : 'text-[10px]'}`}>
-            G38.2 probe cycle. Sets Z=0 at workpiece surface accounting for plate thickness.
-            Ensure tip is above plate before probing.
-          </p>
         </div>
       )}
     </div>

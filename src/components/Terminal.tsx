@@ -96,7 +96,7 @@ export function Terminal() {
   return (
     <div className="flex flex-col h-full">
       <div className="panel-header justify-between">
-        <span>Terminal</span>
+        <span className='text-base font-semibold'>Terminal</span>
         <div className="flex items-center gap-2">
           <label className="flex items-center gap-1.5 cursor-pointer">
             <input

@@ -308,7 +308,7 @@ export function App() {
         <button
           key={tab.id}
           onClick={() => setSidebarTab(tab.id)}
-          className={`flex-1 py-2.5 text-sm font-medium uppercase tracking-wide
+          className={`flex-1 py-2.5 text-xl font-medium uppercase tracking-wide
                       transition-colors border-b-2 -mb-px ${
             sidebarTab === tab.id
               ? 'border-accent text-accent'

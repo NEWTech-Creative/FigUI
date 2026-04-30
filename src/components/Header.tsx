@@ -45,15 +45,15 @@ export function Header({ onSettingsClick, onAboutClick, isTablet }: Props) {
 
       {status.state === 'Alarm' ? (
         <button
-          className={`tag ${stateBg(status.state)} ${stateColor(status.state)} cursor-pointer hover:opacity-80 active:opacity-60`}
+          className={`tag ${stateBg(status.state)} ${stateColor(status.state)} cursor-pointer hover:opacity-80 active:opacity-60 text-base`}
           onClick={() => sendRaw('$X')}
           title="Click to clear alarm ($X)"
         >
-          <span className="w-1.5 h-1.5 rounded-full bg-current" />
+          <span className="w-1.5 h-1.5 rounded-full bg-current text-sm" />
           {status.state}
         </button>
       ) : (
-        <div className={`tag ${stateBg(status.state)} ${stateColor(status.state)}`}>
+        <div className={`tag ${stateBg(status.state)} ${stateColor(status.state)} text-sm`}>
           <span className={`w-1.5 h-1.5 rounded-full ${
             status.state === 'Run' || status.state === 'Jog' ? 'bg-current animate-pulse' : 'bg-current'
           }`} />
@@ -76,7 +76,7 @@ export function Header({ onSettingsClick, onAboutClick, isTablet }: Props) {
 
       <div className="ml-auto flex items-center gap-1">
         {connected ? (
-          <div className={`flex items-center gap-1 ${isTablet ? 'text-sm' : 'text-xs'} text-ok mr-2`}>
+          <div className={`flex items-center gap-1 text-base text-ok mr-2`}>
             <Wifi size={isTablet ? 18 : 14} />
             <span className="hidden sm:inline">Connected</span>
           </div>
@@ -87,7 +87,7 @@ export function Header({ onSettingsClick, onAboutClick, isTablet }: Props) {
         )}
 
         <button
-          className={`btn-ghost ${isTablet ? 'px-3 py-2 text-sm' : 'px-2 py-1.5 text-xs'}`}
+          className={`btn-ghost ${isTablet ? 'px-3 py-2' : 'px-2 py-1.5'} text-base`}
           onClick={handleSoftReset}
           title="Soft Reset"
         >
@@ -107,7 +107,7 @@ export function Header({ onSettingsClick, onAboutClick, isTablet }: Props) {
           onClick={toggleFullscreen}
           title={isFullscreen ? 'Exit fullscreen' : 'Enter fullscreen'}
         >
-          {isFullscreen ? <Minimize size={isTablet ? 18 : 14} /> : <Maximize size={isTablet ? 18 : 14} />}
+          {isFullscreen ? <Minimize size={18} /> : <Maximize size={18} />}
         </button>
 
         <button
@@ -115,7 +115,7 @@ export function Header({ onSettingsClick, onAboutClick, isTablet }: Props) {
           onClick={onAboutClick}
           title="About"
         >
-          <HelpCircle size={isTablet ? 18 : 14} />
+          <HelpCircle size={18} />
         </button>
 
         <button
@@ -123,7 +123,7 @@ export function Header({ onSettingsClick, onAboutClick, isTablet }: Props) {
           onClick={onSettingsClick}
           title="Settings"
         >
-          <Settings size={isTablet ? 18 : 14} />
+          <Settings size={18} />
         </button>
       </div>
     </header>

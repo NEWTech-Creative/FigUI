@@ -1700,7 +1700,7 @@ export function GCodeViewer({ className, isTablet }: Props) {
           {(() => {
             const btnCls = isTablet
               ? 'flex items-center gap-1.5 px-3 py-1.5 rounded text-base transition-colors'
-              : 'flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] transition-colors'
+              : 'flex items-center gap-1 px-1.5 py-0.5 rounded text-base transition-colors'
             const iconSize = isTablet ? 16 : 11
             return (<>
           <button
@@ -1859,7 +1859,7 @@ export function GCodeViewer({ className, isTablet }: Props) {
         )}
 
         {!model && !loading && (
-          <div className="absolute inset-0 flex flex-col items-center justify-center text-text-dim text-xs gap-2">
+          <div className="absolute inset-0 flex flex-col items-center justify-center text-text-dim text-2xl gap-2">
             <Eye size={24} className="opacity-30" />
             <span>Click a G-code file to preview</span>
           </div>
@@ -1988,21 +1988,21 @@ export function GCodeViewer({ className, isTablet }: Props) {
         <div className="flex gap-1.5 sm:flex-[6]">
           <button
             onClick={() => { sendRealtime(0xA0); setCoolantState('mist') }}
-            className={`btn gap-1.5 ${isTablet ? 'text-xl py-3' : 'text-xs'} justify-center flex-1 ${coolantState === 'mist' ? 'border-accent/50 text-accent' : 'btn-ghost'}`}
+            className={`btn gap-1.5 ${isTablet ? 'text-xl py-3' : 'text-lg'} justify-center flex-1 ${coolantState === 'mist' ? 'border-accent/50 text-accent' : 'btn-ghost'}`}
           >
             <CloudDrizzle size={isTablet ? 18 : 13} />
             Mist
           </button>
           <button
             onClick={() => { sendRealtime(0xA1); setCoolantState('flood') }}
-            className={`btn gap-1.5 ${isTablet ? 'text-xl py-3' : 'text-xs'} justify-center flex-1 ${coolantState === 'flood' ? 'border-info/50 text-info' : 'btn-ghost'}`}
+            className={`btn gap-1.5 ${isTablet ? 'text-xl py-3' : 'text-lg'} justify-center flex-1 ${coolantState === 'flood' ? 'border-info/50 text-info' : 'btn-ghost'}`}
           >
             <Waves size={isTablet ? 18 : 13} />
             Flood
           </button>
           <button
             onClick={() => { sendRaw('M9'); setCoolantState('off') }}
-            className={`btn gap-1.5 ${isTablet ? 'text-xl py-3' : 'text-xs'} justify-center flex-1 ${coolantState === 'off' ? 'border-danger/50 text-danger' : 'btn-ghost'}`}
+            className={`btn gap-1.5 ${isTablet ? 'text-xl py-3' : 'text-lg'} justify-center flex-1 ${coolantState === 'off' ? 'border-danger/50 text-danger' : 'btn-ghost'}`}
           >
             <PowerOff size={isTablet ? 18 : 13} />
             Off

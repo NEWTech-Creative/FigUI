@@ -145,13 +145,13 @@ export function DRO({ isTablet = false }: { isTablet?: boolean }) {
   return (
     <div className="panel flex flex-col">
       <div className="panel-header justify-between">
-        <span>Position</span>
+        <span className='text-lg font-bold'>Position</span>
         <div className="flex items-center gap-0.5 bg-elevated rounded-sm border border-border p-0.5">
           {(['WPos', 'MPos', 'Both'] as const).map(m => (
             <button
               key={m}
               onClick={() => setPositionMode(m)}
-              className={`px-2.5 py-0.5 text-xs rounded-sm transition-colors ${
+              className={`px-2.5 py-0.5 text-base rounded-sm transition-colors ${
                 positionMode === m
                   ? 'bg-surface border border-border text-text-primary shadow-sm'
                   : 'text-text-muted hover:text-text-primary'
@@ -219,7 +219,7 @@ export function DRO({ isTablet = false }: { isTablet?: boolean }) {
                            border border-border text-text-muted font-bold
                            hover:text-accent hover:border-accent/50 hover:bg-accent/5
                            disabled:opacity-45 disabled:cursor-not-allowed disabled:hover:text-text-muted disabled:hover:border-border disabled:hover:bg-transparent
-                           transition-all duration-100 ${tabletBtnSize} ${isTablet ? 'text-xl' : 'text-xs'}`}
+                           transition-all duration-100 ${tabletBtnSize} ${isTablet ? 'text-xl' : 'text-base'}`}
                 onClick={() => zeroAxis(ax)}
                 title={`Zero ${ax}`}
                 disabled={areAxisButtonsDisabled}
@@ -265,7 +265,7 @@ export function DRO({ isTablet = false }: { isTablet?: boolean }) {
       <div className="border-t border-border px-3 py-2 flex gap-2">
         {!shouldHideMotionControls && !isPendingAxisActionInMotion && (
           <button
-            className={`btn btn-warn flex-1 font-bold ${isTablet && isPortrait ? 'h-20 text-xl' : isTablet ? 'h-14 text-lg' : 'h-7 text-xs'}`}
+            className={`btn btn-warn flex-1 font-bold ${isTablet && isPortrait ? 'h-20 text-xl' : isTablet ? 'h-14 text-lg' : 'h-7 text-base'}`}
             onClick={zeroAll}
             title="Set current position as work zero for all axes"
             disabled={areAxisButtonsDisabled}
@@ -275,7 +275,7 @@ export function DRO({ isTablet = false }: { isTablet?: boolean }) {
         )}
         {!shouldHideMotionControls && !isPendingAxisActionInMotion && (
           <button
-            className={`btn btn-ghost flex-1 font-bold flex items-center justify-center gap-1.5 ${isTablet && isPortrait ? 'h-20 text-xl' : isTablet ? 'h-14 text-lg' : 'h-7 text-xs'}`}
+            className={`btn btn-ghost flex-1 font-bold flex items-center justify-center gap-1.5 ${isTablet && isPortrait ? 'h-20 text-xl' : isTablet ? 'h-14 text-lg' : 'h-7 text-base'}`}
             onClick={homeAll}
             title="Home all axes"
             disabled={areAxisButtonsDisabled}
@@ -308,32 +308,34 @@ export function DRO({ isTablet = false }: { isTablet?: boolean }) {
       </div>
 
       {status.state === 'Alarm' && (
-        <div className="border-t-2 border-danger bg-danger/10 px-3 py-3 flex flex-col gap-2">
-          <div className="flex items-start gap-2.5">
-            <TriangleAlert size={20} className="text-danger mt-0.5 shrink-0" />
+        <div className="border-t-2 border-danger bg-danger/10 px-3 py-3 flex gap-3">
+          <TriangleAlert className="text-danger w-20 h-20" />
+          <div className="flex flex-col gap-2 flex-1 min-w-0">
             <div className="flex flex-col gap-1 min-w-0">
-              <span className="text-sm font-black text-danger uppercase tracking-widest leading-none">
+              <span className="text-2xl font-black text-danger uppercase tracking-widest leading-none">
                 {status.alarmCode != null ? `Alarm ${status.alarmCode}` : 'Alarm'}
               </span>
-              <span className="text-sm font-semibold text-text-primary leading-snug">
+
+              <span className="text-2xl font-semibold text-text-primary leading-snug">
                 {status.alarmName
                   ?? (status.alarmCode != null
                     ? (ALARM_MESSAGES[status.alarmCode] ?? `Unknown alarm code ${status.alarmCode}`)
                     : 'Machine is in alarm state')}
               </span>
             </div>
+
+            <button
+              className="btn btn-danger w-full h-8 text-2xl font-bold"
+              onClick={() => sendRaw('$X')}
+            >
+              Clear Alarm
+            </button>
           </div>
-          <button
-            className="btn btn-danger w-full h-8 text-xs font-bold"
-            onClick={() => sendRaw('$X')}
-          >
-            Clear Alarm
-          </button>
         </div>
       )}
 
       {/* Feed / Spindle readout */}
-      <div className={`border-t border-border px-3 py-2 flex justify-between font-mono text-text-muted ${isTablet ? 'text-xl' : 'text-xs'}`}>
+      <div className={`border-t border-border px-3 py-2 flex justify-between font-mono text-text-muted ${isTablet ? 'text-xl' : 'text-base'}`}>
         <div className="flex items-center gap-1.5">
           <span>F</span>
           <span className="text-text-primary">{formatFeedRate(status.feed, units)}</span>

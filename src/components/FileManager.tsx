@@ -90,7 +90,7 @@ function FileRow({ entry, path, fs, canLoadGcode, onNavigate, onRefresh, onEdit,
       {renaming ? (
         <input
           ref={renameRef}
-          className={`flex-1 input-field py-0.5 ${isTablet ? 'text-lg' : 'text-sm'}`}
+          className={`flex-1 input-field py-0.5 text-lg`}
           value={newName}
           onChange={e => setNewName(e.target.value)}
           onKeyDown={e => {
@@ -102,14 +102,14 @@ function FileRow({ entry, path, fs, canLoadGcode, onNavigate, onRefresh, onEdit,
         />
       ) : entry.isDir ? (
         <button
-          className={`flex-1 text-left ${isTablet ? 'text-lg' : 'text-sm'} text-text-primary hover:text-accent truncate`}
+          className={`flex-1 text-left ${isTablet ? 'text-2xl' : 'text-xl'} text-text-primary hover:text-accent truncate`}
           onClick={() => onNavigate(`${fullPath}${entry.name}`)}
         >
           {entry.name}
         </button>
       ) : isGcode(entry.name) ? (
         <button
-          className={`flex-1 text-left ${isTablet ? 'text-lg' : 'text-sm'} truncate ${canLoadGcode ? 'text-text-primary hover:text-accent' : 'text-text-dim cursor-not-allowed'}`}
+          className={`flex-1 text-left ${isTablet ? 'text-2xl' : 'text-xl'} truncate ${canLoadGcode ? 'text-text-primary hover:text-accent' : 'text-text-dim cursor-not-allowed'}`}
           onClick={() => {
             if (!canLoadGcode) return
             window.dispatchEvent(new CustomEvent('gcode:load', { detail: fullName }))
@@ -119,13 +119,13 @@ function FileRow({ entry, path, fs, canLoadGcode, onNavigate, onRefresh, onEdit,
           {entry.name}
         </button>
       ) : (
-        <span className={`flex-1 ${isTablet ? 'text-lg' : 'text-sm'} text-text-primary truncate`}>{entry.name}</span>
+        <span className={`flex-1 ${isTablet ? 'text-2xl' : 'text-xl'} text-text-primary truncate`}>{entry.name}</span>
       )}
 
       {!renaming && (
         <div className={`${isTablet ? 'w-36' : 'w-28'} shrink-0 flex items-center justify-end`}>
           {!entry.isDir && (
-            <span className={`${isTablet ? 'text-sm' : 'text-xs'} text-text-dim font-mono text-right group-hover:hidden`}>{fmtSize(entry.size)}</span>
+            <span className={`${isTablet ? 'text-sm' : 'text-base'} text-text-dim font-mono text-right group-hover:hidden`}>{fmtSize(entry.size)}</span>
           )}
           <div className="hidden group-hover:flex items-center gap-1">
             {!entry.isDir && isEditable(entry.name) && (
@@ -305,7 +305,7 @@ export function FileManager({ isTablet }: { isTablet?: boolean }) {
             <button
               key={id}
               onClick={() => switchFs(id)}
-              className={`flex-1 flex items-center justify-center gap-1.5 ${isTablet ? 'py-3 text-lg' : 'py-2 text-sm'} font-medium
+              className={`flex-1 flex items-center justify-center gap-1.5 ${isTablet ? 'py-3 text-lg' : 'py-2 text-base'} font-medium
                           uppercase tracking-wide transition-colors border-b-2 -mb-px ${
                 fs === id
                   ? 'border-accent text-accent'
@@ -375,7 +375,7 @@ export function FileManager({ isTablet }: { isTablet?: boolean }) {
         <div className="flex items-center gap-2 px-3 py-2 bg-elevated border-b border-border">
           <FilePlus size={13} className="text-text-dim shrink-0" />
           <input
-            className="input-field flex-1 py-1 text-xs"
+            className="input-field flex-1 py-1 text-base"
             placeholder="Filename (e.g. job.nc, config.yaml)"
             value={newFileName}
             onChange={e => setNewFileName(e.target.value)}
@@ -385,7 +385,7 @@ export function FileManager({ isTablet }: { isTablet?: boolean }) {
             }}
             autoFocus
           />
-          <button className="btn-primary text-xs px-2 py-1" onClick={createNewFile}>Create</button>
+          <button className="btn-primary text-base px-2 py-1" onClick={createNewFile}>Create</button>
           <button className="text-text-muted hover:text-text-primary" onClick={() => setShowNewFile(false)}>
             <X size={13} />
           </button>
@@ -396,14 +396,14 @@ export function FileManager({ isTablet }: { isTablet?: boolean }) {
         <div className="flex items-center gap-2 px-3 py-2 bg-elevated border-b border-border">
           <FolderPlus size={13} className="text-text-dim shrink-0" />
           <input
-            className="input-field flex-1 py-1 text-xs"
+            className="input-field flex-1 py-1 text-base"
             placeholder="Folder name"
             value={newDirName}
             onChange={e => setNewDirName(e.target.value)}
             onKeyDown={e => e.key === 'Enter' && handleCreateDir()}
             autoFocus
           />
-          <button className="btn-primary text-xs px-2 py-1" onClick={handleCreateDir}>Create</button>
+          <button className="btn-primary text-base px-2 py-1" onClick={handleCreateDir}>Create</button>
           <button className="text-text-muted hover:text-text-primary" onClick={() => setShowNewDir(false)}>
             <X size={13} />
           </button>
@@ -412,7 +412,7 @@ export function FileManager({ isTablet }: { isTablet?: boolean }) {
 
       {uploading && (
         <div className="px-3 py-2 bg-info/5 border-b border-info/20">
-          <div className="flex justify-between text-xs text-info mb-1">
+          <div className="flex justify-between text-base text-info mb-1">
             <span>Uploading…</span>
             <span>{uploadPct}%</span>
           </div>
@@ -424,13 +424,13 @@ export function FileManager({ isTablet }: { isTablet?: boolean }) {
 
       <div className="flex-1 overflow-y-auto min-h-0">
         {error && (
-          <div className="m-3 p-3 rounded-sm bg-danger/10 border border-danger/30 text-danger text-xs">
+          <div className="m-3 p-3 rounded-sm bg-danger/10 border border-danger/30 text-danger text-base">
             {error}
           </div>
         )}
 
         {loading && !result && (
-          <div className="flex items-center justify-center h-24 text-text-muted text-xs">
+          <div className="flex items-center justify-center h-24 text-text-muted text-base">
             <RefreshCw size={14} className="animate-spin mr-2" /> Loading…
           </div>
         )}
@@ -465,14 +465,14 @@ export function FileManager({ isTablet }: { isTablet?: boolean }) {
         ))}
 
         {result && !result.files?.length && (
-          <div className="flex items-center justify-center h-24 text-text-muted text-xs">
+          <div className="flex items-center justify-center h-24 text-text-muted text-xl">
             Empty directory
           </div>
         )}
       </div>
 
       {result && (
-        <div className="border-t border-border px-3 py-2 flex items-center gap-2 text-xs text-text-muted">
+        <div className="border-t border-border px-3 py-2 flex items-center gap-2 text-base text-text-muted">
           <HardDrive size={12} />
           <div className="flex-1">
             <div className="flex justify-between mb-1">

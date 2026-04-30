@@ -478,7 +478,7 @@ function OverrideRow({ label, value, maxValue = 200, onMinus, onReset, onPlus, i
   const color = value > 100 ? 'var(--ok)' : value < 100 ? 'var(--warn)' : 'var(--accent)'
   return (
     <div className={`flex items-center ${isTablet ? 'gap-3 py-2' : 'gap-1.5'}`}>
-      <span className={`text-text-muted font-medium shrink-0 ${isTablet ? 'text-xl w-24' : 'text-xs w-14'}`}>{label}</span>
+      <span className={`text-text-muted ${isTablet ? 'font-bold' : 'font-medium'} shrink-0 ${isTablet ? 'text-xl w-20' : 'text-lg w-16 pr-2'}`}>{label}</span>
       <button className={`${isTablet ? 'w-12 h-12 rounded-lg' : 'w-6 h-6 rounded'} border border-border text-text-muted hover:text-text-primary
                          hover:bg-elevated flex items-center justify-center`} onClick={onReset} title="Reset to 100%">
         <RotateCcw className={isTablet ? 'w-5 h-5' : 'w-3 h-3'} />
@@ -489,7 +489,7 @@ function OverrideRow({ label, value, maxValue = 200, onMinus, onReset, onPlus, i
         <div className={`flex-1 bg-elevated rounded-full overflow-hidden ${isTablet ? 'h-6' : 'h-3'}`}>
           <div className="h-full rounded-full transition-all" style={{ width: `${(pct / maxValue) * 100}%`, background: color }} />
         </div>
-        <span className={`font-mono text-center shrink-0 ${isTablet ? 'text-xl w-20' : 'text-xs w-10'}`} style={{ color }}>{value}%</span>
+        <span className={`font-mono text-center shrink-0 ${isTablet ? 'text-xl w-20' : 'text-base w-10'}`} style={{ color }}>{value}%</span>
       </div>
       <button className={`${isTablet ? 'w-12 h-12 rounded-lg text-2xl' : 'w-6 h-6 rounded text-sm'} border border-border text-text-muted hover:text-text-primary
                          hover:bg-elevated flex items-center justify-center leading-none`} onClick={onPlus}>+</button>
@@ -527,13 +527,13 @@ function FeedButton({
     <div ref={ref} className="relative flex-1 min-w-0">
       <button
         onClick={() => setOpen(o => !o)}
-        className={`w-full flex items-center gap-1.5 px-2.5 py-1.5 rounded border text-xs transition-all ${
+        className={`w-full flex items-center gap-1.5 px-2.5 py-1.5 rounded border text-base transition-all ${
           open
             ? 'bg-accent/10 border-accent/50 text-accent'
             : 'bg-elevated border-border text-text-primary hover:border-border-strong'
         }`}
       >
-        <span className={`font-bold uppercase tracking-wider text-[10px] shrink-0 ${open ? 'text-accent/80' : 'text-text-muted'}`}>{label}</span>
+        <span className={`font-bold uppercase tracking-wider text-base shrink-0 ${open ? 'text-accent/80' : 'text-text-muted'}`}>{label}</span>
         <span className="font-mono flex-1 text-right">{formatValue(value)}</span>
         <svg
           className={`w-3 h-3 shrink-0 transition-transform ${open ? 'rotate-180' : ''}`}
@@ -548,7 +548,7 @@ function FeedButton({
             <button
               key={preset}
               onClick={() => { onChange(preset); setOpen(false) }}
-              className={`w-full flex items-center justify-between px-3 py-1.5 text-xs font-mono transition-colors ${
+              className={`w-full flex items-center justify-between px-3 py-1.5 text-base font-mono transition-colors ${
                 preset === value
                   ? 'bg-accent/10 text-accent font-semibold'
                   : 'text-text-primary hover:bg-elevated'
@@ -794,15 +794,15 @@ export function JogPad() {
     <>
       {!jobRunning && (
         <div className="panel flex flex-col">
-          <div className="panel-header">Jog</div>
+          <div className="panel-header text-lg font-bold">Jog</div>
           <div className="flex flex-col p-3 gap-3">
 
             <div className="flex items-center justify-center gap-2">
               <div className="inline-flex rounded border border-border overflow-hidden">
-                <button className={`px-3 py-1 text-xs font-bold transition-all ${
+                <button className={`px-3 py-1 text-base font-bold transition-all ${
                   !continuous ? 'bg-accent/15 text-accent' : 'bg-transparent text-text-muted hover:text-text-primary'
                 }`} onClick={() => setContinuous(false)}>Step</button>
-                <button className={`px-3 py-1 text-xs font-bold border-l border-border transition-all ${
+                <button className={`px-3 py-1 text-base font-bold border-l border-border transition-all ${
                   continuous ? 'bg-accent/15 text-accent' : 'bg-transparent text-text-muted hover:text-text-primary'
                 }`} onClick={() => setContinuous(true)}>Continuous</button>
               </div>
@@ -847,16 +847,16 @@ export function JogPad() {
               <FeedButton label="XY" value={xyFeed} presets={xyFeedPresetValues} onChange={setXyFeed} formatValue={linearFeedFormatter} />
               <FeedButton label="Z"  value={zFeed}  presets={zFeedPresetValues} onChange={setZFeed} formatValue={linearFeedFormatter} />
               {axes > 3 && <FeedButton label="ABC" value={abcFeed} presets={MM_FEED_PRESETS} onChange={setAbcFeed} formatValue={rotaryFeedFormatter} />}
-              <span className="text-[10px] text-text-dim shrink-0">
+              <span className="text-base text-text-dim shrink-0">
                 {axes > 3 ? `XYZ ${feedUnitLabel(units)}` : feedUnitLabel(units)}
               </span>
             </div>
 
-            <div className="text-center text-[10px] text-text-dim leading-tight">
+            <div className="text-center text-base text-text-dim leading-tight">
               {continuous
                 ? keyboardJog
                   ? 'Arrows: X/Y · −/+: Z · Hold to jog'
-                  : 'Hold to jog · enable keyboard ⌨'
+                  : 'Hold to jog · enable keyboard'
                 : ''
               }
             </div>
@@ -867,7 +867,7 @@ export function JogPad() {
       )}
 
       <div className="panel flex flex-col">
-        <div className="panel-header">Overrides</div>
+        <div className="panel-header text-lg font-bold">Overrides</div>
         <div className="flex flex-col p-3 gap-2">
           <OverrideRow label="Feed" value={status.feedOverride}
             onMinus={() => sendRealtime(0x92)} onReset={() => sendRealtime(0x90)} onPlus={() => sendRealtime(0x91)} />
@@ -880,11 +880,11 @@ export function JogPad() {
 
       <div className="panel flex flex-col">
         <div className="panel-header">
-          Spindle
+          <span className='text-lg font-bold'>Spindle</span>
           {(() => {
             const actualRpm = Math.round(status.spindle * status.spindleOverride / 100)
             return (
-              <div className={`ml-auto inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded text-xs font-medium normal-case tracking-normal ${
+              <div className={`ml-auto inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded text-base font-medium normal-case tracking-normal ${
                 spindleActive
                   ? 'bg-ok/10 text-ok border border-ok/20'
                   : 'bg-elevated text-text-muted border border-border'
@@ -903,7 +903,7 @@ export function JogPad() {
         <div className="flex flex-col p-3 gap-3">
 
           <div className="flex items-center gap-2">
-            <span className="text-xs text-text-muted font-medium shrink-0">RPM</span>
+            <span className="text-base text-text-muted font-medium shrink-0">RPM</span>
             <input
               type="number"
               value={spindleTarget}
@@ -936,7 +936,7 @@ export function JogPad() {
                     sendRealtime(0x99)
                   }
                 }}
-                className={`btn py-2 text-xs font-medium justify-center ${
+                className={`btn py-2 text-lg font-medium justify-center ${
                   spindleTarget === rpm
                     ? 'bg-accent/20 border-accent/60 text-accent'
                     : 'btn-ghost'
@@ -1024,32 +1024,31 @@ export function SpindlePanel({ className, isTablet }: { className?: string; isTa
   }, [status.spindle, status.spindleRunning])
 
   return (
-      <div className={`panel flex flex-col ${className ?? ''}`}>
-        <div className="panel-header">
-          Spindle
-          {(() => {
-            const actualRpm = Math.round(status.spindle * status.spindleOverride / 100)
-            return (
-              <div className={`ml-auto inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded text-xs font-medium normal-case tracking-normal ${
-                spindleActive
-                  ? 'bg-ok/10 text-ok border border-ok/20'
-                  : 'bg-elevated text-text-muted border border-border'
-              }`}>
-                {spindleActive && (
-                  <div className="w-1.5 h-1.5 rounded-full bg-ok animate-pulse" />
-                )}
-                {spindleActive ? `${actualRpm} RPM` : 'STOPPED'}
-                {spindleActive && status.spindleOverride !== 100 && (
-                  <span className="opacity-60">(cmd: {status.spindle})</span>
-                )}
-              </div>
-            )
-          })()}
-        </div>
-        <div className={`flex flex-col p-3 ${isTablet ? 'gap-2' : 'gap-3'}`}>
+    <div className={`flex flex-col ${className ?? ''}`}>
+      <div className="flex items-center justify-end px-4 py-2 border-b border-border bg-surface/80">
+        {(() => {
+          const actualRpm = Math.round(status.spindle * status.spindleOverride / 100)
+          return (
+            <div className={`inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded text-base font-medium normal-case tracking-normal ${
+              spindleActive
+                ? 'bg-ok/10 text-ok border border-ok/20'
+                : 'bg-elevated text-text-muted border border-border'
+            }`}>
+              {spindleActive && (
+                <div className="w-1.5 h-1.5 rounded-full bg-ok animate-pulse" />
+              )}
+              {spindleActive ? `${actualRpm} RPM` : 'STOPPED'}
+              {spindleActive && status.spindleOverride !== 100 && (
+                <span className="opacity-60">(cmd: {status.spindle})</span>
+              )}
+            </div>
+          )
+        })()}
+      </div>
+      <div className={`flex flex-col p-3 ${isTablet ? 'gap-2' : 'gap-3'}`}>
 
           <div className="flex items-center gap-2">
-            <span className={`${isTablet ? 'text-base' : 'text-xs'} text-text-muted font-medium shrink-0`}>RPM</span>
+            <span className={`${isTablet ? 'text-base' : 'text-base'} text-text-muted font-medium shrink-0`}>RPM</span>
             <input
               type="number"
               value={spindleTarget}
@@ -1082,7 +1081,7 @@ export function SpindlePanel({ className, isTablet }: { className?: string; isTa
                     sendRealtime(0x99)
                   }
                 }}
-                className={`btn font-medium justify-center ${isTablet ? 'text-lg py-2' : 'text-xs py-2'} ${
+                className={`btn font-medium justify-center ${isTablet ? 'text-lg py-2' : 'text-base py-2'} ${
                   spindleTarget === rpm
                     ? 'bg-accent/20 border-accent/60 text-accent'
                     : 'btn-ghost'
@@ -1128,9 +1127,11 @@ export function SpindlePanel({ className, isTablet }: { className?: string; isTa
 export function OverridesPanel({ className, isTablet }: { className?: string; isTablet?: boolean }) {
   const status = useMachineStore(s => s.status)
   return (
-      <div className={`panel flex flex-col ${className ?? ''}`}>
-        <div className={`panel-header ${isTablet ? 'text-lg py-3' : ''}`}>Overrides</div>
-        <div className={`flex flex-col p-3 ${isTablet ? 'gap-3' : 'gap-2'}`}>
+    <div className={`flex flex-col ${className ?? ''}`}>
+      <div className="panel-header w-full flex items-center justify-between px-4 py-2 border-b border-border bg-surface/80 text-base uppercase tracking-wide">
+        <span className="text-xl uppercase tracking-wide">Overrides</span>
+      </div>
+      <div className={`flex flex-col p-3 ${isTablet ? 'gap-3' : 'gap-2'}`}>
           <OverrideRow label="Feed" value={status.feedOverride} isTablet={isTablet}
             onMinus={() => sendRealtime(0x92)} onReset={() => sendRealtime(0x90)} onPlus={() => sendRealtime(0x91)} />
           <OverrideRow label="Rapid" value={status.rapidOverride} maxValue={100} isTablet={isTablet}
@@ -1205,7 +1206,7 @@ export function TabletJogPad() {
     <>
     <div className="panel flex flex-col flex-1 min-h-0 portrait:flex-none portrait:h-[440px]">
       <div className="panel-header flex flex-row items-stretch justify-between shrink-0 !p-0 border-b border-border overflow-hidden">
-        <div className="flex items-center justify-center w-16 py-3 font-bold text-xl tracking-wider border-r border-border shrink-0">JOG</div>
+        <div className="flex items-center justify-center w-16 py-3 font-bold text-lg tracking-wider border-r border-border shrink-0">JOG</div>
         <div className="flex flex-1 items-stretch divide-x divide-border bg-surface">
           {steps.map(s => (
             <button

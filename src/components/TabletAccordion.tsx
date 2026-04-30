@@ -130,22 +130,22 @@ export function TabletAccordion({ tabletTab, setTabletTab }: { tabletTab: string
               className="panel-header text-left font-bold cursor-pointer flex justify-between items-center text-xl py-4"
               onClick={() => setExpanded('controls')}
             >
-              <span>Spindle & Overrides</span>
+              <span className="uppercase tracking-wide">Spindle & Overrides</span>
               <ChevronRight size={22} />
             </button>
           )}
           {expanded === 'controls' && (
             <div className="flex flex-col flex-1 min-h-0">
               <button
-                className="panel-header flex justify-between items-center border-b border-border cursor-pointer hover:text-text-primary shrink-0 text-xl py-4"
+                className="panel-header flex justify-between items-center border-b border-border cursor-pointer hover:text-text-primary shrink-0 text-xl py-3"
                 onClick={() => setExpanded('visualizer')}
               >
-                <span>Spindle & Overrides</span>
+                <span className="uppercase tracking-wide">Spindle</span>
                 <ChevronDown size={22} />
               </button>
-              <div className="flex-1 overflow-y-auto flex flex-col gap-4 p-4">
+              <div className="flex-1 overflow-y-auto flex flex-col gap-0 p-0">
                 <SpindlePanel className="border-none shadow-none p-0" isTablet />
-                <div className="h-px bg-border w-full shrink-0" />
+                <div className="h-px bg-border w-full my-1" />
                 <OverridesPanel className="border-none shadow-none p-0" isTablet />
               </div>
             </div>
