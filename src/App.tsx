@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { useMachineStore } from './store'
 import { useGCodeStore } from './store/gcode'
-import { connect, isSocketOpen } from './lib/ws'
+import { connect, isSocketOpen, onLine } from './lib/ws'
 import { setBase, getDeviceInfo, getDeviceInfoFast } from './lib/http'
 import { parseESP800 } from './lib/parser'
 import { startWatchdog, stopWatchdog } from './lib/jogWatchdog'
@@ -18,7 +18,7 @@ import { Macros } from './components/Macros'
 import { SettingsPanel } from './components/SettingsPanel'
 import { AboutModal } from './components/AboutModal'
 import { JobControl } from './components/JobControl'
-import { WifiOff, RefreshCw, Crosshair, Monitor, FolderOpen, TerminalSquare } from 'lucide-react'
+import { WifiOff, RefreshCw, Crosshair, Monitor, FolderOpen, TerminalSquare, AlertTriangle } from 'lucide-react'
 import type { SidebarTab } from './types'
 
 const SIDEBAR_TABS: { id: SidebarTab; label: string }[] = [
@@ -84,6 +84,8 @@ export function App() {
   const cachedHostFailures = useRef(0)
   const [showReconnectOverlay, setShowReconnectOverlay] = useState(false)
   const restartSawDisconnect = useRef(false)
+  const [startupErrors, setStartupErrors] = useState<string[]>([])
+  const [startupErrorsOpen, setStartupErrorsOpen] = useState(false)
 
   async function resolveWsHost(httpHost: string): Promise<{ wsHost: string; info: ReturnType<typeof parseESP800> | null }> {
     if (cachedWsHost.current && cachedHostFailures.current < 3) {
@@ -208,6 +210,28 @@ export function App() {
     const t = setTimeout(() => setStoreRestarting(false), 60_000)
     return () => clearTimeout(t)
   }, [restarting, setStoreRestarting])
+
+  // Collect [MSG:ERR:...] lines from the $SS startup log replay on each connect.
+  // The controller sends startup messages then a single 'ok' to end the log.
+  useEffect(() => {
+    if (!connected) return
+    const errors: string[] = []
+    let done = false
+    const unsub = onLine((line: string) => {
+      if (done) return
+      if (line.includes('[MSG:ERR:')) {
+        errors.push(line)
+      } else if (line === 'ok') {
+        done = true
+        unsub()
+        if (errors.length > 0) {
+          setStartupErrors(errors)
+          setStartupErrorsOpen(true)
+        }
+      }
+    })
+    return unsub
+  }, [connected])
 
   // Debounce the "Reconnecting…" overlay so transient drops don't flash it.
   useEffect(() => {
@@ -473,6 +497,48 @@ export function App() {
       )}
 
       {aboutOpen && <AboutModal onClose={() => setAboutOpen(false)} />}
+
+      {/* ── Startup Config Errors Modal ── */}
+      {startupErrorsOpen && (
+        <div
+          className="fixed inset-0 z-[100] flex items-end sm:items-center justify-center sm:p-4"
+          onClick={e => { if (e.target === e.currentTarget) setStartupErrorsOpen(false) }}
+        >
+          <div className="absolute inset-0 bg-black/50 backdrop-blur-sm" />
+          <div className="relative w-full sm:max-w-lg
+                          bg-surface border-t sm:border border-border
+                          rounded-t-2xl sm:rounded-lg
+                          shadow-2xl flex flex-col overflow-hidden animate-in">
+            <div className="flex items-center gap-3 px-5 py-4 border-b border-border">
+              <AlertTriangle size={20} className="text-red-400 shrink-0" />
+              <h2 className="text-2xl font-semibold text-text-primary flex-1">Configuration Errors</h2>
+              <button
+                onClick={() => setStartupErrorsOpen(false)}
+                className="text-text-muted hover:text-text-primary transition-colors"
+                aria-label="Dismiss"
+              >✕</button>
+            </div>
+            <p className="px-5 pt-4 pb-2 text-xl text-text-muted">
+              FluidNC reported the following errors while loading <code className="text-text-primary">config.yaml</code>:
+            </p>
+            <div className="px-5 pb-5 flex flex-col gap-2 overflow-y-auto max-h-72">
+              {startupErrors.map((line, i) => (
+                <pre key={i} className="text-base text-red-400 rounded px-3 py-2 whitespace-pre-wrap break-all font-mono">
+                  {line}
+                </pre>
+              ))}
+            </div>
+            <div className="px-5 py-4 border-t border-border flex justify-end">
+              <button
+                onClick={() => setStartupErrorsOpen(false)}
+                className="px-4 py-2 text-base font-medium bg-accent text-white rounded hover:opacity-90 transition-opacity"
+              >
+                Dismiss
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   )
 }
