@@ -4,6 +4,8 @@ import './index.css'
 import { App } from './App'
 import './store/terminal'
 import './lib/jogWatchdog'
+import { installDemoMode } from './demo'
+installDemoMode()
 
 // Suppress expected connection errors
 function isExpectedTransportError(reason: unknown): boolean {
@@ -12,7 +14,7 @@ function isExpectedTransportError(reason: unknown): boolean {
   return (
     msg.includes('failed to fetch') ||
     msg.includes('networkerror') ||
-    msg.includes('load failed') ||           // Safari's wording
+    msg.includes('load failed') ||           // Safari
     msg.includes('the operation was aborted') ||
     msg.includes('the user aborted') ||
     msg.includes('http timeout') ||

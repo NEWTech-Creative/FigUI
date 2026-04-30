@@ -3,6 +3,7 @@ import react from '@vitejs/plugin-react'
 import { viteSingleFile } from 'vite-plugin-singlefile'
 
 export default defineConfig(({ mode }) => ({
+  base: mode === 'demo' ? '/FluidUI/' : '/',
   plugins: [
     react(),
     ...(mode === 'esp32' ? [viteSingleFile()] : []),
