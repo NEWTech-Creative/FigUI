@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { useMachineStore } from './store'
 import { useGCodeStore } from './store/gcode'
+import { useTerminalStore } from './store/terminal'
 import { connect, isSocketOpen, onLine } from './lib/ws'
 import { setBase, getDeviceInfo, getDeviceInfoFast } from './lib/http'
 import { parseESP800 } from './lib/parser'
@@ -67,6 +68,7 @@ export function App() {
   const setSidebarTab = useMachineStore(s => s.setSidebarTab)
   const setEspInfo = useMachineStore(s => s.setEspInfo)
   const setStoreRestarting = useMachineStore(s => s.setRestarting)
+  const clearTerminal = useTerminalStore(s => s.clear)
   const machineState = useMachineStore(s => s.status.state)
   const activeLayout = useActiveLayout(layoutMode)
   const loadGCodeFile = useGCodeStore(s => s.loadFile)
@@ -213,9 +215,10 @@ export function App() {
       restartSawDisconnect.current = true
     } else if (restartSawDisconnect.current) {
       restartSawDisconnect.current = false
+      clearTerminal()
       setStoreRestarting(false)
     }
-  }, [restarting, connected, setStoreRestarting])
+  }, [restarting, connected, setStoreRestarting, clearTerminal])
 
   useEffect(() => {
     if (!restarting) return
@@ -223,26 +226,39 @@ export function App() {
     return () => clearTimeout(t)
   }, [restarting, setStoreRestarting])
 
-  // Collect [MSG:ERR:...] lines from the $SS startup log replay on each connect.
-  // The controller sends startup messages then a single 'ok' to end the log.
   useEffect(() => {
     if (!connected) return
     const errors: string[] = []
     let done = false
+    let fallbackTimer: ReturnType<typeof setTimeout>
+
+    const finish = () => {
+      if (done) return
+      done = true
+      unsub()
+      clearTimeout(fallbackTimer)
+      if (errors.length > 0) {
+        setStartupErrors(errors)
+        setStartupErrorsOpen(true)
+      }
+    }
+
     const unsub = onLine((line: string) => {
       if (done) return
       if (line.includes('[MSG:ERR:') && line.includes('Configuration error')) {
         errors.push(line)
-      } else if (line === 'ok') {
-        done = true
-        unsub()
-        if (errors.length > 0) {
-          setStartupErrors(errors)
-          setStartupErrorsOpen(true)
-        }
+      } else if (line === 'ok' || line.startsWith('error:')) {
+        finish()
       }
     })
-    return unsub
+
+    fallbackTimer = setTimeout(finish, 5000)
+
+    return () => {
+      done = true
+      unsub()
+      clearTimeout(fallbackTimer)
+    }
   }, [connected])
 
   // Debounce the "Reconnecting…" overlay so transient drops don't flash it.
