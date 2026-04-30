@@ -219,7 +219,7 @@ export function App() {
     let done = false
     const unsub = onLine((line: string) => {
       if (done) return
-      if (line.includes('[MSG:ERR:')) {
+      if (line.includes('[MSG:ERR:') && line.includes('Configuration error')) {
         errors.push(line)
       } else if (line === 'ok') {
         done = true
