@@ -36,15 +36,26 @@ function useActiveLayout(layoutMode: 'auto' | 'tablet' | 'desktop'): ActiveLayou
   const [width, setWidth] = useState(() =>
     typeof window === 'undefined' ? 1270 : window.innerWidth,
   )
+  const [isCoarsePointer, setIsCoarsePointer] = useState(() =>
+    typeof window === 'undefined' ? false : window.matchMedia('(pointer: coarse)').matches,
+  )
   useEffect(() => {
     const onResize = () => setWidth(window.innerWidth)
     window.addEventListener('resize', onResize)
     return () => window.removeEventListener('resize', onResize)
   }, [])
+  useEffect(() => {
+    const mq = window.matchMedia('(pointer: coarse)')
+    const onChange = (e: MediaQueryListEvent) => setIsCoarsePointer(e.matches)
+    mq.addEventListener('change', onChange)
+    return () => mq.removeEventListener('change', onChange)
+  }, [])
 
   if (width < 768) return 'mobile'
   if (layoutMode === 'tablet') return 'tablet'
   if (layoutMode === 'desktop') return 'desktop'
+  // Large tablets (iPad Pro, Surface Pro) exceed 1270px in landscape but use touch as primary input
+  if (isCoarsePointer) return 'tablet'
   return width < 1270 ? 'tablet' : 'desktop'
 }
 
