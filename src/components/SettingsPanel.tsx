@@ -419,150 +419,60 @@ function SectionHeader({ label, level }: { label: string; level: 'section' | 'su
   )
 }
 
-function parseSimpleYaml(yamlText: string): Record<string, any> {
-  const lines = yamlText.split('\n')
-  const result: Record<string, any> = {}
-  const stack: Array<{ obj: any; indent: number }> = [{ obj: result, indent: -1 }]
 
-  for (const line of lines) {
-    if (line.trim() === '' || line.trim().startsWith('#')) continue
+function updateYamlInPlace(yaml: string, path: string, newValue: string): string {
+  const parts = path.replace(/^\/+/, '').split('/').filter(Boolean).map(p => p.toLowerCase())
+  const lines = yaml.split('\n')
 
-    const indent = line.length - line.trimStart().length
+  let matchDepth = 0
+  const indentAtDepth: number[] = []
+
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i]
     const trimmed = line.trim()
 
-    while (stack.length > 1 && stack[stack.length - 1].indent >= indent) {
-      stack.pop()
+    if (trimmed === '' || trimmed.startsWith('#')) continue
+
+    const indent = line.length - line.trimStart().length
+
+    // Pop path stack when we exit a section
+    while (indentAtDepth.length > 0 && indent <= indentAtDepth[indentAtDepth.length - 1]) {
+      indentAtDepth.pop()
+      matchDepth--
     }
 
-    if (trimmed.includes(':')) {
-      const [key, ...valueParts] = trimmed.split(':')
-      const value = valueParts.join(':').trim()
+    if (!trimmed.includes(':')) continue
 
-      const currentObj = stack[stack.length - 1].obj
+    const colonIdx = trimmed.indexOf(':')
+    const key = trimmed.slice(0, colonIdx).trim().toLowerCase()
 
-      if (value === '' || value === '{}') {
-        // Nested object
-        currentObj[key.trim()] = {}
-        stack.push({ obj: currentObj[key.trim()], indent })
-      } else {
-        // Simple value
-        currentObj[key.trim()] = parseValue(value)
+    if (key === parts[matchDepth]) {
+      if (matchDepth === parts.length - 1) {
+        const lineIndent = line.slice(0, line.length - line.trimStart().length)
+        const originalKey = trimmed.slice(0, colonIdx).trim()
+        // Preserve any trailing inline comment (e.g. "# tuned 2024-01-15")
+        const afterColon = trimmed.slice(colonIdx + 1)
+        const commentMatch = afterColon.match(/\s+(#.*)$/)
+        const inlineComment = commentMatch ? `  ${commentMatch[1]}` : ''
+        lines[i] = `${lineIndent}${originalKey}: ${newValue}${inlineComment}`
+        return lines.join('\n')
       }
+      indentAtDepth.push(indent)
+      matchDepth++
     }
   }
 
-  return result
+  return yaml
 }
 
-/**
- * Parse a YAML value to appropriate type
- */
-function parseValue(value: string): any {
-  const trimmed = value.trim()
-
-  // Remove quotes if present
-  if ((trimmed.startsWith('"') && trimmed.endsWith('"')) ||
-      (trimmed.startsWith("'") && trimmed.endsWith("'"))) {
-    return trimmed.slice(1, -1)
-  }
-
-  // Boolean values
-  if (trimmed === 'true') return true
-  if (trimmed === 'false') return false
-  if (trimmed === 'null') return null
-
-  // Number values
-  if (!isNaN(Number(trimmed)) && trimmed !== '') {
-    return Number(trimmed)
-  }
-
-  return trimmed
-}
-
-/**
- * Convert object back to YAML format
- */
-function stringifySimpleYaml(obj: Record<string, any>, indent = 0): string {
-  let result = ''
-
-  for (const [key, value] of Object.entries(obj)) {
-    const prefix = '  '.repeat(indent)
-
-    if (value !== null && typeof value === 'object' && !Array.isArray(value)) {
-      result += `${prefix}${key}:\n`
-      result += stringifySimpleYaml(value, indent + 1)
-    } else {
-      let valueStr = String(value)
-      // Quote strings that contain special characters or look like numbers/booleans
-      if (typeof value === 'string' &&
-          (value.includes(':') || value.includes('#') ||
-           !isNaN(Number(value)) || value === 'true' || value === 'false')) {
-        valueStr = `"${value}"`
-      }
-      result += `${prefix}${key}: ${valueStr}\n`
-    }
-  }
-
-  return result
-}
-
-/**
- * Set a nested value in an object using a path like "axes/X/max_rate_mm_per_min"
- */
-function setNestedValue(obj: any, path: string, value: string): void {
-  // Remove leading slash and split path
-  const parts = path.replace(/^\/+/, '').split('/').filter(Boolean)
-  let current = obj
-
-  // Navigate to the parent object
-  for (let i = 0; i < parts.length - 1; i++) {
-    let part = parts[i]
-
-    // Convert axis names to lowercase (FluidNC uses lowercase in YAML)
-    if (i === 1 && parts[0] === 'axes') {
-      part = part.toLowerCase()
-    }
-
-    if (!(part in current) || typeof current[part] !== 'object') {
-      current[part] = {}
-    }
-    current = current[part]
-  }
-
-  // Set the final value with appropriate type conversion
-  const finalKey = parts[parts.length - 1]
-  if (finalKey) {
-    current[finalKey] = parseValue(value)
-  }
-}
-
-/**
- * Update config.yaml file with a setting change for persistence across restarts
- * Uses lightweight custom YAML parser (~2KB vs 20KB for js-yaml)
- */
 async function updateConfigYaml(settingPath: string, value: string): Promise<void> {
   try {
-    // Read current config.yaml from internal storage
     const configContent = await fetchFileContent('/config.yaml', 'local')
-
-    // Parse YAML using lightweight parser
-    const config = parseSimpleYaml(configContent)
-
-    // Update the setting using the path
-    setNestedValue(config, settingPath, value)
-
-    // Convert back to YAML with proper formatting
-    const updatedContent = stringifySimpleYaml(config)
-
-    // Write back to internal storage
+    const updatedContent = updateYamlInPlace(configContent, settingPath, value)
     await saveFileContent('/', 'config.yaml', updatedContent, 'local')
-
-    console.log(`Updated config.yaml: ${settingPath} = ${value}`)
-
   } catch (error) {
     console.warn('Failed to update config.yaml:', error)
-    // Gracefully degrade - runtime change still applied via ESP401
-    throw error  // Re-throw to let caller handle user feedback
+    throw error
   }
 }
 

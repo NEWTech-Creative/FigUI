@@ -250,6 +250,7 @@ export function FileManager({ isTablet }: { isTablet?: boolean }) {
       load(path, fs)
     } finally {
       setUploading(false)
+      if (fileInput.current) fileInput.current.value = ''
     }
   }
 
