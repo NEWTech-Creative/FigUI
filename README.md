@@ -2,6 +2,8 @@
 
 A modern web-based interface built with React & Typescript for [FluidNC](https://github.com/bdring/FluidNC), the ESP32-based CNC controller firmware. FluidUI is designed as a drop-in replacement for the legacy WebUIs, offering a more capable and responsive experience across desktop, tablet, and mobile devices.
 
+**[Try the live demo →](https://figamore.github.io/FluidUI/)** — no hardware needed, runs a simulated machine in the browser.
+
 ---
 
 ## Overview
