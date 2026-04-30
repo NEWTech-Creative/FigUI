@@ -8,7 +8,7 @@ let generation = 0
 let pingTimer: ReturnType<typeof setInterval> | null = null
 let livenessTimer: ReturnType<typeof setInterval> | null = null
 let statusPollTimer: ReturnType<typeof setInterval> | null = null
-let suppressNextOk = false
+let pendingPingOks = 0
 
 interface SilentResponseMatcher {
   starts: (line: string) => boolean
@@ -250,6 +250,7 @@ function handleDisconnect() {
   pendingAcknowledgments.clear()
   pendingSilentResponses.length = 0
   activeSilentResponse = null
+  pendingPingOks = 0
   // Drop queued commands — sending them on a future reconnect would be
   // surprising (e.g. queued jog moves shouldn't auto-resume).
   commandQueue.length = 0
@@ -276,7 +277,7 @@ function startPing() {
   stopPing()
   pingTimer = setInterval(() => {
     if (socket?.readyState !== WebSocket.OPEN) return
-    suppressNextOk = true
+    if (pendingAcknowledgments.size === 0) pendingPingOks++
     connectionHealth.lastPingTime = Date.now()
     try {
       socket.send(`PING:${pageId}\n`)
@@ -431,7 +432,7 @@ function handleLine(line: string) {
     }
   }
 
-  if (line === 'ok' && suppressNextOk) { suppressNextOk = false; return }
+  if (line === 'ok' && pendingPingOks > 0) { pendingPingOks--; return }
 
   lineHandlers.forEach(fn => fn(line))
 }

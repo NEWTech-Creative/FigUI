@@ -78,6 +78,7 @@ export function App() {
   const [tabletTab,   setTabletTab]       = useState<TabletRightTab>('viewer')
 
   const reconnectTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const stableConnectTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
   const inFlightPromise = useRef<Promise<boolean> | null>(null)
   const backoffMs = useRef(0)
   const cachedWsHost = useRef<string | null>(null)
@@ -127,7 +128,6 @@ export function App() {
         setBase(`http://${httpHost}`)
         const { wsHost } = await resolveWsHost(httpHost)
         await connect(wsHost)
-        backoffMs.current = 0
         cachedHostFailures.current = 0
         return true
       } catch (e) {
@@ -181,14 +181,26 @@ export function App() {
         clearTimeout(reconnectTimer.current)
         reconnectTimer.current = null
       }
-      backoffMs.current = 0
-    } else if (!reconnectTimer.current) {
-      reconnectTimer.current = setTimeout(async () => {
-        reconnectTimer.current = null
-        if (isSocketOpen()) return
-        await attemptConnect()
-        if (!isSocketOpen()) scheduleReconnect()
-      }, 300)
+      if (stableConnectTimer.current) clearTimeout(stableConnectTimer.current)
+      stableConnectTimer.current = setTimeout(() => {
+        backoffMs.current = 0
+        stableConnectTimer.current = null
+      }, 5000)
+    } else {
+      if (stableConnectTimer.current) {
+        clearTimeout(stableConnectTimer.current)
+        stableConnectTimer.current = null
+      }
+      if (!reconnectTimer.current) {
+        // Respect existing backoff so rapid connect/drop loops slow down.
+        const delay = backoffMs.current > 0 ? Math.min(backoffMs.current, 30000) : 300
+        reconnectTimer.current = setTimeout(async () => {
+          reconnectTimer.current = null
+          if (isSocketOpen()) return
+          await attemptConnect()
+          if (!isSocketOpen()) scheduleReconnect()
+        }, delay)
+      }
     }
   }, [connected, phase])
 
