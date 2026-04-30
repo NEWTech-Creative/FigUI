@@ -42,6 +42,12 @@ export const useTerminalStore = create<TerminalStore>((set, get) => ({
   appendLine: (text) => {
     const kind = classifyLine(text)
     if (!get().verbose && (kind === 'status' || kind === 'ok')) return
+    // The Grbl welcome banner is the definitive signal that the controller
+    // just rebooted. Clear and start fresh, keeping the banner as line 1.
+    if (text.startsWith('Grbl ')) {
+      set({ lines: [{ id: lineId++, text, kind }] })
+      return
+    }
     set(state => {
       const next = state.lines.length >= MAX_LINES
         ? [...state.lines.slice(-(MAX_LINES - 1)), { id: lineId++, text, kind }]
