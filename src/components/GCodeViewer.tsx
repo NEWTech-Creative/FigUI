@@ -1671,15 +1671,15 @@ export function GCodeViewer({ className, isTablet }: Props) {
         {!isTablet && (
         <div className="flex items-center gap-2 min-w-0">
           {fileName ? (
-            <span className="text-text-primary font-mono normal-case tracking-normal font-normal truncate text-xs">
+            <span className="text-text-primary font-mono normal-case tracking-normal font-normal truncate text-sm">
               {fileName}
             </span>
           ) : (
-            <span className="text-text-dim text-xs whitespace-nowrap">No file loaded</span>
+            <span className="text-text-dim text-sm whitespace-nowrap">No file loaded</span>
           )}
           {isLargeProgressOverlayDisabled && (
             <span
-              className="px-1.5 py-0.5 rounded text-[10px] text-text-dim bg-elevated shrink-0"
+              className="px-1.5 py-0.5 rounded text-sm text-text-dim bg-elevated shrink-0"
               title={`Toolpath completion overlay disabled above ${LARGE_PROGRESS_OVERLAY_SEGMENT_LIMIT.toLocaleString()} segments while a job is running`}
             >
               Progress overlay off
@@ -1687,7 +1687,7 @@ export function GCodeViewer({ className, isTablet }: Props) {
           )}
           {!loading && isProcessing3D && (
             <span
-              className="px-1.5 py-0.5 rounded text-[10px] text-text-dim bg-elevated shrink-0"
+              className="px-1.5 py-0.5 rounded text-sm text-text-dim bg-elevated shrink-0"
               title="3D preview is still being prepared in the background"
             >
               3D {processing3DProgress}%
@@ -1791,11 +1791,11 @@ export function GCodeViewer({ className, isTablet }: Props) {
         {loading && (
           <div className="absolute inset-0 flex items-center justify-center bg-surface/70 backdrop-blur-sm px-4">
             <div className="w-full max-w-md rounded-xl border border-border bg-surface/95 shadow-lg p-4 space-y-3">
-              <div className="text-xs text-text-primary font-mono truncate">
+              <div className="text-base text-text-primary font-mono truncate">
                 {pendingPath?.split('/').pop() ?? fileName ?? 'Loading file'}
               </div>
               <div className="space-y-1">
-                <div className="flex items-center justify-between text-[10px] text-text-dim uppercase tracking-wide">
+                <div className="flex items-center justify-between text-base text-text-dim uppercase tracking-wide">
                   <span>Download From SD</span>
                   <span>{downloadProgress == null ? 'Streaming' : `${downloadProgress}%`}</span>
                 </div>
@@ -1807,7 +1807,7 @@ export function GCodeViewer({ className, isTablet }: Props) {
                 </div>
               </div>
               <div className="space-y-1">
-                <div className="flex items-center justify-between text-[10px] text-text-dim uppercase tracking-wide">
+                <div className="flex items-center justify-between text-base text-text-dim uppercase tracking-wide">
                   <span>Prepare 2D View</span>
                   <span>{processing2DProgress}%</span>
                 </div>
@@ -1816,7 +1816,7 @@ export function GCodeViewer({ className, isTablet }: Props) {
                 </div>
               </div>
               <div className="space-y-1 opacity-75">
-                <div className="flex items-center justify-between text-[10px] text-text-dim uppercase tracking-wide">
+                <div className="flex items-center justify-between text-base text-text-dim uppercase tracking-wide">
                   <span>Prepare 3D View</span>
                   <span>{processing3DProgress}%</span>
                 </div>
@@ -1826,7 +1826,7 @@ export function GCodeViewer({ className, isTablet }: Props) {
               </div>
               <div className="flex gap-2 mt-1">
                 <button
-                  className="btn btn-warn gap-2 justify-center text-xs flex-1"
+                  className="btn btn-warn gap-2 justify-center text-sm flex-1"
                   onClick={handleStartWithoutPreview}
                   title="Cancel the preview download and start the job immediately"
                 >
@@ -1834,7 +1834,7 @@ export function GCodeViewer({ className, isTablet }: Props) {
                   Start without preview
                 </button>
                 <button
-                  className="btn gap-2 justify-center text-xs"
+                  className="btn gap-2 justify-center text-sm"
                   onClick={cancelLoad}
                   title="Cancel the download"
                 >
@@ -1848,7 +1848,7 @@ export function GCodeViewer({ className, isTablet }: Props) {
 
         {!loading && isProcessing3D && model && (
           <div className="absolute top-3 right-3 left-3 sm:left-auto sm:w-72 bg-surface/85 backdrop-blur-sm border border-border rounded-lg px-3 py-2">
-            <div className="flex items-center justify-between text-[10px] text-text-dim uppercase tracking-wide mb-1">
+            <div className="flex items-center justify-between text-sm text-text-dim uppercase tracking-wide mb-1">
               <span>Preparing 3D View</span>
               <span>{processing3DProgress}%</span>
             </div>
@@ -1868,15 +1868,15 @@ export function GCodeViewer({ className, isTablet }: Props) {
         {model && (
           <div className="absolute bottom-2 right-2 flex items-center gap-3 bg-surface/80 backdrop-blur-sm
                           rounded px-2 py-1 pointer-events-none select-none">
-            <span className="flex items-center gap-1.5 text-[10px] text-text-dim">
+            <span className="flex items-center gap-1.5 text-sm text-text-dim">
               <span className="inline-block w-5 h-px border-t-2 border-dashed border-[rgba(100,120,160,0.6)]" />
               Rapid
             </span>
-            <span className="flex items-center gap-1.5 text-[10px] text-text-dim">
+            <span className="flex items-center gap-1.5 text-sm text-text-dim">
               <span className="inline-block w-5 h-0.5 bg-[#f0a030] rounded" />
               Cut
             </span>
-            <span className="flex items-center gap-1.5 text-[10px] text-text-dim">
+            <span className="flex items-center gap-1.5 text-sm text-text-dim">
               <span className="inline-block w-5 h-0.5 bg-[#22c55e] rounded" />
               Done
             </span>
@@ -1978,7 +1978,7 @@ export function GCodeViewer({ className, isTablet }: Props) {
             <div className="flex-1 h-1.5 bg-elevated rounded-full overflow-hidden">
               <div className="h-full bg-ok transition-all duration-500 rounded-full" style={{ width: `${sdPercent}%` }} />
             </div>
-            <span className="text-[10px] font-mono text-text-muted tabular-nums w-9 text-right">
+            <span className="text-sm font-mono text-text-muted tabular-nums w-9 text-right">
               {sdPercent}%
             </span>
           </div>
@@ -2014,7 +2014,7 @@ export function GCodeViewer({ className, isTablet }: Props) {
         <div className="flex gap-1.5 sm:flex-[3]">
           {!isJobRunning && !isJobHeld && (
             <button
-              className={`btn btn-ok-solid gap-2 justify-center font-bold ${isTablet ? 'text-xl py-3' : 'text-sm'} flex-1`}
+              className={`btn btn-ok-solid gap-2 justify-center font-bold ${isTablet ? 'text-xl py-3' : 'text-base'} flex-1`}
               onClick={() => loadedPath && sendRaw(`$SD/Run=${loadedPath}`)}
               disabled={!loadedPath || isViewerStartBlocked}
               title={isViewerStartBlocked ? 'Wait for the file download and 2D processing to finish before starting the job' : 'Start job from loaded SD file'}
@@ -2024,19 +2024,19 @@ export function GCodeViewer({ className, isTablet }: Props) {
             </button>
           )}
           {isJobRunning && (
-            <button className={`btn btn-warn-solid gap-1.5 ${isTablet ? 'text-xl py-3' : 'text-xs'} justify-center flex-1`} onClick={() => sendRealtime(0x21)}>
+            <button className={`btn btn-warn-solid gap-1.5 ${isTablet ? 'text-xl py-3' : 'text-sm'} justify-center flex-1`} onClick={() => sendRealtime(0x21)}>
               <Pause size={isTablet ? 18 : 13} />
               Pause
             </button>
           )}
           {isJobHeld && (
-            <button className={`btn btn-ok-solid gap-1.5 ${isTablet ? 'text-xl py-3' : 'text-xs'} justify-center flex-1`} onClick={() => sendRealtime(0x7e)}>
+            <button className={`btn btn-ok-solid gap-1.5 ${isTablet ? 'text-xl py-3' : 'text-sm'} justify-center flex-1`} onClick={() => sendRealtime(0x7e)}>
               <Play size={isTablet ? 18 : 13} />
               Resume
             </button>
           )}
           {(isJobRunning || isJobHeld) && (
-            <button className={`btn btn-danger-solid gap-1.5 ${isTablet ? 'text-xl py-3' : 'text-xs'} justify-center flex-1`} onClick={() => sendRealtime(0x18)}>
+            <button className={`btn btn-danger-solid gap-1.5 ${isTablet ? 'text-xl py-3' : 'text-sm'} justify-center flex-1`} onClick={() => sendRealtime(0x18)}>
               <Square size={isTablet ? 18 : 13} />
               Abort
             </button>
@@ -2046,15 +2046,15 @@ export function GCodeViewer({ className, isTablet }: Props) {
         {isTablet && (
           <div className="flex items-center gap-2 min-w-0 pt-1 border-t border-border">
             {fileName ? (
-              <span className="text-text-primary font-mono normal-case tracking-normal font-normal truncate text-sm">
+              <span className="text-text-primary font-mono normal-case tracking-normal font-normal truncate text-base">
                 {fileName}
               </span>
             ) : (
-              <span className="text-text-dim text-sm">No file loaded</span>
+              <span className="text-text-dim text-base">No file loaded</span>
             )}
             {isLargeProgressOverlayDisabled && (
               <span
-                className="px-1.5 py-0.5 rounded text-xs text-text-dim bg-elevated shrink-0"
+                className="px-1.5 py-0.5 rounded text-sm text-text-dim bg-elevated shrink-0"
                 title={`Toolpath completion overlay disabled above ${LARGE_PROGRESS_OVERLAY_SEGMENT_LIMIT.toLocaleString()} segments while a job is running`}
               >
                 Progress overlay off
@@ -2062,7 +2062,7 @@ export function GCodeViewer({ className, isTablet }: Props) {
             )}
             {!loading && isProcessing3D && (
               <span
-                className="px-1.5 py-0.5 rounded text-xs text-text-dim bg-elevated shrink-0"
+                className="px-1.5 py-0.5 rounded text-sm text-text-dim bg-elevated shrink-0"
                 title="3D preview is still being prepared in the background"
               >
                 3D {processing3DProgress}%

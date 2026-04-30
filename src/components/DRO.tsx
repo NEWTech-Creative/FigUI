@@ -151,11 +151,10 @@ export function DRO({ isTablet = false }: { isTablet?: boolean }) {
             <button
               key={m}
               onClick={() => setPositionMode(m)}
-              className={`px-2.5 py-0.5 text-base rounded-sm transition-colors ${
-                positionMode === m
+              className={`px-2.5 py-0.5 text-base rounded-sm transition-colors ${positionMode === m
                   ? 'bg-surface border border-border text-text-primary shadow-sm'
                   : 'text-text-muted hover:text-text-primary'
-              }`}
+                }`}
             >
               {m}
             </button>
@@ -168,7 +167,7 @@ export function DRO({ isTablet = false }: { isTablet?: boolean }) {
         {positionMode === 'Both' && (
           <div className="flex items-center gap-2 pb-0.5">
             <span className="w-4 shrink-0" />
-            <div className="flex-1 grid grid-cols-2 gap-2 text-[10px] font-mono text-text-muted uppercase tracking-widest">
+            <div className="flex-1 grid grid-cols-2 gap-2 text-sm font-mono text-text-muted uppercase tracking-widest">
               <span className="text-right">W</span>
               <span className="text-right">M</span>
             </div>
@@ -185,7 +184,7 @@ export function DRO({ isTablet = false }: { isTablet?: boolean }) {
         {visibleAxes.map(ax => (
           <div key={ax} className="flex items-center gap-2">
             <span
-              className={`font-black uppercase tracking-widest w-4 shrink-0 select-none ${isTablet ? 'text-2xl' : 'text-sm'}`}
+              className={`font-black uppercase tracking-widest w-4 shrink-0 select-none ${isTablet ? 'text-2xl' : 'text-base'}`}
               style={{ color: AXIS_COLOR[ax] ?? 'var(--text-muted)' }}
             >
               {ax}
@@ -206,12 +205,12 @@ export function DRO({ isTablet = false }: { isTablet?: boolean }) {
                 </span>
               </div>
             ) : (
-            <span
-              className={`flex-1 text-right font-mono tabular-nums tracking-tight ${isTablet ? 'text-[3rem]' : 'text-[1.75rem]'}`}
-              style={{ fontWeight: 300, lineHeight: 1.2, color: 'var(--text-primary)' }}
-            >
-              {formatAxisCoord(coordValues[ax], ax, units)}
-            </span>
+              <span
+                className={`flex-1 text-right font-mono tabular-nums tracking-tight ${isTablet ? 'text-[3rem]' : 'text-[1.75rem]'}`}
+                style={{ fontWeight: 300, lineHeight: 1.2, color: 'var(--text-primary)' }}
+              >
+                {formatAxisCoord(coordValues[ax], ax, units)}
+              </span>
             )}
             {!shouldHideMotionControls && (
               <button
@@ -286,7 +285,7 @@ export function DRO({ isTablet = false }: { isTablet?: boolean }) {
         )}
         {isPendingAxisActionInMotion && (
           <button
-            className={`btn btn-warn flex-1 font-bold ${isTablet && isPortrait ? 'h-20 text-xl' : isTablet ? 'h-14 text-lg' : 'h-7 text-xs'}`}
+            className={`btn btn-warn flex-1 font-bold ${isTablet && isPortrait ? 'h-20 text-xl' : isTablet ? 'h-14 text-lg' : 'h-7 text-sm'}`}
             onClick={cancelPendingAxisAction}
             title={pendingAxisAction?.kind === 'home'
               ? 'Cancel homing (soft reset controller)'
@@ -297,40 +296,41 @@ export function DRO({ isTablet = false }: { isTablet?: boolean }) {
         )}
         {shouldHideMotionControls && (
           <button
-            className="btn flex-1 h-7 text-xs font-bold flex items-center justify-center gap-1.5 bg-danger hover:bg-danger/85 text-white border-transparent"
+            className="btn flex-1 h-10 text-2xl font-bold flex items-center justify-center gap-1.5 bg-danger hover:bg-danger/85 text-white border-transparent"
             onClick={() => sendRealtime(0x18)}
             title="E-Stop — soft reset the controller"
           >
-            <Power size={12} />
+            <Power className='w-6 h-6' />
             E-Stop
           </button>
         )}
       </div>
 
       {status.state === 'Alarm' && (
-        <div className="border-t-2 border-danger bg-danger/10 px-3 py-3 flex gap-3">
-          <TriangleAlert className="text-danger w-20 h-20" />
-          <div className="flex flex-col gap-2 flex-1 min-w-0">
-            <div className="flex flex-col gap-1 min-w-0">
-              <span className="text-2xl font-black text-danger uppercase tracking-widest leading-none">
-                {status.alarmCode != null ? `Alarm ${status.alarmCode}` : 'Alarm'}
-              </span>
+        <div className='flex flex-col border-t-2 border-danger bg-danger/10 px-3 py-3 gap-3'>
+          <div className="flex items-center gap-3">
+            <TriangleAlert className="text-danger w-12 h-12" />
+            <div className="flex flex-col gap-2 flex-1 min-w-0">
+              <div className="flex flex-col gap-1 min-w-0">
+                <span className="text-2xl font-black text-danger uppercase tracking-widest leading-none">
+                  {status.alarmCode != null ? `Alarm ${status.alarmCode}` : 'Alarm'}
+                </span>
 
-              <span className="text-2xl font-semibold text-text-primary leading-snug">
-                {status.alarmName
-                  ?? (status.alarmCode != null
-                    ? (ALARM_MESSAGES[status.alarmCode] ?? `Unknown alarm code ${status.alarmCode}`)
-                    : 'Machine is in alarm state')}
-              </span>
+                <span className="text-2xl font-semibold text-text-primary leading-snug">
+                  {status.alarmName
+                    ?? (status.alarmCode != null
+                      ? (ALARM_MESSAGES[status.alarmCode] ?? `Unknown alarm code ${status.alarmCode}`)
+                      : 'Machine is in alarm state')}
+                </span>
+              </div>
             </div>
-
-            <button
-              className="btn btn-danger w-full h-8 text-2xl font-bold"
-              onClick={() => sendRaw('$X')}
-            >
-              Clear Alarm
-            </button>
           </div>
+          <button
+            className="btn btn-danger w-full h-8 text-2xl font-bold"
+            onClick={() => sendRaw('$X')}
+          >
+            Clear Alarm
+          </button>
         </div>
       )}
 
@@ -339,12 +339,12 @@ export function DRO({ isTablet = false }: { isTablet?: boolean }) {
         <div className="flex items-center gap-1.5">
           <span>F</span>
           <span className="text-text-primary">{formatFeedRate(status.feed, units)}</span>
-          <span className={`text-text-dim ${isTablet ? 'text-base' : 'text-[10px]'}`}>{droFeedUnitLabel(units)}</span>
+          <span className={`text-text-dim ${isTablet ? 'text-base' : 'text-sm'}`}>{droFeedUnitLabel(units)}</span>
         </div>
         <div className="flex items-center gap-1.5">
           <span>S</span>
           <span className="text-text-primary">{status.spindle}</span>
-          <span className={`text-text-dim ${isTablet ? 'text-base' : 'text-[10px]'}`}>rpm</span>
+          <span className={`text-text-dim ${isTablet ? 'text-base' : 'text-sm'}`}>rpm</span>
         </div>
       </div>
     </div>

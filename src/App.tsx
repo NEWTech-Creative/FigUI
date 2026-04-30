@@ -282,8 +282,8 @@ export function App() {
     return (
       <div className="fixed inset-0 flex flex-col items-center justify-center gap-4 bg-[var(--bg)]">
         <RefreshCw size={28} className="text-accent animate-spin" />
-        <span className="text-text-muted text-sm">Connecting to FluidNC…</span>
-        <span className="text-text-dim text-xs font-mono">{window.location.host}</span>
+        <span className="text-text-muted text-base">Connecting to FluidNC…</span>
+        <span className="text-text-dim text-sm font-mono">{window.location.host}</span>
       </div>
     )
   }
@@ -292,9 +292,9 @@ export function App() {
     return (
       <div className="fixed inset-0 flex flex-col items-center justify-center gap-4 bg-[var(--bg)]">
         <WifiOff size={28} className="text-danger" />
-        <span className="text-text-primary text-sm font-medium">Could not connect</span>
-        <span className="text-danger text-xs max-w-xs text-center">{errMsg}</span>
-        <span className="text-text-dim text-xs font-mono">{window.location.host}</span>
+        <span className="text-text-primary text-base font-medium">Could not connect</span>
+        <span className="text-danger text-sm max-w-xs text-center">{errMsg}</span>
+        <span className="text-text-dim text-sm font-mono">{window.location.host}</span>
         <button className="btn-primary mt-2" onClick={retryFromError}>
           Retry
         </button>
@@ -327,14 +327,14 @@ export function App() {
         <div className="fixed md:absolute inset-0 z-50 bg-[var(--bg)]/80 backdrop-blur-sm
                         flex flex-col items-center justify-center gap-3">
           <RefreshCw size={24} className="text-accent animate-spin" />
-          <span className="text-text-primary text-sm font-medium">Restarting controller…</span>
-          <span className="text-text-muted text-xs">Waiting for FluidNC to come back online</span>
+          <span className="text-text-primary text-base font-medium">Restarting controller…</span>
+          <span className="text-text-muted text-sm">Waiting for FluidNC to come back online</span>
         </div>
       ) : showReconnectOverlay && (
         <div className="fixed md:absolute inset-0 z-50 bg-[var(--bg)]/80 backdrop-blur-sm
                         flex flex-col items-center justify-center gap-3">
           <RefreshCw size={24} className="text-accent animate-spin" />
-          <span className="text-text-muted text-sm">Reconnecting…</span>
+          <span className="text-text-muted text-base">Reconnecting…</span>
         </div>
       )}
 
@@ -390,7 +390,7 @@ export function App() {
           <button
             key={id}
             onClick={() => setMobilePanel(id)}
-            className={`flex-1 flex flex-col items-center justify-center gap-0.5 text-[10px] font-medium
+            className={`flex-1 flex flex-col items-center justify-center gap-0.5 text-sm font-medium
                         transition-colors ${
               mobilePanel === id ? 'text-accent' : 'text-text-muted'
             }`}

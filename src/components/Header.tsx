@@ -49,11 +49,11 @@ export function Header({ onSettingsClick, onAboutClick, isTablet }: Props) {
           onClick={() => sendRaw('$X')}
           title="Click to clear alarm ($X)"
         >
-          <span className="w-1.5 h-1.5 rounded-full bg-current text-sm" />
+          <span className="w-1.5 h-1.5 rounded-full bg-current text-base" />
           {status.state}
         </button>
       ) : (
-        <div className={`tag ${stateBg(status.state)} ${stateColor(status.state)} text-sm`}>
+        <div className={`tag ${stateBg(status.state)} ${stateColor(status.state)} text-base`}>
           <span className={`w-1.5 h-1.5 rounded-full ${
             status.state === 'Run' || status.state === 'Jog' ? 'bg-current animate-pulse' : 'bg-current'
           }`} />
@@ -62,7 +62,7 @@ export function Header({ onSettingsClick, onAboutClick, isTablet }: Props) {
       )}
 
       {status.sdFilename && status.sdPercent !== undefined && (
-        <div className="hidden lg:flex items-center gap-2 text-xs text-text-muted">
+        <div className="hidden lg:flex items-center gap-2 text-sm text-text-muted">
           <div className="w-24 h-1 bg-elevated rounded-full overflow-hidden">
             <div
               className="h-full bg-info transition-all"
@@ -81,7 +81,7 @@ export function Header({ onSettingsClick, onAboutClick, isTablet }: Props) {
             <span className="hidden sm:inline">Connected</span>
           </div>
         ) : (
-          <div className={`flex items-center gap-1 ${isTablet ? 'text-sm' : 'text-xs'} text-text-muted mr-2`}>
+          <div className={`flex items-center gap-1 ${isTablet ? 'text-base' : 'text-sm'} text-text-muted mr-2`}>
             <WifiOff size={isTablet ? 18 : 14} />
           </div>
         )}

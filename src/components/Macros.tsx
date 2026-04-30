@@ -149,7 +149,7 @@ function FileBrowser({ onSelect, onClose }: FileBrowserProps) {
               <button
                 key={id}
                 onClick={() => switchFs(id)}
-                className={`flex-1 flex items-center justify-center gap-1.5 py-2 text-xs font-medium
+                className={`flex-1 flex items-center justify-center gap-1.5 py-2 text-sm font-medium
                             uppercase tracking-wide transition-colors border-b-2 -mb-px ${
                   fs === id
                     ? 'border-accent text-accent'
@@ -181,9 +181,9 @@ function FileBrowser({ onSelect, onClose }: FileBrowserProps) {
             >
               <ChevronLeft size={13} />
             </button>
-            <span className="text-[10px] font-mono text-text-dim truncate max-w-[240px]">{path}</span>
+            <span className="text-sm font-mono text-text-dim truncate max-w-[240px]">{path}</span>
           </div>
-          <span className="text-[10px] text-text-dim shrink-0">Select a G-code file</span>
+          <span className="text-sm text-text-dim shrink-0">Select a G-code file</span>
         </div>
 
         {/* File list */}
@@ -191,14 +191,14 @@ function FileBrowser({ onSelect, onClose }: FileBrowserProps) {
           {loading && (
             <div className="flex items-center justify-center h-full gap-2 text-text-muted">
               <Loader2 size={14} className="animate-spin" />
-              <span className="text-xs">Loading…</span>
+              <span className="text-sm">Loading…</span>
             </div>
           )}
           {!loading && error && (
-            <div className="text-xs text-danger text-center py-6">{error}</div>
+            <div className="text-sm text-danger text-center py-6">{error}</div>
           )}
           {!loading && !error && sorted.length === 0 && (
-            <div className="text-xs text-text-dim text-center py-6">No files found</div>
+            <div className="text-sm text-text-dim text-center py-6">No files found</div>
           )}
           {!loading && !error && sorted.map(entry => {
             const selectable = entry.isDir || isGcode(entry.name)
@@ -220,12 +220,12 @@ function FileBrowser({ onSelect, onClose }: FileBrowserProps) {
                   ? <FolderOpen size={13} className="shrink-0 text-text-muted" />
                   : <FileCode size={13} className="shrink-0" />
                 }
-                <span className="flex-1 text-xs font-mono truncate">{entry.name}</span>
+                <span className="flex-1 text-sm font-mono truncate">{entry.name}</span>
                 {loadingFile === entry.name && (
                   <Loader2 size={12} className="animate-spin shrink-0 text-text-muted" />
                 )}
                 {!entry.isDir && isGcode(entry.name) && !loadingFile && entry.size > 0 && (
-                  <span className="text-[10px] text-text-dim shrink-0 font-mono">
+                  <span className="text-sm text-text-dim shrink-0 font-mono">
                     {entry.size < 1024
                       ? `${entry.size} B`
                       : `${(entry.size / 1024).toFixed(1)} KB`}
@@ -254,14 +254,14 @@ function AddMenu({ onBrowse, onCreate, onClose }: AddMenuProps) {
       <div className="fixed inset-0 z-40" onClick={onClose} />
       <div className="absolute right-0 top-full mt-1 z-50 bg-surface border border-border rounded-sm shadow-xl w-44 py-1 animate-in">
         <button
-          className="w-full flex items-center gap-2 px-3 py-2 text-xs text-left hover:bg-elevated transition-colors"
+          className="w-full flex items-center gap-2 px-3 py-2 text-sm text-left hover:bg-elevated transition-colors"
           onClick={() => { onClose(); onBrowse() }}
         >
           <FolderOpen size={12} className="shrink-0 text-text-muted" />
           Browse Files
         </button>
         <button
-          className="w-full flex items-center gap-2 px-3 py-2 text-xs text-left hover:bg-elevated transition-colors"
+          className="w-full flex items-center gap-2 px-3 py-2 text-sm text-left hover:bg-elevated transition-colors"
           onClick={() => { onClose(); onCreate() }}
         >
           <FileCode size={12} className="shrink-0 text-text-muted" />
@@ -290,7 +290,7 @@ function MacroCard({ macro, onChange, onDelete, onOpenEditor }: MacroCardProps) 
       {/* Label row */}
       <div className="flex items-center gap-2">
         <input
-          className="input-field flex-1 py-1 text-xs font-medium"
+          className="input-field flex-1 py-1 text-sm font-medium"
           value={macro.label}
           onChange={e => onChange({ ...macro, label: e.target.value })}
           placeholder="Button label"
@@ -320,23 +320,23 @@ function MacroCard({ macro, onChange, onDelete, onOpenEditor }: MacroCardProps) 
       {preview.length > 0 ? (
         <div className="bg-surface rounded px-2 py-1.5 space-y-0.5">
           {preview.map((line, i) => (
-            <div key={i} className="text-[10px] font-mono text-text-muted truncate">{line}</div>
+            <div key={i} className="text-sm font-mono text-text-muted truncate">{line}</div>
           ))}
           {overflow > 0 && (
-            <div className="text-[10px] text-text-dim">
+            <div className="text-sm text-text-dim">
               +{overflow} more line{overflow !== 1 ? 's' : ''}
             </div>
           )}
         </div>
       ) : (
-        <div className="text-[10px] text-text-dim italic px-1">
+        <div className="text-sm text-text-dim italic px-1">
           No command — click the edit icon to add
         </div>
       )}
 
       {/* Color picker */}
       <div className="flex items-center gap-2">
-        <span className="text-[10px] text-text-dim uppercase tracking-wider shrink-0">Color</span>
+        <span className="text-sm text-text-dim uppercase tracking-wider shrink-0">Color</span>
         <div className="flex items-center gap-1.5">
           {COLORS.map(c => (
             <button
@@ -355,7 +355,7 @@ function MacroCard({ macro, onChange, onDelete, onOpenEditor }: MacroCardProps) 
       </div>
       {/* Glyph selector */}
       <div>
-        <span className="text-[10px] text-text-dim uppercase tracking-wider mb-1.5 block">Icon</span>
+        <span className="text-sm text-text-dim uppercase tracking-wider mb-1.5 block">Icon</span>
         <div className="grid grid-cols-7 gap-1.5">
           {GLYPH_OPTIONS.map(name => {
             const Icon = ICON_MAP[name]
@@ -401,10 +401,10 @@ function NamePrompt({ onConfirm, onClose }: NamePromptProps) {
         className="bg-surface border border-border rounded-sm shadow-xl w-80 p-4 animate-in space-y-3"
         onClick={e => e.stopPropagation()}
       >
-        <p className="text-xs font-semibold text-text-primary">New Macro</p>
+        <p className="text-sm font-semibold text-text-primary">New Macro</p>
         <input
           ref={inputRef}
-          className="input-field w-full py-1.5 text-sm"
+          className="input-field w-full py-1.5 text-base"
           placeholder="Macro name"
           value={name}
           maxLength={20}
@@ -413,7 +413,7 @@ function NamePrompt({ onConfirm, onClose }: NamePromptProps) {
         />
         {/* Color */}
         <div className="flex items-center gap-2">
-          <span className="text-[10px] text-text-dim uppercase tracking-wider shrink-0">Color</span>
+          <span className="text-sm text-text-dim uppercase tracking-wider shrink-0">Color</span>
           <div className="flex items-center gap-1.5">
             {COLORS.map(c => (
               <button
@@ -430,7 +430,7 @@ function NamePrompt({ onConfirm, onClose }: NamePromptProps) {
         </div>
         {/* Glyph */}
         <div>
-          <span className="text-[10px] text-text-dim uppercase tracking-wider mb-1.5 block">Icon</span>
+          <span className="text-sm text-text-dim uppercase tracking-wider mb-1.5 block">Icon</span>
           <div className="grid grid-cols-7 gap-1.5">
             {GLYPH_OPTIONS.map(g => {
               const Icon = ICON_MAP[g]
@@ -452,8 +452,8 @@ function NamePrompt({ onConfirm, onClose }: NamePromptProps) {
           </div>
         </div>
         <div className="flex justify-end gap-2 pt-1">
-          <button className="btn btn-ghost text-xs py-1.5 px-3" onClick={onClose}>Cancel</button>
-          <button className="btn btn-primary text-xs py-1.5 px-3" onClick={confirm}>Open Editor</button>
+          <button className="btn btn-ghost text-sm py-1.5 px-3" onClick={onClose}>Cancel</button>
+          <button className="btn btn-primary text-sm py-1.5 px-3" onClick={confirm}>Open Editor</button>
         </div>
       </div>
     </div>
@@ -479,7 +479,7 @@ function ImportPanel({ macro, onChange }: ImportPanelProps) {
       {/* Name */}
       <input
         ref={nameRef}
-        className="input-field w-full py-2 text-sm font-medium"
+        className="input-field w-full py-2 text-base font-medium"
         placeholder="Macro name"
         value={macro.label}
         maxLength={20}
@@ -488,7 +488,7 @@ function ImportPanel({ macro, onChange }: ImportPanelProps) {
 
       {/* Color */}
       <div className="flex items-center gap-2">
-        <span className="text-[10px] text-text-dim uppercase tracking-wider shrink-0">Color</span>
+        <span className="text-sm text-text-dim uppercase tracking-wider shrink-0">Color</span>
         <div className="flex items-center gap-2">
           {COLORS.map(c => (
             <button
@@ -508,7 +508,7 @@ function ImportPanel({ macro, onChange }: ImportPanelProps) {
 
       {/* Glyph */}
       <div>
-        <span className="text-[10px] text-text-dim uppercase tracking-wider mb-1.5 block">Icon</span>
+        <span className="text-sm text-text-dim uppercase tracking-wider mb-1.5 block">Icon</span>
         <div className="grid grid-cols-7 gap-1.5">
           {GLYPH_OPTIONS.map(g => {
             const Icon = ICON_MAP[g]
@@ -533,16 +533,16 @@ function ImportPanel({ macro, onChange }: ImportPanelProps) {
       {/* Read-only command preview */}
       <div className="flex-1 min-h-0 flex flex-col bg-elevated/60 rounded border border-border overflow-hidden">
         <div className="px-2 py-1 border-b border-border shrink-0">
-          <span className="text-[10px] text-text-dim uppercase tracking-wider">
+          <span className="text-sm text-text-dim uppercase tracking-wider">
             Command preview · {lines.length} line{lines.length !== 1 ? 's' : ''}
           </span>
         </div>
         <div className="flex-1 overflow-y-auto p-2 space-y-0.5">
           {preview.map((line, i) => (
-            <div key={i} className="text-[10px] font-mono text-text-muted truncate">{line}</div>
+            <div key={i} className="text-sm font-mono text-text-muted truncate">{line}</div>
           ))}
           {overflow > 0 && (
-            <div className="text-[10px] text-text-dim pt-0.5">
+            <div className="text-sm text-text-dim pt-0.5">
               +{overflow} more line{overflow !== 1 ? 's' : ''}
             </div>
           )}
@@ -694,13 +694,13 @@ export function Macros({ isTablet }: { isTablet?: boolean }) {
             <span>New Macro</span>
             <div className="flex items-center gap-1">
               <button
-                className="btn btn-ghost text-xs py-0.5 px-2"
+                className="btn btn-ghost text-sm py-0.5 px-2"
                 onClick={() => setImportingMacro(null)}
               >
                 Cancel
               </button>
               <button
-                className="btn btn-primary text-xs py-0.5 px-2"
+                className="btn btn-primary text-sm py-0.5 px-2"
                 onClick={handleSaveImport}
               >
                 <Check size={11} /> Save
@@ -735,7 +735,7 @@ export function Macros({ isTablet }: { isTablet?: boolean }) {
               )}
               {macros.length > 0 && (
                 <button
-                  className={`flex items-center gap-1.5 px-2 py-0.5 rounded text-xs font-medium
+                  className={`flex items-center gap-1.5 px-2 py-0.5 rounded text-sm font-medium
                               transition-colors border ${
                     editing
                       ? 'border-ok/40 bg-ok/10 text-ok hover:bg-ok/20'
@@ -755,8 +755,8 @@ export function Macros({ isTablet }: { isTablet?: boolean }) {
           {/* Save error banner */}
           {saveError && (
             <div className="px-3 py-1.5 bg-danger/10 border-b border-danger/30 flex items-center justify-between">
-              <span className="text-[10px] text-danger">Failed to save to controller</span>
-              <button className="text-[10px] text-danger underline" onClick={() => setSaveError(false)}>
+              <span className="text-sm text-danger">Failed to save to controller</span>
+              <button className="text-sm text-danger underline" onClick={() => setSaveError(false)}>
                 dismiss
               </button>
             </div>
@@ -767,7 +767,7 @@ export function Macros({ isTablet }: { isTablet?: boolean }) {
             {loadingMacros ? (
               <div className="flex items-center justify-center h-full gap-2 text-text-muted">
                 <Loader2 size={14} className="animate-spin" />
-                <span className="text-xs">Loading macros…</span>
+                <span className="text-sm">Loading macros…</span>
               </div>
             ) : macros.length === 0 ? (
               /* Empty state */
@@ -775,16 +775,16 @@ export function Macros({ isTablet }: { isTablet?: boolean }) {
                 <div className="w-12 h-12 rounded-full bg-elevated flex items-center justify-center">
                   <FileCode size={20} className="text-text-muted" />
                 </div>
-                <p className="text-xs">No macros yet</p>
+                <p className="text-2xl">No macros yet</p>
                 <div className="flex flex-col gap-2 items-stretch w-36">
                   <button
-                    className="btn btn-ghost text-xs px-3 py-1.5 gap-1.5"
+                    className="btn btn-ghost text-base px-3 py-1.5 gap-1.5"
                     onClick={() => setShowBrowser(true)}
                   >
                     <FolderOpen size={11} /> Browse Files
                   </button>
                   <button
-                    className="btn btn-ghost text-xs px-3 py-1.5 gap-1.5"
+                    className="btn btn-ghost text-base px-3 py-1.5 gap-1.5"
                     onClick={handleCreateNew}
                   >
                     <Plus size={11} /> Create New
@@ -812,7 +812,7 @@ export function Macros({ isTablet }: { isTablet?: boolean }) {
                   return (
                     <button
                       key={m.id}
-                      className={`btn ${BTN_CLASS[m.color]} flex-col gap-1.5 w-full ${isTablet ? 'h-[110px] text-xl' : 'h-[72px] text-sm'}`}
+                      className={`btn ${BTN_CLASS[m.color]} flex-col gap-1.5 w-full ${isTablet ? 'h-[110px] text-xl' : 'h-[72px] text-base'}`}
                       onClick={() => runMacro(m)}
                       disabled={!m.command.trim() && !m.filename}
                       title={m.label || (m.filename ? 'Ready' : 'No command set')}

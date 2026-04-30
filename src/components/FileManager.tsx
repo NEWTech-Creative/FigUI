@@ -125,7 +125,7 @@ function FileRow({ entry, path, fs, canLoadGcode, onNavigate, onRefresh, onEdit,
       {!renaming && (
         <div className={`${isTablet ? 'w-36' : 'w-28'} shrink-0 flex items-center justify-end`}>
           {!entry.isDir && (
-            <span className={`${isTablet ? 'text-sm' : 'text-base'} text-text-dim font-mono text-right group-hover:hidden`}>{fmtSize(entry.size)}</span>
+            <span className={`${isTablet ? 'text-base' : 'text-base'} text-text-dim font-mono text-right group-hover:hidden`}>{fmtSize(entry.size)}</span>
           )}
           <div className="hidden group-hover:flex items-center gap-1">
             {!entry.isDir && isEditable(entry.name) && (
@@ -443,7 +443,7 @@ export function FileManager({ isTablet }: { isTablet?: boolean }) {
             onClick={goUp}
           >
             <Folder size={14} className="text-accent/50" />
-            <span className="text-sm">..</span>
+            <span className="text-base">..</span>
           </button>
         )}
 
@@ -502,7 +502,7 @@ export function FileManager({ isTablet }: { isTablet?: boolean }) {
 
       {editLoading && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50">
-          <div className="bg-surface border border-border rounded-sm p-6 text-sm text-text-muted">
+          <div className="bg-surface border border-border rounded-sm p-6 text-base text-text-muted">
             Loading file…
           </div>
         </div>

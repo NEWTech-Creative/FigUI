@@ -139,7 +139,7 @@ export function Terminal() {
         {!autoScroll && (
           <button
             className="sticky bottom-2 left-1/2 -translate-x-1/2 flex items-center gap-1
-                       text-xs px-3 py-1 rounded-full bg-surface border border-border
+                       text-sm px-3 py-1 rounded-full bg-surface border border-border
                        text-text-muted hover:text-text-primary shadow-lg"
             onClick={scrollToBottom}
           >
@@ -150,9 +150,9 @@ export function Terminal() {
       </div>
 
       <div className="border-t border-border p-2 flex gap-2">
-        <span className="text-text-dim font-mono text-xs self-center shrink-0">{'>'}</span>
+        <span className="text-text-dim font-mono text-sm self-center shrink-0">{'>'}</span>
         <input
-          className="flex-1 bg-transparent font-mono text-xs text-text-primary
+          className="flex-1 bg-transparent font-mono text-sm text-text-primary
                      placeholder:text-text-dim focus:outline-none"
           placeholder="Enter command…"
           value={input}
@@ -164,7 +164,7 @@ export function Terminal() {
           autoCapitalize="off"
         />
         <button
-          className="btn-ghost px-3 py-1 text-xs"
+          className="btn-ghost px-3 py-1 text-sm"
           onClick={submit}
           disabled={!input.trim()}
         >

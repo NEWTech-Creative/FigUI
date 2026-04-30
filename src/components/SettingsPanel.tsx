@@ -260,7 +260,7 @@ type SaveState = 'idle' | 'saving' | 'saved' | 'error'
 function SaveBtn({ state, changed, onClick }: {
   state: SaveState; changed: boolean; onClick: () => void
 }) {
-  const base = 'shrink-0 h-7 min-w-[44px] px-2 rounded text-xs font-medium transition-all border'
+  const base = 'shrink-0 h-7 min-w-[44px] px-2 rounded text-sm font-medium transition-all border'
   if (state === 'saving') return <button className={`${base} border-border text-text-dim cursor-not-allowed`} disabled>…</button>
   if (state === 'saved')  return <button className={`${base} border-ok/40 bg-ok/10 text-ok`} disabled>✓</button>
   if (state === 'error')  return <button className={`${base} border-danger/40 bg-danger/10 text-danger`} disabled>!</button>
@@ -327,12 +327,12 @@ function SettingRow({ setting, showPath, onSave }: SettingRowProps) {
       <div className="flex items-center gap-3 px-4 py-2.5 border-b border-border last:border-0
                       hover:bg-elevated/40 transition-colors">
         <div className="flex-1 min-w-0">
-          <div className="text-sm text-text-primary leading-tight">{label}</div>
-          {showPath && <div className="text-[10px] text-text-dim mt-0.5">{searchBreadcrumb(setting)}</div>}
+          <div className="text-base text-text-primary leading-tight">{label}</div>
+          {showPath && <div className="text-sm text-text-dim mt-0.5">{searchBreadcrumb(setting)}</div>}
         </div>
         <div className="flex items-center gap-2 shrink-0">
-          {saveState === 'saved' && <span className="text-[10px] text-ok">saved</span>}
-          {saveState === 'error' && <span className="text-[10px] text-danger">error</span>}
+          {saveState === 'saved' && <span className="text-sm text-ok">saved</span>}
+          {saveState === 'error' && <span className="text-sm text-danger">error</span>}
           <button
             onClick={toggle}
             className={`relative inline-flex h-5 w-9 shrink-0 items-center rounded-full
@@ -355,14 +355,14 @@ function SettingRow({ setting, showPath, onSave }: SettingRowProps) {
       <div className={`flex items-center gap-3 px-4 py-2.5 border-b border-border last:border-0
                        hover:bg-elevated/40 transition-colors ${changed ? 'border-l-2 border-l-warn' : ''}`}>
         <div className="flex-1 min-w-0">
-          <div className="text-sm text-text-primary">{label}</div>
-          {showPath && <div className="text-[10px] text-text-dim mt-0.5">{searchBreadcrumb(setting)}</div>}
+          <div className="text-base text-text-primary">{label}</div>
+          {showPath && <div className="text-sm text-text-dim mt-0.5">{searchBreadcrumb(setting)}</div>}
         </div>
         <div className="flex items-center gap-2 shrink-0">
           <select
             value={value}
             onChange={e => setValue(e.target.value)}
-            className="input-field py-1 text-xs w-36"
+            className="input-field py-1 text-sm w-36"
           >
             {opts.map(opt => {
               const [optLabel, optVal] = Object.entries(opt)[0]
@@ -380,10 +380,10 @@ function SettingRow({ setting, showPath, onSave }: SettingRowProps) {
                      hover:bg-elevated/40 transition-colors ${changed ? 'border-l-2 border-l-warn' : ''}`}>
       <div className="flex items-center justify-between gap-2 mb-1.5">
         <div className="min-w-0">
-          <span className="text-sm text-text-primary leading-tight">{label}</span>
-          {showPath && <div className="text-[10px] text-text-dim">{searchBreadcrumb(setting)}</div>}
+          <span className="text-base text-text-primary leading-tight">{label}</span>
+          {showPath && <div className="text-sm text-text-dim">{searchBreadcrumb(setting)}</div>}
         </div>
-        {unit && <span className="text-xs text-text-dim shrink-0">{unit}</span>}
+        {unit && <span className="text-sm text-text-dim shrink-0">{unit}</span>}
       </div>
       <div className="flex items-center gap-2">
         <input
@@ -394,7 +394,7 @@ function SettingRow({ setting, showPath, onSave }: SettingRowProps) {
           step={isNumeric ? (setting.T === 'R' ? 'any' : '1') : undefined}
           min={isNumeric && setting.M !== undefined ? Number(setting.M) : undefined}
           max={isNumeric && setting.S !== undefined ? Number(setting.S) : undefined}
-          className="input-field flex-1 py-1 text-xs font-mono"
+          className="input-field flex-1 py-1 text-sm font-mono"
           spellCheck={false}
         />
         <SaveBtn state={saveState} changed={changed} onClick={save} />
@@ -406,13 +406,13 @@ function SettingRow({ setting, showPath, onSave }: SettingRowProps) {
 function SectionHeader({ label, level }: { label: string; level: 'section' | 'subsection' }) {
   if (level === 'subsection') {
     return (
-      <div className="px-4 pt-3 pb-1 text-[10px] font-semibold uppercase tracking-widest text-text-dim">
+      <div className="px-4 pt-3 pb-1 text-sm font-semibold uppercase tracking-widest text-text-dim">
         {label}
       </div>
     )
   }
   return (
-    <div className="px-4 pt-4 pb-1.5 text-xs font-bold uppercase tracking-wider text-accent/80
+    <div className="px-4 pt-4 pb-1.5 text-sm font-bold uppercase tracking-wider text-accent/80
                     border-t border-border first:border-t-0 first:pt-3 bg-elevated/20">
       {label}
     </div>
@@ -740,7 +740,7 @@ export function SettingsPanel({ onClose }: SettingsPanelProps) {
             <RefreshCw size={14} className={loading ? 'animate-spin' : ''} />
           </button>
           <button
-            className="flex items-center gap-1.5 px-2.5 py-1.5 rounded text-xs font-medium
+            className="flex items-center gap-1.5 px-2.5 py-1.5 rounded text-sm font-medium
                        text-text-muted hover:text-danger hover:bg-danger/10 border border-transparent
                        hover:border-danger/30 transition-colors disabled:opacity-40"
             onClick={restart}
@@ -765,7 +765,7 @@ export function SettingsPanel({ onClose }: SettingsPanelProps) {
 
       {espInfo && (
         <div className="flex items-center gap-4 px-5 py-2 border-b border-border
-                        bg-elevated/40 text-xs">
+                        bg-elevated/40 text-sm">
           <span>
             <span className="text-text-dim">Firmware </span>
             <span className="text-text-primary font-mono">{espInfo.version || '—'}</span>
@@ -785,7 +785,7 @@ export function SettingsPanel({ onClose }: SettingsPanelProps) {
         <div className="relative">
           <Search size={12} className="absolute left-3 top-1/2 -translate-y-1/2 text-text-dim pointer-events-none" />
           <input
-            className="input-field pr-3 py-1.5 text-xs"
+            className="input-field pr-3 py-1.5 text-sm"
             style={{ paddingLeft: 32 }}
             placeholder="Search settings…"
             value={filter}
@@ -803,7 +803,7 @@ export function SettingsPanel({ onClose }: SettingsPanelProps) {
             <div className="relative">
               <Search size={12} className="absolute left-3 top-1/2 -translate-y-1/2 text-text-dim pointer-events-none" />
               <input
-                className="input-field pr-3 py-1.5 text-xs"
+                className="input-field pr-3 py-1.5 text-sm"
                 style={{ paddingLeft: 32 }}
                 placeholder="Search…"
                 value={filter}
@@ -824,7 +824,7 @@ export function SettingsPanel({ onClose }: SettingsPanelProps) {
                   onClick={() => selectCategory(cat.id)}
                   className={`flex items-center gap-1.5 sm:gap-2.5 sm:w-full
                               px-2.5 sm:px-3 py-1.5 sm:py-2 rounded
-                              text-xs sm:text-sm whitespace-nowrap
+                              text-sm sm:text-base whitespace-nowrap
                               transition-all text-left ${
                     active
                       ? 'bg-accent/[0.12] text-accent font-medium'
@@ -844,7 +844,7 @@ export function SettingsPanel({ onClose }: SettingsPanelProps) {
           {!isSearching && activeCat && (
             <div className="shrink-0">
               <div className="px-5 py-3 border-b border-border">
-                <h3 className="text-sm font-semibold text-text-primary flex items-center gap-2">
+                <h3 className="text-base font-semibold text-text-primary flex items-center gap-2">
                   <activeCat.icon size={14} className="text-accent" />
                   {activeCat.label}
                 </h3>
@@ -857,7 +857,7 @@ export function SettingsPanel({ onClose }: SettingsPanelProps) {
                     <button
                       key={k}
                       onClick={() => setSubKey(k)}
-                      className={`py-2 px-3 text-xs font-semibold uppercase tracking-wider whitespace-nowrap
+                      className={`py-2 px-3 text-sm font-semibold uppercase tracking-wider whitespace-nowrap
                                   transition-colors border-b-2 -mb-px ${
                         subKey === k
                           ? 'border-accent text-accent'
@@ -872,7 +872,7 @@ export function SettingsPanel({ onClose }: SettingsPanelProps) {
 
               {category === 'config' && (
                 <div className="flex items-start gap-2 px-4 py-2.5 border-b border-border
-                                bg-accent/5 text-xs text-text-dim">
+                                bg-accent/5 text-sm text-text-dim">
                   <Info size={12} className="text-accent shrink-0 mt-px" />
                   <span>
                     These settings come from <span className="font-mono text-text-primary">config.yaml</span>.
@@ -884,7 +884,7 @@ export function SettingsPanel({ onClose }: SettingsPanelProps) {
           )}
 
           {isSearching && visibleSettings.length > 0 && (
-            <div className="px-5 py-2.5 text-xs text-text-dim border-b border-border shrink-0">
+            <div className="px-5 py-2.5 text-sm text-text-dim border-b border-border shrink-0">
               {visibleSettings.length} result{visibleSettings.length !== 1 ? 's' : ''}
             </div>
           )}
@@ -900,7 +900,7 @@ export function SettingsPanel({ onClose }: SettingsPanelProps) {
                       <button
                         key={unit}
                         onClick={() => setUnits(unit)}
-                        className={`px-3 py-1.5 text-xs rounded-sm transition-colors ${
+                        className={`px-3 py-1.5 text-sm rounded-sm transition-colors ${
                           units === unit
                             ? 'bg-surface border border-border text-text-primary shadow-sm'
                             : 'text-text-muted hover:text-text-primary'
@@ -914,7 +914,7 @@ export function SettingsPanel({ onClose }: SettingsPanelProps) {
                       <button
                         key={mode}
                         onClick={() => setLayoutMode(mode)}
-                        className={`px-3 py-1.5 text-xs rounded-sm transition-colors capitalize ${
+                        className={`px-3 py-1.5 text-sm rounded-sm transition-colors capitalize ${
                           layoutMode === mode
                             ? 'bg-surface border border-border text-text-primary shadow-sm'
                             : 'text-text-muted hover:text-text-primary'
@@ -933,7 +933,7 @@ export function SettingsPanel({ onClose }: SettingsPanelProps) {
                       <button
                         key={id}
                         onClick={() => setTheme(id)}
-                        className={`px-3 py-1.5 text-xs rounded-sm transition-colors ${
+                        className={`px-3 py-1.5 text-sm rounded-sm transition-colors ${
                           theme === id
                             ? 'bg-surface border border-border text-text-primary shadow-sm'
                             : 'text-text-muted hover:text-text-primary'
@@ -943,7 +943,7 @@ export function SettingsPanel({ onClose }: SettingsPanelProps) {
                   },
                 ]).map(({ label, control }) => (
                   <div key={label} className="flex items-center justify-between px-5 py-3.5">
-                    <span className="text-sm text-text-primary">{label}</span>
+                    <span className="text-base text-text-primary">{label}</span>
                     <div className="flex items-center gap-0.5 bg-elevated rounded-sm border border-border p-0.5">
                       {control}
                     </div>
@@ -953,20 +953,20 @@ export function SettingsPanel({ onClose }: SettingsPanelProps) {
             )}
 
             {(isSearching || category !== 'workspace') && error && (
-              <div className="m-4 p-3 rounded bg-danger/10 border border-danger/30 text-danger text-xs leading-relaxed whitespace-pre-wrap font-mono">
+              <div className="m-4 p-3 rounded bg-danger/10 border border-danger/30 text-danger text-sm leading-relaxed whitespace-pre-wrap font-mono">
                 {error}
               </div>
             )}
 
             {(isSearching || category !== 'workspace') && loading && !error && (
-              <div className="flex items-center justify-center h-32 gap-2 text-text-muted text-xs">
+              <div className="flex items-center justify-center h-32 gap-2 text-text-muted text-sm">
                 <RefreshCw size={14} className="animate-spin" />
                 Loading settings…
               </div>
             )}
 
             {(isSearching || category !== 'workspace') && !loading && !error && visibleSettings.length === 0 && (
-              <div className="flex flex-col items-center justify-center h-32 gap-2 text-text-dim text-xs">
+              <div className="flex flex-col items-center justify-center h-32 gap-2 text-text-dim text-sm">
                 {isSearching
                   ? <>No settings match <span className="font-mono">"{filter}"</span></>
                   : 'Select a category'

@@ -128,10 +128,10 @@ export function AboutModal({ onClose }: Props) {
               style={theme !== 'light' ? { filter: 'invert(1) hue-rotate(180deg)' } : undefined}
             />
             <div className="text-[11px] uppercase tracking-[0.18em] text-text-muted font-semibold">
-              FluidUI V1.0
+              FluidUI V1.0.3
             </div>
             {espInfo?.version && (
-              <div className="text-[10px] text-text-dim font-mono">
+              <div className="text-sm text-text-dim font-mono">
                 {espInfo.version}
               </div>
             )}

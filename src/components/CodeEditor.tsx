@@ -368,28 +368,28 @@ export function CodeEditor({ filename, content, onSave, onClose }: CodeEditorPro
         <div className="panel-header justify-between shrink-0">
           <div className="flex items-center gap-2 min-w-0">
             <span className="truncate max-w-[120px] sm:max-w-[300px]">{filename}</span>
-            <span className="text-[10px] font-mono px-1.5 py-0.5 rounded bg-elevated text-text-dim uppercase shrink-0">
+            <span className="text-sm font-mono px-1.5 py-0.5 rounded bg-elevated text-text-dim uppercase shrink-0">
               {kind}
             </span>
-            {dirty && <span className="text-[10px] text-warn font-semibold shrink-0">modified</span>}
+            {dirty && <span className="text-sm text-warn font-semibold shrink-0">modified</span>}
           </div>
           <div className="flex items-center gap-1 shrink-0">
             <button
-              className="btn btn-ghost text-xs py-1 px-2"
+              className="btn btn-ghost text-sm py-1 px-2"
               onClick={toggleSearch}
               title="Search (Ctrl+F)"
             >
               <Search size={12} /><span className="hidden sm:inline"> Find</span>
             </button>
             <button
-              className="btn btn-ghost text-xs py-1 px-2"
+              className="btn btn-ghost text-sm py-1 px-2"
               onClick={handleDownload}
               title="Download"
             >
               <Download size={12} /><span className="hidden sm:inline"> Download</span>
             </button>
             <button
-              className="btn btn-primary text-xs py-1 px-2"
+              className="btn btn-primary text-sm py-1 px-2"
               onClick={handleSave}
               disabled={saving || !dirty}
               title="Save (Ctrl+S)"
@@ -412,7 +412,7 @@ export function CodeEditor({ filename, content, onSave, onClose }: CodeEditorPro
             <Search size={13} className="text-text-dim shrink-0" />
             <input
               ref={searchRef}
-              className="input-field flex-1 py-1 text-xs"
+              className="input-field flex-1 py-1 text-sm"
               placeholder="Search…"
               value={searchTerm}
               onChange={e => doSearch(e.target.value)}
@@ -424,7 +424,7 @@ export function CodeEditor({ filename, content, onSave, onClose }: CodeEditorPro
               autoFocus
             />
             {searchTerm && (
-              <span className="text-xs text-text-muted font-mono shrink-0">
+              <span className="text-sm text-text-muted font-mono shrink-0">
                 {matchCount > 0 ? `${matchIndex + 1}/${matchCount}` : 'No results'}
               </span>
             )}
@@ -485,25 +485,25 @@ export function CodeEditor({ filename, content, onSave, onClose }: CodeEditorPro
             className="bg-surface border border-border rounded-sm shadow-xl p-5 max-w-sm w-full animate-in"
             onClick={e => e.stopPropagation()}
           >
-            <p className="text-sm text-text-primary mb-1 font-semibold">Unsaved changes</p>
-            <p className="text-xs text-text-muted mb-4">
+            <p className="text-base text-text-primary mb-1 font-semibold">Unsaved changes</p>
+            <p className="text-sm text-text-muted mb-4">
               Do you want to save your changes to <span className="font-mono">{filename}</span> before closing?
             </p>
             <div className="flex justify-end gap-2">
               <button
-                className="btn btn-ghost text-xs py-1.5 px-3"
+                className="btn btn-ghost text-sm py-1.5 px-3"
                 onClick={() => setConfirmClose(false)}
               >
                 Cancel
               </button>
               <button
-                className="btn btn-ghost text-xs py-1.5 px-3 text-warn"
+                className="btn btn-ghost text-sm py-1.5 px-3 text-warn"
                 onClick={confirmDiscardAndClose}
               >
                 Don&apos;t Save
               </button>
               <button
-                className="btn btn-primary text-xs py-1.5 px-3"
+                className="btn btn-primary text-sm py-1.5 px-3"
                 onClick={confirmSaveAndClose}
               >
                 Save

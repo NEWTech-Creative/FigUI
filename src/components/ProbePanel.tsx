@@ -42,7 +42,7 @@ function ParamRow({ label, value, onChange, unit, step = 0.1, min = 0, isTablet 
           min={min}
           className={`input-field font-mono text-right ${isTablet ? 'w-36 py-2 text-xl' : 'w-36 py-1 text-xl'}`}
         />
-        <span className={`text-text-dim shrink-0 ${isTablet ? 'text-lg w-20' : 'text-xs w-12'}`}>{unit}</span>
+        <span className={`text-text-dim shrink-0 ${isTablet ? 'text-lg w-20' : 'text-sm w-12'}`}>{unit}</span>
       </div>
     </div>
   )
@@ -137,7 +137,7 @@ export function ProbePanel({ isTablet }: { isTablet?: boolean }) {
 
           <button
             className={`btn w-full justify-center font-semibold gap-2
-                        ${isTablet ? 'h-16 text-xl' : 'h-10 text-sm'}
+                        ${isTablet ? 'h-16 text-xl' : 'h-10 text-base'}
                         ${canProbe && !probing ? 'btn-warn' : 'btn-ghost'}`}
             onClick={runProbe}
             disabled={!canProbe || probing}
