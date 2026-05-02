@@ -38,7 +38,7 @@ jobs:
 
       - name: Bump version in source
         run: |
-          sed -i "s/const CURRENT_VERSION = '[^']*'/const CURRENT_VERSION = '${{ github.event.inputs.version }}'/" src/components/AboutModal.tsx
+          sed -i "s/const CURRENT_VERSION = '[^']*'/const CURRENT_VERSION = '${{ github.event.inputs.version }}'/" src/lib/updateCheck.ts
 
       - name: Install dependencies
         run: npm install

@@ -3,7 +3,7 @@
 interface Entry { content: string; isDir: boolean }
 
 const fs = new Map<string, Entry>([
-  ['/sd/demo.gcode', { isDir: false, content: `; FluidUI Demo G-code
+  ['/sd/demo.gcode', { isDir: false, content: `; FigUI Demo G-code
 G21         ; mm mode
 G90         ; absolute positioning
 G0 Z5 F3000 ; safe height
@@ -39,7 +39,7 @@ G0 Z5
 M30
 ` }],
   ['/localfs/config.yaml', { isDir: false, content: `# FluidNC Simulator Config
-name: FluidUI Demo Machine
+name: FigUI Demo Machine
 board: 6 Pack
 
 axes:

@@ -114,7 +114,7 @@ export function Header({ onSettingsClick, onAboutClick, isTablet }: Props) {
         <button
           className={`btn-ghost relative ${isTablet ? 'px-3 py-2' : 'px-2 py-1.5'}`}
           onClick={onAboutClick}
-          title={pendingUpdateVersion ? `FluidUI v${pendingUpdateVersion} available` : 'About'}
+          title={pendingUpdateVersion ? `FigUI v${pendingUpdateVersion} available` : 'About'}
         >
           <HelpCircle size={18} />
           {pendingUpdateVersion && (

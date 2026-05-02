@@ -1,16 +1,16 @@
-# FluidUI
+# FigUI
 
-A modern web-based interface built with React & Typescript for [FluidNC](https://github.com/bdring/FluidNC), the ESP32-based CNC controller firmware. FluidUI is designed as a drop-in replacement for the legacy WebUIs, offering a more capable and responsive experience across desktop, tablet, and mobile devices.
+A modern web-based interface built with React & Typescript for [FluidNC](https://github.com/bdring/FluidNC), the ESP32-based CNC controller firmware. FigUI is designed as a drop-in replacement for the legacy WebUIs, offering a more capable and responsive experience across desktop, tablet, and mobile devices.
 
-**[Try the live demo →](https://figamore.github.io/FluidUI/)** — no hardware needed, runs a simulated machine in the browser.
+**[Try the live demo →](https://figamore.github.io/FigUI/)** — no hardware needed, runs a simulated machine in the browser.
 
 ---
 
 ## Overview
 
-FluidUI connects to your FluidNC controller over WebSocket and HTTP, providing real-time machine control, job management, file operations, and configuration.
+FigUI connects to your FluidNC controller over WebSocket and HTTP, providing real-time machine control, job management, file operations, and configuration.
 
-![FluidUI](docs/screenshots/fluidUI.png)  
+![FigUI](docs/screenshots/FigUI.png)  
 
 ---
 
@@ -90,7 +90,7 @@ Macros are custom one-click buttons that send a sequence of G-code or FluidNC co
 
 Macros are saved to controller storage so they persist across sessions and devices.
 
-![Macros](docs/screenshots/fluidUI-macros.png)  
+![Macros](docs/screenshots/FigUI-macros.png)  
 
 
 ---
@@ -99,7 +99,7 @@ Macros are saved to controller storage so they persist across sessions and devic
 
 The settings panel allows full configuration of the FluidNC host over HTTP and is fully searchable. Device information (firmware version, hostname, IP address) is displayed alongside editable settings organized by category, including network, WiFi, axes, limits, and services.
 
-![Settings](docs/screenshots/fluidUI-settings.png)  
+![Settings](docs/screenshots/FigUI-settings.png)  
 
 
 ---
@@ -116,12 +116,12 @@ Four built-in themes are available and can be switched at any time:
 
 <table>
   <tr>
-    <td align="center"><b>Light</b><br/><img src="docs/screenshots/themes/fluidUI-light.png"/></td>
-    <td align="center"><b>Dark</b><br/><img src="docs/screenshots/themes/fluidUI.png"/></td>
+    <td align="center"><b>Light</b><br/><img src="docs/screenshots/themes/FigUI-light.png"/></td>
+    <td align="center"><b>Dark</b><br/><img src="docs/screenshots/themes/FigUI.png"/></td>
   </tr>
   <tr>
-    <td align="center"><b>Anthracite Dark</b><br/><img src="docs/screenshots/themes/fluidUI-anthracite.png"/></td>
-    <td align="center"><b>Midnight Dark</b><br/><img src="docs/screenshots/themes/fluidUI-midnight.png"/></td>
+    <td align="center"><b>Anthracite Dark</b><br/><img src="docs/screenshots/themes/FigUI-anthracite.png"/></td>
+    <td align="center"><b>Midnight Dark</b><br/><img src="docs/screenshots/themes/FigUI-midnight.png"/></td>
   </tr>
 </table>
 
@@ -132,10 +132,10 @@ The selected theme persists to local storage.
 ### Responsive Layouts
 
 Tablet Layout
-![Tablet](docs/screenshots/fluidUI-tablet.png) 
+![Tablet](docs/screenshots/FigUI-tablet.png) 
 
 Mobile Layout
-![Mobile](docs/screenshots/fluidUI-mobile.png) 
+![Mobile](docs/screenshots/FigUI-mobile.png) 
 
 ---
 

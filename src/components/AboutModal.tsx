@@ -5,7 +5,7 @@ import { useMachineStore } from '../store'
 import { uploadFile } from '../lib/http'
 import { CURRENT_VERSION, GITHUB_REPO, DISMISSED_VERSION_KEY, semverGt } from '../lib/updateCheck'
 
-const FIRMWARE_URL = 'https://figamore.github.io/FluidUI/firmware/index.html.gz'
+const FIRMWARE_URL = 'https://figamore.github.io/FigUI/firmware/index.html.gz'
 const IS_DEMO = Boolean(import.meta.env.VITE_DEMO_MODE)
 
 
@@ -212,7 +212,7 @@ export function AboutModal({ onClose }: Props) {
                 rel="noopener noreferrer"
                 className="text-accent underline hover:brightness-125"
               >
-                FluidUI v{CURRENT_VERSION}
+                FigUI v{CURRENT_VERSION}
               </a>
             </div>
             {espInfo?.version && (
