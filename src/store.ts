@@ -145,6 +145,8 @@ interface Store {
   setMacros: (macros: Macro[]) => void
   setWatchdogState: (state: Partial<WatchdogState>) => void
   setActiveStepJog: (stepJog: Store['activeStepJog']) => void
+  pendingUpdateVersion: string | null
+  setPendingUpdateVersion: (v: string | null) => void
 }
 
 export const useMachineStore = create<Store>((set) => ({
@@ -166,6 +168,7 @@ export const useMachineStore = create<Store>((set) => ({
   macros: [],
   watchdog: DEFAULT_WATCHDOG_STATE,
   activeStepJog: null,
+  pendingUpdateVersion: null,
 
   setConnected: (connected) => set({ connected }),
   setRestarting: (restarting) => set({ restarting }),
@@ -259,6 +262,7 @@ export const useMachineStore = create<Store>((set) => ({
     })),
 
   setActiveStepJog: (stepJog) => set({ activeStepJog: stepJog }),
+  setPendingUpdateVersion: (pendingUpdateVersion) => set({ pendingUpdateVersion }),
 }))
 
 export const stateColor = (state: MachineState): string => {

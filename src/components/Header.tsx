@@ -15,6 +15,7 @@ export function Header({ onSettingsClick, onAboutClick, isTablet }: Props) {
   const status = useMachineStore(s => s.status)
   const theme = useMachineStore(s => s.theme)
   const toggleTheme = useMachineStore(s => s.toggleTheme)
+  const pendingUpdateVersion = useMachineStore(s => s.pendingUpdateVersion)
   const [isFullscreen, setIsFullscreen] = useState(false)
 
   useEffect(() => {
@@ -111,11 +112,14 @@ export function Header({ onSettingsClick, onAboutClick, isTablet }: Props) {
         </button>
 
         <button
-          className={`btn-ghost ${isTablet ? 'px-3 py-2' : 'px-2 py-1.5'}`}
+          className={`btn-ghost relative ${isTablet ? 'px-3 py-2' : 'px-2 py-1.5'}`}
           onClick={onAboutClick}
-          title="About"
+          title={pendingUpdateVersion ? `FluidUI v${pendingUpdateVersion} available` : 'About'}
         >
           <HelpCircle size={18} />
+          {pendingUpdateVersion && (
+            <span className="absolute top-1 right-1 w-2 h-2 rounded-full bg-accent" />
+          )}
         </button>
 
         <button

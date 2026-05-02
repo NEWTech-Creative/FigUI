@@ -5,6 +5,7 @@ import { useTerminalStore } from './store/terminal'
 import { connect, isSocketOpen, onLine } from './lib/ws'
 import { setBase, getDeviceInfo, getDeviceInfoFast } from './lib/http'
 import { parseESP800 } from './lib/parser'
+import { CURRENT_VERSION, GITHUB_REPO, DISMISSED_VERSION_KEY, semverGt } from './lib/updateCheck'
 import { startWatchdog, stopWatchdog } from './lib/jogWatchdog'
 import { Header } from './components/Header'
 import { DRO } from './components/DRO'
@@ -67,6 +68,7 @@ export function App() {
   const layoutMode = useMachineStore(s => s.layoutMode)
   const setSidebarTab = useMachineStore(s => s.setSidebarTab)
   const setEspInfo = useMachineStore(s => s.setEspInfo)
+  const setPendingUpdateVersion = useMachineStore(s => s.setPendingUpdateVersion)
   const setStoreRestarting = useMachineStore(s => s.setRestarting)
   const clearTerminal = useTerminalStore(s => s.clear)
   const machineState = useMachineStore(s => s.status.state)
@@ -89,6 +91,21 @@ export function App() {
   const restartSawDisconnect = useRef(false)
   const [startupErrors, setStartupErrors] = useState<string[]>([])
   const [startupErrorsOpen, setStartupErrorsOpen] = useState(false)
+
+  useEffect(() => {
+    fetch(`https://api.github.com/repos/${GITHUB_REPO}/releases/latest`)
+      .then(r => r.ok ? r.json() : null)
+      .catch(() => null)
+      .then((data: { tag_name?: string } | null) => {
+        if (!data) return
+        const latest = (data.tag_name ?? '').replace(/^v/, '')
+        if (!latest) return
+        const dismissed = localStorage.getItem(DISMISSED_VERSION_KEY)
+        if (semverGt(latest, CURRENT_VERSION) && latest !== dismissed) {
+          setPendingUpdateVersion(latest)
+        }
+      })
+  }, [])
 
   async function resolveWsHost(httpHost: string): Promise<{ wsHost: string; info: ReturnType<typeof parseESP800> | null }> {
     if (cachedWsHost.current && cachedHostFailures.current < 3) {

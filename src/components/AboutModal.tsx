@@ -3,23 +3,11 @@ import { X, Download, CheckCircle2, AlertCircle, ArrowUp, RefreshCw } from 'luci
 import fluidncLogo from '../assets/fluidnc-logo.svg'
 import { useMachineStore } from '../store'
 import { uploadFile } from '../lib/http'
+import { CURRENT_VERSION, GITHUB_REPO, DISMISSED_VERSION_KEY, semverGt } from '../lib/updateCheck'
 
-const CURRENT_VERSION = '1.0.6'
-const GITHUB_REPO = 'figamore/FluidUI'
 const FIRMWARE_URL = 'https://figamore.github.io/FluidUI/firmware/index.html.gz'
 const IS_DEMO = Boolean(import.meta.env.VITE_DEMO_MODE)
 
-function semverGt(a: string, b: string): boolean {
-  const pa = a.split('.').map(Number)
-  const pb = b.split('.').map(Number)
-  for (let i = 0; i < Math.max(pa.length, pb.length); i++) {
-    const da = pa[i] ?? 0
-    const db = pb[i] ?? 0
-    if (da > db) return true
-    if (da < db) return false
-  }
-  return false
-}
 
 type UpdateState = 'idle' | 'checking' | 'up-to-date' | 'available' | 'downloading' | 'uploading' | 'done' | 'error'
 
@@ -106,13 +94,23 @@ const TIPS: Tip[] = [
 export function AboutModal({ onClose }: Props) {
   const theme = useMachineStore(s => s.theme)
   const espInfo = useMachineStore(s => s.espInfo)
+  const pendingUpdateVersion = useMachineStore(s => s.pendingUpdateVersion)
+  const setPendingUpdateVersion = useMachineStore(s => s.setPendingUpdateVersion)
 
-  const [updateState, setUpdateState] = useState<UpdateState>('idle')
-  const [latestVersion, setLatestVersion] = useState('')
+  const [updateState, setUpdateState] = useState<UpdateState>(
+    () => pendingUpdateVersion ? 'available' : 'idle'
+  )
+  const [latestVersion, setLatestVersion] = useState(() => pendingUpdateVersion ?? '')
   const [releaseNotes, setReleaseNotes] = useState('')
   const [uploadProgress, setUploadProgress] = useState(0)
   const [updateError, setUpdateError] = useState('')
   const downloadedBuffer = useRef<ArrayBuffer | null>(null)
+
+  function dismissUpdate() {
+    if (latestVersion) localStorage.setItem(DISMISSED_VERSION_KEY, latestVersion)
+    setPendingUpdateVersion(null)
+    setUpdateState('idle')
+  }
 
   useEffect(() => {
     function onKey(e: KeyboardEvent) {
@@ -136,7 +134,10 @@ export function AboutModal({ onClose }: Props) {
       setReleaseNotes(notes)
       setUpdateState(semverGt(version, CURRENT_VERSION) ? 'available' : 'up-to-date')
     } catch (e) {
-      setUpdateError(e instanceof Error ? e.message : 'Failed to check for updates')
+      const msg = e instanceof TypeError
+        ? 'No internet connection — connect and try again'
+        : e instanceof Error ? e.message : 'Failed to check for updates'
+      setUpdateError(msg)
       setUpdateState('error')
     }
   }
@@ -154,6 +155,8 @@ export function AboutModal({ onClose }: Props) {
       const file = new File([downloadedBuffer.current], 'index.html.gz', { type: 'application/gzip' })
       await uploadFile('/', file, 'local', pct => setUploadProgress(pct))
 
+      localStorage.removeItem(DISMISSED_VERSION_KEY)
+      setPendingUpdateVersion(null)
       setUpdateState('done')
     } catch (e) {
       setUpdateError(e instanceof Error ? e.message : 'Update failed')
@@ -201,12 +204,20 @@ export function AboutModal({ onClose }: Props) {
               className="h-10 w-auto"
               style={theme !== 'light' ? { filter: 'invert(1) hue-rotate(180deg)' } : undefined}
             />
-            <div className="text-[11px] uppercase tracking-[0.18em] text-text-muted font-semibold">
-              FluidUI V{CURRENT_VERSION}
+            <div className="text-[12px] text-text-muted">
+              <span>Web UI: </span>
+              <a
+                href={`https://github.com/${GITHUB_REPO}`}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="text-accent underline hover:brightness-125"
+              >
+                FluidUI v{CURRENT_VERSION}
+              </a>
             </div>
             {espInfo?.version && (
-              <div className="text-sm text-text-dim font-mono">
-                {espInfo.version}
+              <div className="text-[12px] text-text-muted font-mono">
+                Firmware: {espInfo.version}
               </div>
             )}
           </div>
@@ -256,13 +267,21 @@ export function AboutModal({ onClose }: Props) {
                       {releaseNotes}
                     </pre>
                   )}
-                  <button
-                    className="btn-primary self-start flex items-center gap-1.5 text-[13px] py-1.5 px-3"
-                    onClick={performUpdate}
-                  >
-                    <ArrowUp size={13} />
-                    Update to v{latestVersion}
-                  </button>
+                  <div className="flex items-center gap-2">
+                    <button
+                      className="btn-primary self-start flex items-center gap-1.5 text-[13px] py-1.5 px-3"
+                      onClick={performUpdate}
+                    >
+                      <ArrowUp size={13} />
+                      Update to v{latestVersion}
+                    </button>
+                    <button
+                      className="btn-default self-start text-[13px] py-1.5 px-3"
+                      onClick={dismissUpdate}
+                    >
+                      Dismiss
+                    </button>
+                  </div>
                 </div>
               )}
 
