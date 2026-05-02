@@ -1003,8 +1003,8 @@ export function GCodeViewer({ className, isTablet }: Props) {
     const CUT_C       = [0.94, 0.63, 0.19, 1.0] as const
     const DONE_C      = [0.13, 0.77, 0.37, 1.0] as const
     const TOOL_C      = [0.94, 0.27, 0.27, 1.0] as const
-    const TOOL_GLOW_C = [1.0,  0.35, 0.35, 0.32] as const
-    const TOOL_CAP_C  = [1.0,  0.45, 0.45, 0.14] as const
+    const TOOL_GLOW_C = [1.0,  0.27, 0.27, 0.55] as const
+    const TOOL_CAP_C  = [1.0,  0.35, 0.35, 0.38] as const
     const TOOL_TIP_C  = [1.0,  0.96, 0.96, 1.0] as const
 
     for (let segIdx = 0; segIdx < segments.length; segIdx++) {
