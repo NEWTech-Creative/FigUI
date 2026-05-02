@@ -1,7 +1,27 @@
-import { useEffect } from 'react'
-import { X } from 'lucide-react'
+import { useEffect, useRef, useState } from 'react'
+import { X, Download, CheckCircle2, AlertCircle, ArrowUp, RefreshCw } from 'lucide-react'
 import fluidncLogo from '../assets/fluidnc-logo.svg'
 import { useMachineStore } from '../store'
+import { uploadFile } from '../lib/http'
+
+const CURRENT_VERSION = '1.0.4'
+const GITHUB_REPO = 'figamore/FluidUI'
+const FIRMWARE_URL = 'https://figamore.github.io/FluidUI/firmware/index.html.gz'
+const IS_DEMO = Boolean(import.meta.env.VITE_DEMO_MODE)
+
+function semverGt(a: string, b: string): boolean {
+  const pa = a.split('.').map(Number)
+  const pb = b.split('.').map(Number)
+  for (let i = 0; i < Math.max(pa.length, pb.length); i++) {
+    const da = pa[i] ?? 0
+    const db = pb[i] ?? 0
+    if (da > db) return true
+    if (da < db) return false
+  }
+  return false
+}
+
+type UpdateState = 'idle' | 'checking' | 'up-to-date' | 'available' | 'downloading' | 'uploading' | 'done' | 'error'
 
 interface Props {
   onClose: () => void
@@ -87,6 +107,13 @@ export function AboutModal({ onClose }: Props) {
   const theme = useMachineStore(s => s.theme)
   const espInfo = useMachineStore(s => s.espInfo)
 
+  const [updateState, setUpdateState] = useState<UpdateState>('idle')
+  const [latestVersion, setLatestVersion] = useState('')
+  const [releaseNotes, setReleaseNotes] = useState('')
+  const [uploadProgress, setUploadProgress] = useState(0)
+  const [updateError, setUpdateError] = useState('')
+  const downloadedBuffer = useRef<ArrayBuffer | null>(null)
+
   useEffect(() => {
     function onKey(e: KeyboardEvent) {
       if (e.key === 'Escape') onClose()
@@ -94,6 +121,53 @@ export function AboutModal({ onClose }: Props) {
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
   }, [onClose])
+
+  async function checkForUpdates() {
+    setUpdateState('checking')
+    setUpdateError('')
+    try {
+      const res = await fetch(`https://api.github.com/repos/${GITHUB_REPO}/releases/latest`)
+      if (!res.ok) throw new Error(`GitHub API returned ${res.status}`)
+      const data = await res.json()
+      const tag: string = data.tag_name ?? ''
+      const version = tag.replace(/^v/, '')
+      const notes: string = data.body ?? ''
+      setLatestVersion(version)
+      setReleaseNotes(notes)
+      setUpdateState(semverGt(version, CURRENT_VERSION) ? 'available' : 'up-to-date')
+    } catch (e) {
+      setUpdateError(e instanceof Error ? e.message : 'Failed to check for updates')
+      setUpdateState('error')
+    }
+  }
+
+  async function performUpdate() {
+    downloadedBuffer.current = null
+    try {
+      setUpdateState('downloading')
+      const dlRes = await fetch(FIRMWARE_URL)
+      if (!dlRes.ok) throw new Error(`Download failed: ${dlRes.status}`)
+      downloadedBuffer.current = await dlRes.arrayBuffer()
+
+      setUpdateState('uploading')
+      setUploadProgress(0)
+      const file = new File([downloadedBuffer.current], 'index.html.gz', { type: 'application/gzip' })
+      await uploadFile('/', file, 'local', pct => setUploadProgress(pct))
+
+      setUpdateState('done')
+    } catch (e) {
+      setUpdateError(e instanceof Error ? e.message : 'Update failed')
+      setUpdateState('error')
+    }
+  }
+
+  const busy = updateState === 'downloading' || updateState === 'uploading'
+
+  function statusLabel() {
+    if (updateState === 'downloading') return 'Downloading…'
+    if (updateState === 'uploading') return `Uploading… ${uploadProgress}%`
+    return null
+  }
 
   return (
     <div
@@ -128,7 +202,7 @@ export function AboutModal({ onClose }: Props) {
               style={theme !== 'light' ? { filter: 'invert(1) hue-rotate(180deg)' } : undefined}
             />
             <div className="text-[11px] uppercase tracking-[0.18em] text-text-muted font-semibold">
-              FluidUI V1.0.3
+              FluidUI V{CURRENT_VERSION}
             </div>
             {espInfo?.version && (
               <div className="text-sm text-text-dim font-mono">
@@ -136,6 +210,113 @@ export function AboutModal({ onClose }: Props) {
               </div>
             )}
           </div>
+
+          {/* Update checker */}
+          {!IS_DEMO && (
+            <div className="px-5 py-4 border-b border-border">
+              <h3 className="text-[11px] font-semibold uppercase tracking-[0.12em] text-text-muted mb-3">
+                Firmware Update
+              </h3>
+
+              {/* idle / up-to-date / checking */}
+              {(updateState === 'idle' || updateState === 'checking' || updateState === 'up-to-date') && (
+                <div className="flex items-center gap-3">
+                  <button
+                    className="btn-primary flex items-center gap-1.5 text-[13px] py-1.5 px-3 disabled:opacity-50 disabled:cursor-not-allowed"
+                    onClick={checkForUpdates}
+                    disabled={updateState === 'checking'}
+                  >
+                    {updateState === 'checking'
+                      ? <RefreshCw size={13} className="animate-spin" />
+                      : <Download size={13} />}
+                    {updateState === 'checking' ? 'Checking…' : 'Check for Updates'}
+                  </button>
+                  {updateState === 'up-to-date' && (
+                    <span className="flex items-center gap-1.5 text-[13px] text-green-400">
+                      <CheckCircle2 size={14} />
+                      Up to date
+                    </span>
+                  )}
+                </div>
+              )}
+
+              {/* update available */}
+              {updateState === 'available' && (
+                <div className="flex flex-col gap-3">
+                  <div className="flex items-center justify-between">
+                    <span className="text-[13px] text-accent font-semibold">
+                      v{latestVersion} available
+                    </span>
+                    <span className="text-[11px] text-text-dim">
+                      current: v{CURRENT_VERSION}
+                    </span>
+                  </div>
+                  {releaseNotes && (
+                    <pre className="text-[12px] text-text-muted font-mono whitespace-pre-wrap break-words bg-[var(--bg)] rounded p-3 max-h-36 overflow-y-auto leading-relaxed">
+                      {releaseNotes}
+                    </pre>
+                  )}
+                  <button
+                    className="btn-primary self-start flex items-center gap-1.5 text-[13px] py-1.5 px-3"
+                    onClick={performUpdate}
+                  >
+                    <ArrowUp size={13} />
+                    Update to v{latestVersion}
+                  </button>
+                </div>
+              )}
+
+              {/* in-progress */}
+              {busy && (
+                <div className="flex flex-col gap-2">
+                  <div className="flex items-center gap-2 text-[13px] text-text-muted">
+                    <RefreshCw size={13} className="animate-spin shrink-0" />
+                    {statusLabel()}
+                  </div>
+                  {updateState === 'uploading' && (
+                    <div className="w-full bg-[var(--bg)] rounded-full h-1.5 overflow-hidden">
+                      <div
+                        className="h-full bg-accent rounded-full transition-all duration-200"
+                        style={{ width: `${uploadProgress}%` }}
+                      />
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {/* done */}
+              {updateState === 'done' && (
+                <div className="flex flex-col gap-3">
+                  <span className="flex items-center gap-1.5 text-[13px] text-green-400">
+                    <CheckCircle2 size={14} />
+                    Update complete — reload to apply
+                  </span>
+                  <button
+                    className="btn-primary self-start text-[13px] py-1.5 px-3"
+                    onClick={() => window.location.reload()}
+                  >
+                    Reload Now
+                  </button>
+                </div>
+              )}
+
+              {/* error */}
+              {updateState === 'error' && (
+                <div className="flex flex-col gap-2">
+                  <span className="flex items-center gap-1.5 text-[13px] text-red-400">
+                    <AlertCircle size={14} className="shrink-0" />
+                    {updateError}
+                  </span>
+                  <button
+                    className="btn-default self-start text-[13px] py-1.5 px-3"
+                    onClick={() => setUpdateState('idle')}
+                  >
+                    Dismiss
+                  </button>
+                </div>
+              )}
+            </div>
+          )}
 
           {/* Tips */}
           <div className="px-5 py-4">

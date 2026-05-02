@@ -8,11 +8,20 @@ on:
         required: true
         default: "1.0.0"
 
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
 jobs:
   build:
     runs-on: ubuntu-latest
     permissions:
       contents: write
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deploy-pages.outputs.page_url }}
 
     steps:
       - name: Checkout
@@ -24,16 +33,32 @@ jobs:
           node-version: 24
           cache: npm
 
+      - name: Bump version in source
+        run: |
+          sed -i "s/const CURRENT_VERSION = '[^']*'/const CURRENT_VERSION = '${{ github.event.inputs.version }}'/" src/components/AboutModal.tsx
+
       - name: Install dependencies
         run: npm install
 
-      - name: Build
+      - name: Build ESP32 firmware
         run: npm run build:esp32
 
-      - name: Tag version
+      - name: Save firmware gz
+        run: cp dist/index.html.gz /tmp/index.html.gz
+
+      - name: Build demo
+        run: npm run build:demo
+
+      - name: Add firmware to Pages output
+        run: mkdir -p dist/firmware && cp /tmp/index.html.gz dist/firmware/index.html.gz
+
+      - name: Commit and tag version
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add src/components/AboutModal.tsx
+          git commit -m "Bump version to v${{ github.event.inputs.version }}"
+          git push origin main
           git tag "v${{ github.event.inputs.version }}"
           git push origin "v${{ github.event.inputs.version }}"
 
@@ -42,5 +67,14 @@ jobs:
         with:
           tag_name: "v${{ github.event.inputs.version }}"
           name: "v${{ github.event.inputs.version }}"
-          files: dist/index.html.gz
+          files: /tmp/index.html.gz
           generate_release_notes: true
+
+      - name: Upload Pages artifact
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: ./dist
+
+      - name: Deploy Pages
+        id: deploy-pages
+        uses: actions/deploy-pages@v4
