@@ -7,6 +7,9 @@ on:
         description: "Version (e.g. 1.0.0)"
         required: true
         default: "1.0.0"
+      notes:
+        description: "Release notes"
+        required: false
 
 concurrency:
   group: pages
@@ -65,6 +68,7 @@ jobs:
           tag_name: "v${{ github.event.inputs.version }}"
           name: "v${{ github.event.inputs.version }}"
           files: /tmp/index.html.gz
+          body: ${{ toJSON(github.event.inputs.notes) }}
           generate_release_notes: true
 
       - name: Upload Pages artifact

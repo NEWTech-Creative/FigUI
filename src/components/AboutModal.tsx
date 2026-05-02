@@ -215,7 +215,7 @@ export function AboutModal({ onClose }: Props) {
           {!IS_DEMO && (
             <div className="px-5 py-4 border-b border-border">
               <h3 className="text-[11px] font-semibold uppercase tracking-[0.12em] text-text-muted mb-3">
-                Firmware Update
+                WebUI Update
               </h3>
 
               {/* idle / up-to-date / checking */}
