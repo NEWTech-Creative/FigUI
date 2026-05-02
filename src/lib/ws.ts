@@ -379,6 +379,7 @@ function handleLine(line: string) {
   if (line.startsWith('<') && line.endsWith('>')) {
     const parsed = parseStatusReport(line)
     if (parsed) useMachineStore.getState().updateStatus(parsed)
+    lineHandlers.forEach(fn => fn(line))
     return
   }
 

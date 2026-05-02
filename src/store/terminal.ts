@@ -26,6 +26,13 @@ interface TerminalStore {
 }
 
 let lineId = 0
+let lastStatusKey: string | null = null
+
+function statusKey(line: string): string {
+  const parts = line.slice(1, -1).split('|')
+    .filter(p => !p.startsWith('WCO:') && !p.startsWith('Ov:') && !p.startsWith('A:'))
+  return parts.join('|')
+}
 
 export const useTerminalStore = create<TerminalStore>((set, get) => ({
   lines: [],
@@ -42,6 +49,11 @@ export const useTerminalStore = create<TerminalStore>((set, get) => ({
   appendLine: (text) => {
     const kind = classifyLine(text)
     if (!get().verbose && (kind === 'status' || kind === 'ok')) return
+    if (kind === 'status') {
+      const key = statusKey(text)
+      if (key === lastStatusKey) return
+      lastStatusKey = key
+    }
     // The Grbl welcome banner is the definitive signal that the controller
     // just rebooted. Clear and start fresh, keeping the banner as line 1.
     if (text.startsWith('Grbl ')) {
