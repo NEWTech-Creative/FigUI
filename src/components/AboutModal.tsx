@@ -4,7 +4,7 @@ import fluidncLogo from '../assets/fluidnc-logo.svg'
 import { useMachineStore } from '../store'
 import { uploadFile } from '../lib/http'
 
-const CURRENT_VERSION = '1.0.5'
+const CURRENT_VERSION = '1.0.6'
 const GITHUB_REPO = 'figamore/FluidUI'
 const FIRMWARE_URL = 'https://figamore.github.io/FluidUI/firmware/index.html.gz'
 const IS_DEMO = Boolean(import.meta.env.VITE_DEMO_MODE)
