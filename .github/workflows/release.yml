@@ -52,13 +52,10 @@ jobs:
       - name: Add firmware to Pages output
         run: mkdir -p dist/firmware && cp /tmp/index.html.gz dist/firmware/index.html.gz
 
-      - name: Commit and tag version
+      - name: Tag version
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
-          git add src/components/AboutModal.tsx
-          git commit -m "Bump version to v${{ github.event.inputs.version }}"
-          git push origin main
           git tag "v${{ github.event.inputs.version }}"
           git push origin "v${{ github.event.inputs.version }}"
 
