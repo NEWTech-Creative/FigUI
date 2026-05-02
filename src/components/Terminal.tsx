@@ -39,6 +39,7 @@ export function Terminal() {
     if (!el) return
     const atBottom = el.scrollHeight - el.scrollTop - el.clientHeight < 30
     if (!atBottom && autoScroll) setAutoScroll(false)
+    if (atBottom && !autoScroll) setAutoScroll(true)
   }
 
   function copyToClipboard() {

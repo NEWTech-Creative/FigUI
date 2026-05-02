@@ -23,8 +23,8 @@ const SETTINGS_DUMP_SILENT_RESPONSE: SilentResponseMatcher = {
 }
 
 const ALARM_QUERY_SILENT_RESPONSE: SilentResponseMatcher = {
-  starts: (line) => /^Active alarm:\s*\d+\s*\([^)]+\)/.test(line),
-  consume: (line) => /^Active alarm:\s*\d+\s*\([^)]+\)/.test(line),
+  starts: (line) => /^\d+:\s/.test(line) || /^Active alarm:\s*\d+\s*\([^)]+\)/.test(line),
+  consume: (line) => /^\d+:\s/.test(line) || /^Active alarm:\s*\d+\s*\([^)]+\)/.test(line),
   done: (line) => line === 'ok' || line === 'error',
 }
 
