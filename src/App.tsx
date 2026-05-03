@@ -3,7 +3,7 @@ import { useMachineStore } from './store'
 import { useGCodeStore } from './store/gcode'
 import { useTerminalStore } from './store/terminal'
 import { connect, isSocketOpen, onLine } from './lib/ws'
-import { setBase, getDeviceInfo, getDeviceInfoFast } from './lib/http'
+import { setBase, getDeviceInfo, getDeviceInfoFast, loadMacroCfg } from './lib/http'
 import { parseESP800 } from './lib/parser'
 import { CURRENT_VERSION, GITHUB_REPO, DISMISSED_VERSION_KEY, semverGt } from './lib/updateCheck'
 import { startWatchdog, stopWatchdog } from './lib/jogWatchdog'
@@ -70,6 +70,7 @@ export function App() {
   const layoutMode = useMachineStore(s => s.layoutMode)
   const setSidebarTab = useMachineStore(s => s.setSidebarTab)
   const setEspInfo = useMachineStore(s => s.setEspInfo)
+  const setMacros = useMachineStore(s => s.setMacros)
   const setPendingUpdateVersion = useMachineStore(s => s.setPendingUpdateVersion)
   const setStoreRestarting = useMachineStore(s => s.setRestarting)
   const clearTerminal = useTerminalStore(s => s.clear)
@@ -279,6 +280,14 @@ export function App() {
       clearTimeout(fallbackTimer)
     }
   }, [connected])
+
+  // Load macros whenever we (re)connect
+  useEffect(() => {
+    if (!connected) return
+    loadMacroCfg()
+      .then(data => { if (data.length > 0) setMacros(data) })
+      .catch(() => {})
+  }, [connected]) // eslint-disable-line react-hooks/exhaustive-deps
 
   // Debounce the "Reconnecting…" overlay so transient drops don't flash it.
   useEffect(() => {

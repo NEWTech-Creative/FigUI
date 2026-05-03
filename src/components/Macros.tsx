@@ -1,9 +1,9 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
-import { Plus, X, Pencil, Check, FileCode, FolderOpen, ChevronRight, ChevronLeft, Loader2, HardDrive, Server, Play, Square, Zap, Power, Settings, Home, Target, Crosshair, RotateCcw, ArrowLeft, ArrowUp, ArrowRight, ArrowDown, Lightbulb, Trash2 } from 'lucide-react'
-import { sendRaw } from '../lib/ws'
+import { Plus, X, Pencil, Check, FileCode, FolderOpen, ChevronRight, ChevronLeft, Loader2, HardDrive, Server, Play, Square, Zap, Power, Settings, Home, Target, Crosshair, RotateCcw, ArrowLeft, ArrowUp, ArrowRight, ArrowDown, Lightbulb, Trash2, Pin } from 'lucide-react'
 import { useMachineStore } from '../store'
 import type { Macro, FileEntry } from '../types'
-import { listFiles, fetchFileContent, loadMacroCfg, saveMacroCfg, createDir, saveFileContent } from '../lib/http'
+import { listFiles, fetchFileContent, saveMacroCfg, createDir, saveFileContent } from '../lib/http'
+import { runMacro as runMacroCmd } from '../lib/macros'
 import { CodeEditor } from './CodeEditor'
 
 const COLORS = ['default', 'accent', 'ok', 'warn', 'danger', 'info', 'purple', 'teal'] as const
@@ -306,6 +306,18 @@ function MacroCard({ macro, onChange, onDelete, onOpenEditor }: MacroCardProps) 
           <FileCode size={12} />
         </button>
         <button
+          className={`shrink-0 w-7 h-7 flex items-center justify-center rounded
+                     border transition-colors ${
+            macro.pinned
+              ? 'text-accent bg-accent/10 border-accent/30'
+              : 'text-text-muted hover:text-accent hover:bg-accent/10 border-transparent hover:border-accent/30'
+          }`}
+          onClick={() => onChange({ ...macro, pinned: !macro.pinned })}
+          title={macro.pinned ? 'Remove from header' : 'Pin to header'}
+        >
+          <Pin size={12} />
+        </button>
+        <button
           className="shrink-0 w-7 h-7 flex items-center justify-center rounded
                      text-text-muted hover:text-danger hover:bg-danger/10 border border-transparent
                      hover:border-danger/30 transition-colors"
@@ -327,6 +339,11 @@ function MacroCard({ macro, onChange, onDelete, onOpenEditor }: MacroCardProps) 
               +{overflow} more line{overflow !== 1 ? 's' : ''}
             </div>
           )}
+        </div>
+      ) : macro.filename ? (
+        <div className="text-sm text-text-dim italic px-1 flex items-center gap-1">
+          <FileCode size={11} className="shrink-0 text-text-dim" />
+          {macro.filename.split('/').pop()}
         </div>
       ) : (
         <div className="text-sm text-text-dim italic px-1">
@@ -553,56 +570,73 @@ function ImportPanel({ macro, onChange }: ImportPanelProps) {
 }
 
 
+interface MacroGridProps {
+  macros: Macro[]
+  isTablet: boolean
+  onReorder: (macros: Macro[]) => void
+}
+
+function MacroGrid({ macros, isTablet, onReorder }: MacroGridProps) {
+  const dragSrc = useRef<number>(-1)
+  const [dragOver, setDragOver] = useState<number>(-1)
+
+  function reorder(from: number, to: number) {
+    if (from === to) return
+    const next = [...macros]
+    const [item] = next.splice(from, 1)
+    next.splice(to, 0, item)
+    onReorder(next)
+  }
+
+  return (
+    <div className={`grid grid-cols-3 ${isTablet ? 'gap-3' : 'gap-2'}`}>
+      {macros.map((m, i) => {
+        const Icon = getIcon(m.glyph)
+        return (
+          <button
+            key={m.id}
+            draggable
+            onDragStart={e => { dragSrc.current = i; e.dataTransfer.effectAllowed = 'move' }}
+            onDragOver={e => { e.preventDefault(); setDragOver(i) }}
+            onDragLeave={() => setDragOver(-1)}
+            onDrop={e => { e.preventDefault(); setDragOver(-1); reorder(dragSrc.current, i) }}
+            onDragEnd={() => { dragSrc.current = -1; setDragOver(-1) }}
+            className={`btn ${BTN_CLASS[m.color]} flex-col gap-1.5 w-full transition-opacity ${
+              isTablet ? 'h-[110px] text-xl' : 'h-[72px] text-base'
+            } ${dragOver === i ? 'ring-2 ring-accent ring-offset-1 opacity-70' : ''}`}
+            onClick={() => runMacroCmd(m)}
+            disabled={!m.command.trim() && !m.filename}
+            title={m.label || (m.filename ? 'Ready' : 'No command set')}
+          >
+            {Icon && <Icon size={isTablet ? 28 : 20} className="shrink-0" />}
+            <span className="font-medium leading-tight text-center px-1 line-clamp-2">
+              {m.label || 'Unnamed'}
+            </span>
+          </button>
+        )
+      })}
+    </div>
+  )
+}
+
+
 export function Macros({ isTablet }: { isTablet?: boolean }) {
   const macros = useMachineStore(s => s.macros)
   const setMacros = useMachineStore(s => s.setMacros)
-  const connected = useMachineStore(s => s.connected)
   const [editing, setEditing]             = useState(false)
   const [showAddMenu, setShowAddMenu]     = useState(false)
   const [showBrowser, setShowBrowser]     = useState(false)
   const [showNamePrompt, setShowNamePrompt] = useState(false)
-  const [loadingMacros, setLoadingMacros] = useState(false)
   const [saveError, setSaveError]         = useState(false)
   // importingMacro: dedicated panel shown after selecting a file (set name/color before saving)
   const [importingMacro, setImportingMacro] = useState<Macro | null>(null)
   // editorMacro: drives the CodeEditor modal (new scratch macros + editing existing ones)
   const [editorMacro, setEditorMacro]     = useState<Macro | null>(null)
 
-  // Load macros from the controller whenever we (re)connect
-  useEffect(() => {
-    if (!connected) return
-    setLoadingMacros(true)
-    loadMacroCfg()
-      .then(data => { if (data.length > 0) setMacros(data as Macro[]) })
-      .catch(() => {})
-      .finally(() => setLoadingMacros(false))
-  }, [connected]) // eslint-disable-line react-hooks/exhaustive-deps
-
   async function persist(updated: Macro[]) {
     setSaveError(false)
     try { await saveMacroCfg(updated) }
     catch { setSaveError(true) }
-  }
-
-  async function runMacro(macro: Macro) {
-    let command = macro.command
-    if (!command && macro.filename && macro.target) {
-      try {
-        const path = macro.target === 'SD' ? `/sd${macro.filename}` : `/localfs${macro.filename}`
-        command = await fetchFileContent(path, macro.target === 'SD' ? 'sd' : 'local')
-      } catch {
-        setSaveError(true)
-        return
-      }
-    }
-    if (!command) return
-    for (const line of command.split('\n').map(l => l.trim()).filter(Boolean)) {
-      sendRaw(line)
-    }
-  }
-
-  function updateMacro(updated: Macro) {
-    setMacros(macros.map(m => m.id === updated.id ? updated : m))
   }
 
   function deleteMacro(id: string) {
@@ -792,12 +826,7 @@ export function Macros({ isTablet }: { isTablet?: boolean }) {
 
 
           <div className="flex-1 overflow-y-auto min-h-0 p-3">
-            {loadingMacros ? (
-              <div className="flex items-center justify-center h-full gap-2 text-text-muted">
-                <Loader2 size={14} className="animate-spin" />
-                <span className="text-sm">Loading macros…</span>
-              </div>
-            ) : macros.length === 0 ? (
+            {macros.length === 0 ? (
               /* Empty state */
               <div className="flex flex-col items-center justify-center h-full gap-4 text-text-dim">
                 <div className="w-12 h-12 rounded-full bg-elevated flex items-center justify-center">
@@ -820,39 +849,21 @@ export function Macros({ isTablet }: { isTablet?: boolean }) {
                 </div>
               </div>
             ) : editing ? (
-              /* Edit mode */
+              /* Edit mode — simple list, no drag needed here */
               <div className="space-y-2">
                 {macros.map(m => (
                   <MacroCard
                     key={m.id}
                     macro={m}
-                    onChange={updateMacro}
+                    onChange={updated => { const next = macros.map(x => x.id === updated.id ? updated : x); setMacros(next) }}
                     onDelete={() => deleteMacro(m.id)}
                     onOpenEditor={() => openEditorForMacro(m)}
                   />
                 ))}
               </div>
             ) : (
-              /* View mode */
-              <div className={`grid grid-cols-3 ${isTablet ? 'gap-3' : 'gap-2'}`}>
-                {macros.map(m => {
-                  const Icon = getIcon(m.glyph)
-                  return (
-                    <button
-                      key={m.id}
-                      className={`btn ${BTN_CLASS[m.color]} flex-col gap-1.5 w-full ${isTablet ? 'h-[110px] text-xl' : 'h-[72px] text-base'}`}
-                      onClick={() => runMacro(m)}
-                      disabled={!m.command.trim() && !m.filename}
-                      title={m.label || (m.filename ? 'Ready' : 'No command set')}
-                    >
-                      {Icon && <Icon size={isTablet ? 28 : 20} className="shrink-0" />}
-                      <span className="font-medium leading-tight text-center px-1 line-clamp-2">
-                        {m.label || 'Unnamed'}
-                      </span>
-                    </button>
-                  )
-                })}
-              </div>
+              /* View mode — drag to reorder */
+              <MacroGrid macros={macros} isTablet={!!isTablet} onReorder={reordered => { setMacros(reordered); persist(reordered) }} />
             )}
           </div>
         </>

@@ -72,6 +72,7 @@ export interface Macro {
   filename?: string
   target?: 'SD' | 'ESP'
   glyph?: string
+  pinned?: boolean
 }
 
 export type SidebarTab = 'files' | 'macros' | 'plugins'

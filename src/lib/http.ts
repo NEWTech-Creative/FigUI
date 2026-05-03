@@ -107,16 +107,24 @@ function fmtBytes(n: number): string {
   return `${(n / 1048576).toFixed(1)} MB`
 }
 
-async function checkFreeSpace(fs: 'sd' | 'local', bytes: number): Promise<void> {
+async function checkFreeSpace(fs: 'sd' | 'local', bytes: number, dir: string, filename: string): Promise<void> {
   if (fs !== 'local') return
   try {
     const info = await listFiles('/', fs)
     if (!info.total) return
     const available = info.total - info.used
-    if (bytes > available) {
+   
+    let existingSize = 0
+    try {
+      const dirInfo = await listFiles(dir, fs)
+      const existing = dirInfo.files.find(f => f.name === filename)
+      if (existing) existingSize = existing.size
+    } catch { /* directory may not exist yet */ }
+    const netBytes = bytes - existingSize
+    if (netBytes > available) {
       throw new Error(
         `Not enough space on Internal storage: ` +
-        `need ${fmtBytes(bytes)}, only ${fmtBytes(available)} free`
+        `need ${fmtBytes(netBytes)}, only ${fmtBytes(available)} free`
       )
     }
   } catch (e) {
@@ -130,7 +138,7 @@ export async function uploadFile(
   fs: 'sd' | 'local',
   onProgress?: (pct: number) => void,
 ): Promise<void> {
-  await checkFreeSpace(fs, file.size)
+  await checkFreeSpace(fs, file.size, path, file.name)
   return new Promise((resolve, reject) => {
     const xhr = new XMLHttpRequest()
     const fd = new FormData()
@@ -225,6 +233,7 @@ export async function loadMacroCfg(): Promise<Macro[]> {
       filename: asString(entry.filename),
       target: asString(entry.target) ? asTarget(entry.target) : undefined,
       glyph: asString(entry.glyph),
+      pinned: entry.pinned === true,
     })).filter(m => m.label || m.filename)
   } catch {
     return []
@@ -252,6 +261,7 @@ export async function saveMacroCfg(data: Macro[]): Promise<void> {
       filename: macro.filename || '',
       target: macro.target || '',
       class: colorToClass(macro.color),
+      pinned: macro.pinned ?? false,
       index: i,
     }
   })

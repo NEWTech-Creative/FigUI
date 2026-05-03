@@ -8,7 +8,7 @@
 #
 # Dependencies: pip install flask websockets requests zeroconf
 
-proxy = False
+proxy = True
 
 import asyncio, json, os, re, shutil, sys, threading, random
 

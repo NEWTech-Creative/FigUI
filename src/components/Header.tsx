@@ -1,8 +1,15 @@
-import { Sun, Moon, Wifi, WifiOff, Settings, Maximize, Minimize, HelpCircle } from 'lucide-react'
+import { Sun, Moon, Wifi, WifiOff, Settings, Maximize, Minimize, HelpCircle, Play, Square, RotateCcw, Zap, Power, Home, Target, Crosshair, ArrowLeft, ArrowUp, ArrowRight, ArrowDown, Lightbulb, type LucideIcon } from 'lucide-react'
 import fluidncLogo from '../assets/fluidnc-logo.svg'
 import { useMachineStore, stateColor, stateBg } from '../store'
 import { sendRealtime, sendRaw } from '../lib/ws'
-import { useState, useEffect } from 'react'
+import { runMacro, MACRO_BTN_CLASS } from '../lib/macros'
+import { useState, useEffect, useMemo } from 'react'
+
+const HEADER_ICON_MAP: Record<string, LucideIcon> = {
+  play: Play, stop: Square, restart: RotateCcw, zap: Zap, power: Power,
+  settings: Settings, home: Home, target: Target, crosshair: Crosshair,
+  left: ArrowLeft, up: ArrowUp, right: ArrowRight, down: ArrowDown, lightbulb: Lightbulb,
+}
 
 interface Props {
   onSettingsClick: () => void
@@ -16,6 +23,8 @@ export function Header({ onSettingsClick, onAboutClick, isTablet }: Props) {
   const theme = useMachineStore(s => s.theme)
   const toggleTheme = useMachineStore(s => s.toggleTheme)
   const pendingUpdateVersion = useMachineStore(s => s.pendingUpdateVersion)
+  const macros = useMachineStore(s => s.macros)
+  const pinnedMacros = useMemo(() => macros.filter(m => m.pinned), [macros])
   const [isFullscreen, setIsFullscreen] = useState(false)
 
   useEffect(() => {
@@ -73,6 +82,30 @@ export function Header({ onSettingsClick, onAboutClick, isTablet }: Props) {
           <span className="font-mono">{status.sdPercent}%</span>
           <span className="text-text-dim truncate max-w-32">{status.sdFilename}</span>
         </div>
+      )}
+
+      {pinnedMacros.length > 0 && (
+        <>
+          <div className="h-5 w-px bg-border shrink-0" />
+          <div className="flex items-center gap-1 shrink-0">
+            {pinnedMacros.map(m => {
+              const Icon = m.glyph ? HEADER_ICON_MAP[m.glyph.toLowerCase()] : undefined
+              return (
+                <button
+                  key={m.id}
+                  className={`btn ${MACRO_BTN_CLASS[m.color]} flex items-center gap-1.5 px-2 py-1 ${
+                    isTablet ? 'h-8 text-sm' : 'h-7 text-xs'
+                  } shrink-0`}
+                  onClick={() => runMacro(m)}
+                  title={m.label}
+                >
+                  {Icon && <Icon size={isTablet ? 14 : 12} />}
+                  <span className="max-w-[72px] truncate">{m.label}</span>
+                </button>
+              )
+            })}
+          </div>
+        </>
       )}
 
       <div className="ml-auto flex items-center gap-1">
