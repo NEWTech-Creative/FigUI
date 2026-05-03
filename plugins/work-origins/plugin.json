@@ -1,0 +1,6 @@
+{
+  "name": "Work Origins",
+  "description": "Live position display, one-tap axis zeroing, and a full G54–G59 work coordinate system manager with offset table and quick activation.",
+  "version": "1.0.0",
+  "entry": "index.html"
+}

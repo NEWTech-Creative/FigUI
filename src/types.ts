@@ -97,7 +97,7 @@ export interface StoreEntry {
   description?: string
   version?: string
   author?: string
-  files: string[]
+  icon?: string
   base: string
 }
 export type PositionMode = 'WPos' | 'MPos' | 'Both'

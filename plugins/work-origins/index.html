@@ -1,0 +1,597 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Work Origins</title>
+<style>
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+body {
+  background: var(--bg, #0c1018);
+  color: var(--text-primary, #e2e6f4);
+  font-family: ui-sans-serif, system-ui, sans-serif;
+  font-size: 14px;
+  display: flex;
+  flex-direction: column;
+  min-height: 100vh;
+  padding: 16px;
+  gap: 12px;
+}
+
+/* ── Header ──────────────────────────────────────────── */
+.header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+.header-title {
+  font-size: 13px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--text-primary, #e2e6f4);
+}
+.wcs-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 10px;
+  border-radius: 4px;
+  font-size: 12px;
+  font-weight: 700;
+  font-family: ui-monospace, monospace;
+  background: color-mix(in srgb, var(--accent, #f0a030) 12%, transparent);
+  border: 1px solid color-mix(in srgb, var(--accent, #f0a030) 35%, transparent);
+  color: var(--accent, #f0a030);
+  letter-spacing: 0.05em;
+}
+.wcs-badge-dot {
+  width: 6px; height: 6px;
+  border-radius: 50%;
+  background: var(--accent, #f0a030);
+}
+.state-pill {
+  padding: 3px 8px;
+  border-radius: 3px;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+/* ── Section ─────────────────────────────────────────── */
+.section {
+  background: var(--surface, #12172a);
+  border: 1px solid var(--border, #222840);
+  border-radius: 6px;
+  overflow: hidden;
+}
+.section-hd {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 8px 14px;
+  border-bottom: 1px solid var(--border, #222840);
+  background: var(--elevated, #191e30);
+}
+.section-label {
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--text-muted, #6a7898);
+}
+
+/* ── Position table ──────────────────────────────────── */
+.pos-table {
+  display: grid;
+  grid-template-columns: 80px repeat(3, 1fr);
+  font-family: ui-monospace, monospace;
+}
+.pos-head {
+  font-size: 10px;
+  font-weight: 600;
+  color: var(--text-muted, #6a7898);
+  padding: 6px 10px;
+  text-align: right;
+  letter-spacing: 0.08em;
+  border-bottom: 1px solid var(--border, #222840);
+}
+.pos-head:first-child { text-align: left; }
+.pos-row-label {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--text-muted, #6a7898);
+  padding: 8px 10px;
+  letter-spacing: 0.06em;
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  border-bottom: 1px solid color-mix(in srgb, var(--border, #222840) 50%, transparent);
+}
+.pos-row-label:last-of-type { border-bottom: none; }
+.pos-val {
+  font-size: 15px;
+  font-weight: 600;
+  padding: 8px 10px;
+  text-align: right;
+  border-bottom: 1px solid color-mix(in srgb, var(--border, #222840) 50%, transparent);
+}
+.pos-val.wpos { color: var(--accent, #f0a030); }
+.pos-val.mpos { color: var(--text-primary, #e2e6f4); }
+.pos-val.wco  { color: var(--text-muted, #6a7898); font-size: 13px; }
+
+/* ── Zero buttons ────────────────────────────────────── */
+.zero-grid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 8px;
+  padding: 12px;
+}
+.zero-btn {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 3px;
+  padding: 10px 8px;
+  background: var(--elevated, #191e30);
+  border: 1px solid var(--border, #222840);
+  border-radius: 5px;
+  cursor: pointer;
+  color: var(--text-primary, #e2e6f4);
+  transition: border-color 0.15s, background 0.15s;
+  font-size: 13px;
+  font-weight: 600;
+}
+.zero-btn:hover   { background: color-mix(in srgb, var(--accent, #f0a030) 8%, var(--elevated, #191e30));
+                    border-color: color-mix(in srgb, var(--accent, #f0a030) 40%, transparent); }
+.zero-btn:active  { transform: scale(0.97); }
+.zero-btn:disabled { opacity: 0.4; cursor: not-allowed; transform: none; }
+.zero-btn.ok      { border-color: var(--ok, #22c55e) !important; }
+.zero-btn.err     { border-color: var(--danger, #ef4444) !important; }
+.zero-btn-axis    { font-size: 18px; font-weight: 800; color: var(--accent, #f0a030); line-height: 1; }
+.zero-all .zero-btn-axis { font-size: 13px; color: var(--text-muted, #6a7898); }
+.zero-btn-desc    { font-size: 10px; color: var(--text-muted, #6a7898); letter-spacing: 0.06em; }
+
+/* ── WCS table ───────────────────────────────────────── */
+.wcs-table { width: 100%; }
+.wcs-row {
+  display: grid;
+  grid-template-columns: 44px repeat(3, 1fr) auto;
+  align-items: center;
+  padding: 8px 14px;
+  border-bottom: 1px solid color-mix(in srgb, var(--border, #222840) 50%, transparent);
+  gap: 6px;
+  transition: background 0.15s;
+}
+.wcs-row:last-child { border-bottom: none; }
+.wcs-row.active {
+  background: color-mix(in srgb, var(--accent, #f0a030) 6%, transparent);
+  border-left: 2px solid var(--accent, #f0a030);
+  padding-left: 12px;
+}
+.wcs-name {
+  font-size: 12px;
+  font-weight: 700;
+  font-family: ui-monospace, monospace;
+  color: var(--text-muted, #6a7898);
+  letter-spacing: 0.04em;
+}
+.wcs-row.active .wcs-name { color: var(--accent, #f0a030); }
+.wcs-coord {
+  font-size: 12px;
+  font-family: ui-monospace, monospace;
+  color: var(--text-primary, #e2e6f4);
+  text-align: right;
+}
+.wcs-coord-label {
+  font-size: 9px;
+  color: var(--text-dim, #3c4860);
+  letter-spacing: 0.06em;
+  display: block;
+  text-align: right;
+}
+.activate-btn {
+  padding: 4px 10px;
+  font-size: 11px;
+  font-weight: 600;
+  border-radius: 3px;
+  border: 1px solid var(--border, #222840);
+  background: var(--elevated, #191e30);
+  color: var(--text-muted, #6a7898);
+  cursor: pointer;
+  white-space: nowrap;
+  transition: all 0.15s;
+}
+.activate-btn:hover { border-color: var(--accent, #f0a030); color: var(--accent, #f0a030); }
+.wcs-row.active .activate-btn {
+  border-color: color-mix(in srgb, var(--accent, #f0a030) 40%, transparent);
+  color: var(--accent, #f0a030);
+  background: color-mix(in srgb, var(--accent, #f0a030) 10%, transparent);
+  cursor: default;
+}
+.wcs-placeholder {
+  padding: 20px;
+  text-align: center;
+  color: var(--text-dim, #3c4860);
+  font-size: 12px;
+}
+.wcs-col-heads {
+  display: grid;
+  grid-template-columns: 44px repeat(3, 1fr) auto;
+  padding: 5px 14px;
+  border-bottom: 1px solid var(--border, #222840);
+  background: var(--elevated, #191e30);
+  gap: 6px;
+}
+.wcs-col-head {
+  font-size: 9px;
+  font-weight: 600;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--text-dim, #3c4860);
+  text-align: right;
+}
+.wcs-col-head:first-child { text-align: left; }
+
+/* ── TLO row ─────────────────────────────────────────── */
+.tlo-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 10px 14px;
+  font-family: ui-monospace, monospace;
+}
+.tlo-label { font-size: 11px; font-weight: 600; color: var(--text-muted, #6a7898); letter-spacing: 0.06em; }
+.tlo-value { font-size: 14px; font-weight: 600; color: var(--text-primary, #e2e6f4); }
+
+/* ── Icon button ─────────────────────────────────────── */
+.icon-btn {
+  display: flex; align-items: center; gap: 5px;
+  padding: 4px 8px;
+  border-radius: 4px;
+  border: 1px solid var(--border, #222840);
+  background: transparent;
+  color: var(--text-muted, #6a7898);
+  cursor: pointer;
+  font-size: 11px;
+  font-weight: 500;
+  transition: all 0.15s;
+}
+.icon-btn:hover { border-color: var(--border-strong, #303c58); color: var(--text-primary, #e2e6f4); }
+.icon-btn.spinning svg { animation: spin 1s linear infinite; }
+@keyframes spin { to { transform: rotate(360deg); } }
+
+/* ── Feedback toast ──────────────────────────────────── */
+#toast {
+  position: fixed;
+  bottom: 16px; left: 50%;
+  transform: translateX(-50%) translateY(80px);
+  background: var(--surface, #12172a);
+  border: 1px solid var(--border, #222840);
+  border-radius: 6px;
+  padding: 8px 16px;
+  font-size: 12px;
+  font-weight: 500;
+  box-shadow: 0 8px 24px rgba(0,0,0,0.4);
+  transition: transform 0.2s ease, opacity 0.2s;
+  opacity: 0;
+  pointer-events: none;
+  white-space: nowrap;
+  z-index: 100;
+}
+#toast.show { transform: translateX(-50%) translateY(0); opacity: 1; }
+#toast.ok   { border-color: color-mix(in srgb, var(--ok, #22c55e) 40%, transparent); color: var(--ok, #22c55e); }
+#toast.err  { border-color: color-mix(in srgb, var(--danger, #ef4444) 40%, transparent); color: var(--danger, #ef4444); }
+</style>
+</head>
+<body>
+
+<!-- Header -->
+<div class="header">
+  <span class="header-title">Work Origins</span>
+  <div style="display:flex;align-items:center;gap:8px">
+    <span id="state-pill" class="state-pill" style="display:none"></span>
+    <span id="wcs-badge" class="wcs-badge">
+      <span class="wcs-badge-dot"></span>
+      <span id="wcs-badge-label">—</span>
+    </span>
+  </div>
+</div>
+
+<!-- Live Position -->
+<div class="section">
+  <div class="section-hd">
+    <span class="section-label">Live Position</span>
+  </div>
+  <div class="pos-table">
+    <div class="pos-head" style="text-align:left">Mode</div>
+    <div class="pos-head">X</div>
+    <div class="pos-head">Y</div>
+    <div class="pos-head">Z</div>
+
+    <div class="pos-row-label" style="color:var(--accent,#f0a030)">Work</div>
+    <div class="pos-val wpos" id="wx">—</div>
+    <div class="pos-val wpos" id="wy">—</div>
+    <div class="pos-val wpos" id="wz">—</div>
+
+    <div class="pos-row-label">Machine</div>
+    <div class="pos-val mpos" id="mx">—</div>
+    <div class="pos-val mpos" id="my">—</div>
+    <div class="pos-val mpos" id="mz">—</div>
+
+    <div class="pos-row-label" style="border-bottom:none">Offset</div>
+    <div class="pos-val wco" id="ox" style="border-bottom:none">—</div>
+    <div class="pos-val wco" id="oy" style="border-bottom:none">—</div>
+    <div class="pos-val wco" id="oz" style="border-bottom:none">—</div>
+  </div>
+</div>
+
+<!-- Set Origin Here -->
+<div class="section">
+  <div class="section-hd">
+    <span class="section-label">Zero in Current WCS</span>
+    <span style="font-size:10px;color:var(--text-dim,#3c4860)">G10 L20 P0</span>
+  </div>
+  <div class="zero-grid">
+    <button class="zero-btn" onclick="zeroAxis('X')">
+      <span class="zero-btn-axis">X</span>
+      <span class="zero-btn-desc">Zero X here</span>
+    </button>
+    <button class="zero-btn" onclick="zeroAxis('Y')">
+      <span class="zero-btn-axis">Y</span>
+      <span class="zero-btn-desc">Zero Y here</span>
+    </button>
+    <button class="zero-btn" onclick="zeroAxis('Z')">
+      <span class="zero-btn-axis">Z</span>
+      <span class="zero-btn-desc">Zero Z here</span>
+    </button>
+    <button class="zero-btn zero-all" onclick="zeroAxis('XYZ')">
+      <span class="zero-btn-axis">X Y Z</span>
+      <span class="zero-btn-desc">Zero all axes</span>
+    </button>
+  </div>
+</div>
+
+<!-- WCS Table -->
+<div class="section">
+  <div class="section-hd">
+    <span class="section-label">Work Coordinate Systems</span>
+    <button class="icon-btn" id="refresh-btn" onclick="fetchOffsets()">
+      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8"/><path d="M21 3v5h-5"/><path d="M21 12a9 9 0 0 1-9 9 9.75 9.75 0 0 1-6.74-2.74L3 16"/><path d="M8 16H3v5"/>
+      </svg>
+      Refresh
+    </button>
+  </div>
+  <div class="wcs-col-heads">
+    <div class="wcs-col-head">WCS</div>
+    <div class="wcs-col-head">X</div>
+    <div class="wcs-col-head">Y</div>
+    <div class="wcs-col-head">Z</div>
+    <div class="wcs-col-head"></div>
+  </div>
+  <div id="wcs-table-body">
+    <div class="wcs-placeholder">Press Refresh to load offsets</div>
+  </div>
+</div>
+
+<!-- Tool Length Offset -->
+<div class="section" id="tlo-section" style="display:none">
+  <div class="section-hd">
+    <span class="section-label">Tool Length Offset</span>
+    <span style="font-size:10px;color:var(--text-dim,#3c4860)">TLO</span>
+  </div>
+  <div class="tlo-row">
+    <span class="tlo-label">Z offset</span>
+    <span class="tlo-value" id="tlo-val">—</span>
+  </div>
+</div>
+
+<div id="toast"></div>
+
+<script>
+  /* ── API bridge ──────────────────────────────────────── */
+  let msgId = 0
+  const pending = {}
+
+  function call(method, params) {
+    return new Promise((resolve, reject) => {
+      const id = String(++msgId)
+      pending[id] = { resolve, reject }
+      window.parent.postMessage({ type: 'fluid-request', id, method, params: params ?? {} }, '*')
+    })
+  }
+
+  window.addEventListener('message', e => {
+    if (e.data?.type === 'fluid-response') {
+      const p = pending[e.data.id]
+      if (p) {
+        delete pending[e.data.id]
+        e.data.error ? p.reject(new Error(e.data.error)) : p.resolve(e.data.result)
+      }
+    }
+    if (e.data?.type === 'fluid-event' && e.data.event === 'status') {
+      applyStatus(e.data.data)
+    }
+  })
+
+  /* ── Toast ───────────────────────────────────────────── */
+  let toastTimer = null
+  function toast(msg, type = 'ok') {
+    const el = document.getElementById('toast')
+    el.textContent = msg
+    el.className = 'show ' + type
+    clearTimeout(toastTimer)
+    toastTimer = setTimeout(() => { el.className = '' }, 2200)
+  }
+
+  /* ── State ───────────────────────────────────────────── */
+  let activeWCS = 'G54'
+  let wcsOffsets = {}
+
+  /* ── Position display ────────────────────────────────── */
+  function fmt(n) {
+    return n == null ? '—' : Number(n).toFixed(3)
+  }
+
+  const STATE_STYLE = {
+    Idle:    'background:color-mix(in srgb,var(--ok,#22c55e) 12%,transparent);color:var(--ok,#22c55e)',
+    Run:     'background:color-mix(in srgb,var(--info,#60a5fa) 12%,transparent);color:var(--info,#60a5fa)',
+    Jog:     'background:color-mix(in srgb,var(--info,#60a5fa) 12%,transparent);color:var(--info,#60a5fa)',
+    Hold:    'background:color-mix(in srgb,var(--warn,#facc15) 12%,transparent);color:var(--warn,#facc15)',
+    Alarm:   'background:color-mix(in srgb,var(--danger,#ef4444) 12%,transparent);color:var(--danger,#ef4444)',
+    Door:    'background:color-mix(in srgb,var(--danger,#ef4444) 12%,transparent);color:var(--danger,#ef4444)',
+    Home:    'background:color-mix(in srgb,var(--info,#60a5fa) 12%,transparent);color:var(--info,#60a5fa)',
+    Sleep:   'background:color-mix(in srgb,var(--text-muted,#6a7898) 12%,transparent);color:var(--text-muted,#6a7898)',
+    Unknown: 'background:color-mix(in srgb,var(--text-muted,#6a7898) 12%,transparent);color:var(--text-muted,#6a7898)',
+  }
+
+  function applyStatus(s) {
+    if (!s) return
+
+    document.getElementById('wx').textContent = fmt(s.wpos?.x)
+    document.getElementById('wy').textContent = fmt(s.wpos?.y)
+    document.getElementById('wz').textContent = fmt(s.wpos?.z)
+    document.getElementById('mx').textContent = fmt(s.mpos?.x)
+    document.getElementById('my').textContent = fmt(s.mpos?.y)
+    document.getElementById('mz').textContent = fmt(s.mpos?.z)
+    document.getElementById('ox').textContent = fmt(s.wco?.x)
+    document.getElementById('oy').textContent = fmt(s.wco?.y)
+    document.getElementById('oz').textContent = fmt(s.wco?.z)
+
+    const pill = document.getElementById('state-pill')
+    const style = STATE_STYLE[s.state] ?? STATE_STYLE.Unknown
+    pill.textContent = s.state ?? '—'
+    pill.style.cssText = style
+    pill.style.display = 'inline'
+  }
+
+  /* ── $# response parser ──────────────────────────────── */
+  function parseParamResponse(text) {
+    const offsets = {}
+    let tlo = null
+    for (const line of text.split('\n')) {
+      const wm = line.match(/\[(G5[4-9]):([^,]+),([^,]+),([^\]]+)\]/)
+      if (wm) offsets[wm[1]] = { x: parseFloat(wm[2]), y: parseFloat(wm[3]), z: parseFloat(wm[4]) }
+      const tm = line.match(/\[TLO:([^\]]+)\]/)
+      if (tm) tlo = parseFloat(tm[1])
+    }
+    return { offsets, tlo }
+  }
+
+  /* ── $G response parser (active modal group) ─────────── */
+  function parseActiveWCS(text) {
+    const m = text.match(/G5[4-9]/)
+    return m ? m[0] : null
+  }
+
+  /* ── Render WCS table ────────────────────────────────── */
+  function renderWCSTable() {
+    const body = document.getElementById('wcs-table-body')
+    const WCS_LIST = ['G54','G55','G56','G57','G58','G59']
+    const pNum = { G54:1, G55:2, G56:3, G57:4, G58:5, G59:6 }
+
+    if (!Object.keys(wcsOffsets).length) {
+      body.innerHTML = '<div class="wcs-placeholder">No data — press Refresh</div>'
+      return
+    }
+
+    body.innerHTML = WCS_LIST.map(wcs => {
+      const off = wcsOffsets[wcs] ?? { x: 0, y: 0, z: 0 }
+      const isActive = wcs === activeWCS
+      return `
+        <div class="wcs-row ${isActive ? 'active' : ''}" id="wcsrow-${wcs}">
+          <span class="wcs-name">${wcs}</span>
+          <div>
+            <span class="wcs-coord-label">X</span>
+            <span class="wcs-coord">${fmt(off.x)}</span>
+          </div>
+          <div>
+            <span class="wcs-coord-label">Y</span>
+            <span class="wcs-coord">${fmt(off.y)}</span>
+          </div>
+          <div>
+            <span class="wcs-coord-label">Z</span>
+            <span class="wcs-coord">${fmt(off.z)}</span>
+          </div>
+          <button
+            class="activate-btn"
+            onclick="activateWCS('${wcs}', ${pNum[wcs]})"
+            ${isActive ? 'disabled' : ''}
+          >${isActive ? '● Active' : 'Activate'}</button>
+        </div>`
+    }).join('')
+  }
+
+  /* ── Fetch offsets ($#) and active WCS ($G) ──────────── */
+  async function fetchOffsets() {
+    const btn = document.getElementById('refresh-btn')
+    btn.classList.add('spinning')
+    try {
+      const [paramResp, gcResp] = await Promise.all([
+        call('sendQuery', { command: '$#' }),
+        call('sendQuery', { command: '$G' }),
+      ])
+      const { offsets, tlo } = parseParamResponse(paramResp ?? '')
+      const detected = parseActiveWCS(gcResp ?? '')
+      if (detected) activeWCS = detected
+      wcsOffsets = offsets
+
+      document.getElementById('wcs-badge-label').textContent = activeWCS
+      renderWCSTable()
+
+      const tloSection = document.getElementById('tlo-section')
+      if (tlo != null) {
+        document.getElementById('tlo-val').textContent = fmt(tlo)
+        tloSection.style.display = ''
+      } else {
+        tloSection.style.display = 'none'
+      }
+    } catch (e) {
+      toast('Failed to fetch offsets: ' + e.message, 'err')
+    } finally {
+      btn.classList.remove('spinning')
+    }
+  }
+
+  /* ── Activate a WCS ──────────────────────────────────── */
+  async function activateWCS(wcs, pNum) {
+    try {
+      await call('sendCommand', { command: wcs })
+      activeWCS = wcs
+      document.getElementById('wcs-badge-label').textContent = wcs
+      renderWCSTable()
+      toast(`Switched to ${wcs}`, 'ok')
+    } catch (e) {
+      toast('Failed: ' + e.message, 'err')
+    }
+  }
+
+  /* ── Zero axis/axes in current WCS ──────────────────── */
+  async function zeroAxis(axes) {
+    const labels = { X:'X', Y:'Y', Z:'Z', XYZ:'X, Y & Z' }
+    const parts = axes === 'XYZ' ? ['X0','Y0','Z0'] : [axes + '0']
+    const cmd = `G10 L20 P0 ${parts.join(' ')}`
+    const btns = document.querySelectorAll('.zero-btn')
+    btns.forEach(b => b.disabled = true)
+    try {
+      await call('sendCommand', { command: cmd })
+      toast(`Zeroed ${labels[axes] ?? axes} in ${activeWCS}`, 'ok')
+      await fetchOffsets()
+    } catch (e) {
+      toast('Command failed: ' + e.message, 'err')
+    } finally {
+      btns.forEach(b => b.disabled = false)
+    }
+  }
+
+  /* ── Startup ─────────────────────────────────────────── */
+  call('subscribe', { event: 'status' })
+  call('getStatus').then(applyStatus).catch(() => {})
+  fetchOffsets()
+</script>
+</body>
+</html>

@@ -3,8 +3,9 @@ import type { Plugin, PluginManifest, StoreEntry } from '../types'
 
 const PLUGINS_PATH = '/plugins'
 
-export const STORE_REGISTRY_URL =
-  'https://raw.githubusercontent.com/figamore/FluidUI/main/plugins/registry.json'
+export const STORE_REGISTRY_URL = import.meta.env.DEV
+  ? '/plugins/registry.json'
+  : 'https://raw.githubusercontent.com/figamore/FigUI/main/plugins/registry.json'
 
 async function scanFs(fs: 'sd' | 'local'): Promise<Plugin[]> {
   const result = await listFiles(PLUGINS_PATH, fs)
@@ -18,10 +19,12 @@ async function scanFs(fs: 'sd' | 'local'): Promise<Plugin[]> {
       const text = await fetchFileContent(manifestPath, fs)
       const manifest: PluginManifest = JSON.parse(text)
       if (!manifest.name) continue
-      const entry = manifest.entry ?? 'index.html'
-      const entryUrl = fs === 'sd'
-        ? `${getBase()}/sd${PLUGINS_PATH}/${dir.name}/${entry}`
-        : `${getBase()}${PLUGINS_PATH}/${dir.name}/${entry}`
+      const base = fs === 'sd'
+        ? `${getBase()}/sd${PLUGINS_PATH}/${dir.name}`
+        : `${getBase()}${PLUGINS_PATH}/${dir.name}`
+      const entryUrl = `${base}/${manifest.entry ?? 'index.html'}`
+      if (manifest.icon && !manifest.icon.startsWith('http'))
+        manifest.icon = `${base}/${manifest.icon}`
       plugins.push({ id: dir.name, manifest, entryUrl, fs })
     } catch {}
   }
@@ -87,14 +90,19 @@ export async function installStorePlugin(
   fs: 'sd' | 'local',
   onProgress: (current: number, total: number, filename: string) => void,
 ): Promise<void> {
+  const manifestRes = await fetch(entry.base + 'plugin.json')
+  if (!manifestRes.ok) throw new Error(`Failed to fetch plugin.json: HTTP ${manifestRes.status}`)
+  const manifest: PluginManifest = await manifestRes.json()
+  const files = ['plugin.json', manifest.entry ?? 'index.html']
+
   try { await createDir('/', 'plugins', fs) } catch {}
   try { await createDir(PLUGINS_PATH, entry.id, fs) } catch {}
 
   const targetDir = `${PLUGINS_PATH}/${entry.id}`
 
-  for (let i = 0; i < entry.files.length; i++) {
-    const filename = entry.files[i]
-    onProgress(i + 1, entry.files.length, filename)
+  for (let i = 0; i < files.length; i++) {
+    const filename = files[i]
+    onProgress(i + 1, files.length, filename)
     const res = await fetch(entry.base + filename)
     if (!res.ok) throw new Error(`Failed to fetch ${filename}: HTTP ${res.status}`)
     const blob = await res.blob()

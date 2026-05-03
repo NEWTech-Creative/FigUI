@@ -7,8 +7,7 @@
       "description": "Live position display, one-tap axis zeroing, and a full G54–G59 work coordinate system manager with offset table.",
       "version": "1.0.0",
       "author": "figamore",
-      "files": ["plugin.json", "index.html"],
-      "base": "https://raw.githubusercontent.com/figamore/FluidUI/main/plugins/work-origins/"
+      "base": "https://raw.githubusercontent.com/figamore/FigUI/main/plugins/work-origins/"
     }
   ]
 }
