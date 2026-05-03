@@ -338,11 +338,8 @@ export function PluginLauncher({ isTablet }: { isTablet?: boolean }) {
                   return (
                     <div key={entry.id} className="panel flex items-start gap-3 p-3">
                       <div className="shrink-0 w-12 h-12 rounded-lg bg-elevated flex items-center justify-center overflow-hidden">
-                        {entry.icon ? (
-                          <img src={entry.icon.startsWith('http') ? entry.icon : entry.base + entry.icon} alt="" className="w-10 h-10 object-contain" />
-                        ) : (
-                          <Puzzle size={22} className="text-accent" />
-                        )}
+                        <img src={entry.base + 'icon.png'} alt="" className="w-10 h-10 object-contain"
+                          onError={e => { (e.currentTarget as HTMLImageElement).style.display = 'none' }} />
                       </div>
                       <div className="flex-1 min-w-0">
                         <div className="flex items-center gap-2 flex-wrap">

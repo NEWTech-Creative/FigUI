@@ -83,6 +83,7 @@ export interface PluginManifest {
   icon?: string
   version?: string
   entry?: string
+  files?: string[]
 }
 
 export interface Plugin {
@@ -98,7 +99,6 @@ export interface StoreEntry {
   description?: string
   version?: string
   author?: string
-  icon?: string
   base: string
 }
 export type PositionMode = 'WPos' | 'MPos' | 'Both'

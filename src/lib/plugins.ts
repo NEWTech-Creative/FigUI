@@ -89,7 +89,10 @@ export async function installStorePlugin(
   const manifestRes = await fetch(entry.base + 'plugin.json')
   if (!manifestRes.ok) throw new Error(`Failed to fetch plugin.json: HTTP ${manifestRes.status}`)
   const manifest: PluginManifest = await manifestRes.json()
-  const files = ['plugin.json', manifest.entry ?? 'index.html']
+  const files: string[] = manifest.files?.length
+    ? ['plugin.json', ...manifest.files.filter(f => f !== 'plugin.json')]
+    : ['plugin.json', manifest.entry ?? 'index.html',
+       ...(manifest.icon && !manifest.icon.startsWith('http') ? [manifest.icon] : [])]
 
   try { await createDir('/', 'plugins', fs) } catch {}
   try { await createDir(PLUGINS_PATH, entry.id, fs) } catch {}

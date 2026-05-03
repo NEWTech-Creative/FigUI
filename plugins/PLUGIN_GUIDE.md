@@ -67,7 +67,19 @@ my-plugin/
 | `description` | No | Short description shown below the name |
 | `version` | No | Shown as a small badge (e.g. `v1.0.0`) |
 | `entry` | No | Entry HTML file. Defaults to `index.html` |
-| `icon` | No | Icon image filename. Recommended size: **48×48 px** |
+| `icon` | No | Icon image filename. Recommended size: **48×48 px**. Must be `icon.png` for store submissions. |
+| `files` | No | List of files to download when installing from the store. If omitted, only `entry` and `icon` are fetched. **Required if you have additional assets** (e.g. `style.css`). |
+
+Example with a stylesheet:
+
+```json
+{
+  "name": "My Plugin",
+  "entry": "index.html",
+  "icon": "icon.png",
+  "files": ["index.html", "style.css", "icon.png"]
+}
+```
 
 ---
 
@@ -350,6 +362,8 @@ Copy the plugin folder to `/plugins/` on internal storage or `/sd/plugins/` on S
 4. Open a pull request
 
 Once merged, your plugin appears in the store for all FigUI users.
+
+> **Store requirements:** PRs without a 48×48 `icon.png` will be rejected. Please ensure icons are your own work and not copyrighted.
 
 ---
 
