@@ -88,6 +88,17 @@ export interface Plugin {
   id: string
   manifest: PluginManifest
   entryUrl: string
+  fs: 'sd' | 'local'
+}
+
+export interface StoreEntry {
+  id: string
+  name: string
+  description?: string
+  version?: string
+  author?: string
+  files: string[]
+  base: string
 }
 export type PositionMode = 'WPos' | 'MPos' | 'Both'
 export type JogStep = 0.001 | 0.01 | 0.1 | 1 | 10 | 100
