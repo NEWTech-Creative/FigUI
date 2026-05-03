@@ -6,25 +6,28 @@ import { Macros } from './Macros'
 import { Terminal } from './Terminal'
 import { ProbePanel } from './ProbePanel'
 import { OverridesPanel, SpindlePanel } from './JogPad'
+import { PluginLauncher } from './PluginLauncher'
 
 export function TabletAccordion({ tabletTab, setTabletTab }: { tabletTab: string; setTabletTab: (s: any) => void }) {
   const [expanded, setExpanded] = useState<'visualizer' | 'controls'>('visualizer')
   const [portraitTab, setPortraitTab] = useState<string>('viewer')
 
   const TABS = [
-    { id: 'viewer', label: 'Viewer' },
-    { id: 'files', label: 'Files' },
-    { id: 'macros', label: 'Macros' },
+    { id: 'viewer',  label: 'Viewer'  },
+    { id: 'files',   label: 'Files'   },
+    { id: 'macros',  label: 'Macros'  },
     { id: 'terminal', label: 'Terminal' },
+    { id: 'plugins', label: 'Plugins' },
   ]
 
   const PORTRAIT_TABS = [
-    { id: 'viewer',    label: 'Viewer' },
-    { id: 'files',     label: 'Files' },
-    { id: 'macros',    label: 'Macros' },
-    { id: 'terminal',  label: 'Terminal' },
-    { id: 'spindle',   label: 'Spindle' },
+    { id: 'viewer',    label: 'Viewer'    },
+    { id: 'files',     label: 'Files'     },
+    { id: 'macros',    label: 'Macros'    },
+    { id: 'terminal',  label: 'Terminal'  },
+    { id: 'spindle',   label: 'Spindle'   },
     { id: 'overrides', label: 'Overrides' },
+    { id: 'plugins',   label: 'Plugins'   },
   ]
 
   return (
@@ -70,6 +73,7 @@ export function TabletAccordion({ tabletTab, setTabletTab }: { tabletTab: string
                 <OverridesPanel className="border-none shadow-none p-0" isTablet />
               </div>
             )}
+            {portraitTab === 'plugins'   && <PluginLauncher isTablet />}
           </div>
         </div>
 
@@ -118,6 +122,7 @@ export function TabletAccordion({ tabletTab, setTabletTab }: { tabletTab: string
                 {tabletTab === 'files'    && <FileManager isTablet />}
                 {tabletTab === 'macros'   && <Macros isTablet />}
                 {tabletTab === 'terminal' && <Terminal />}
+                {tabletTab === 'plugins'  && <PluginLauncher isTablet />}
               </div>
             </div>
           )}

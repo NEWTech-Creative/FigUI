@@ -20,12 +20,14 @@ import { Macros } from './components/Macros'
 import { SettingsPanel } from './components/SettingsPanel'
 import { AboutModal } from './components/AboutModal'
 import { JobControl } from './components/JobControl'
+import { PluginLauncher } from './components/PluginLauncher'
 import { WifiOff, RefreshCw, Crosshair, Monitor, FolderOpen, TerminalSquare, AlertTriangle } from 'lucide-react'
 import type { SidebarTab } from './types'
 
 const SIDEBAR_TABS: { id: SidebarTab; label: string }[] = [
-  { id: 'files',  label: 'Files'  },
-  { id: 'macros', label: 'Macros' },
+  { id: 'files',   label: 'Files'   },
+  { id: 'macros',  label: 'Macros'  },
+  { id: 'plugins', label: 'Plugins' },
 ]
 
 type MobilePanel = 'control' | 'viewer' | 'right' | 'terminal'
@@ -443,8 +445,9 @@ export function App() {
             <div className="panel flex flex-col flex-1 min-h-0 overflow-hidden">
               {sidebarTabBar}
               <div className="flex-1 min-h-0 overflow-hidden">
-                {sidebarTab === 'files'  && <FileManager />}
-                {sidebarTab === 'macros' && <Macros />}
+                {sidebarTab === 'files'   && <FileManager />}
+                {sidebarTab === 'macros'  && <Macros />}
+                {sidebarTab === 'plugins' && <PluginLauncher />}
               </div>
             </div>
           </div>
@@ -512,8 +515,9 @@ export function App() {
           <div className="panel flex flex-col min-h-0 flex-1 overflow-hidden">
             {sidebarTabBar}
             <div className="flex-1 min-h-0 overflow-hidden">
-              {sidebarTab === 'files'  && <FileManager />}
-              {sidebarTab === 'macros' && <Macros />}
+              {sidebarTab === 'files'   && <FileManager />}
+              {sidebarTab === 'macros'  && <Macros />}
+              {sidebarTab === 'plugins' && <PluginLauncher />}
             </div>
           </div>
 

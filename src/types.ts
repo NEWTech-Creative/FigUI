@@ -74,7 +74,21 @@ export interface Macro {
   glyph?: string
 }
 
-export type SidebarTab = 'files' | 'macros'
+export type SidebarTab = 'files' | 'macros' | 'plugins'
+
+export interface PluginManifest {
+  name: string
+  description?: string
+  icon?: string
+  version?: string
+  entry?: string
+}
+
+export interface Plugin {
+  id: string
+  manifest: PluginManifest
+  entryUrl: string
+}
 export type PositionMode = 'WPos' | 'MPos' | 'Both'
 export type JogStep = 0.001 | 0.01 | 0.1 | 1 | 10 | 100
 export type Units = 'mm' | 'in'
