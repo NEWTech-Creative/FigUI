@@ -59,11 +59,13 @@ function appendStatic3DPathSegment(
   seg: Segment,
   showRapids: boolean,
 ) {
-  if (seg.rapid && !showRapids) return
+  if (seg.moveType === 'rapid' && !showRapids) return
+  if (seg.moveType === 'traverse' && !showRapids) return
 
-  const RAPID_C = [0.4, 0.5, 0.7, 1.0] as const
-  const CUT_C = [0.94, 0.63, 0.19, 1.0] as const
-  const color = seg.rapid ? RAPID_C : CUT_C
+  const RAPID_C     = [0.4,  0.5,  0.7,  1.0] as const
+  const TRAVERSE_C  = [0.35, 0.6,  0.35, 0.7] as const
+  const CUT_C       = [0.94, 0.63, 0.19, 1.0] as const
+  const color = seg.moveType === 'rapid' ? RAPID_C : seg.moveType === 'traverse' ? TRAVERSE_C : CUT_C
 
   if (seg.i !== undefined) {
     const arc = getArcGeometry(seg)
@@ -94,6 +96,7 @@ export function nextAnimationFrame() {
 
 export interface Built2DPaths {
   rapidPath: Path2D
+  traversePath: Path2D
   cutPath: Path2D
 }
 
@@ -103,11 +106,12 @@ export async function buildStatic2DPathsAsync(
   shouldContinue: () => boolean,
 ): Promise<Built2DPaths> {
   const rapidPath = new Path2D()
+  const traversePath = new Path2D()
   const cutPath = new Path2D()
 
   if (segments.length === 0) {
     onProgress(100)
-    return { rapidPath, cutPath }
+    return { rapidPath, traversePath, cutPath }
   }
 
   for (let start = 0; start < segments.length; start += TWO_D_BUILD_CHUNK_SIZE) {
@@ -116,14 +120,15 @@ export async function buildStatic2DPathsAsync(
     const end = Math.min(start + TWO_D_BUILD_CHUNK_SIZE, segments.length)
     for (let i = start; i < end; i++) {
       const seg = segments[i]
-      addSegmentToPath(seg.rapid ? rapidPath : cutPath, seg)
+      const path = seg.moveType === 'rapid' ? rapidPath : seg.moveType === 'traverse' ? traversePath : cutPath
+      addSegmentToPath(path, seg)
     }
 
     onProgress(Math.round((end / segments.length) * 100))
     if (end < segments.length) await nextAnimationFrame()
   }
 
-  return { rapidPath, cutPath }
+  return { rapidPath, traversePath, cutPath }
 }
 
 export interface Built3DGeometry {

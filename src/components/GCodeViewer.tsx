@@ -9,8 +9,9 @@ import { displayToMm, mmToDisplay } from '../lib/units'
 import { createRenderer, renderLines, setStaticLineData, type WebGLRenderer, type Camera, type Vector3 } from '../lib/webgl'
 import { addSegmentToPath, clamp01, getArcGeometry, normalizeAngle } from '../lib/gcodeBuild'
 
-const RAPID_COLOR   = 'rgba(100,120,160,0.25)'
-const CUT_COLOR_FG  = '#f0a030'
+const RAPID_COLOR     = 'rgba(110,140,220,0.65)'
+const TRAVERSE_COLOR  = 'rgba(90,185,90,0.6)'
+const CUT_COLOR_FG    = '#f0a030'
 const CUT_DONE      = '#22c55e'
 const ORIGIN_COLOR  = 'rgba(240,160,48,0.6)'
 const GRID_COLOR    = 'rgba(128,128,128,0.12)'
@@ -105,6 +106,7 @@ interface StaticPathGeometry {
 interface Static2DPaths {
   model: GCodeModel
   rapidPath: Path2D
+  traversePath: Path2D
   cutPath: Path2D
 }
 
@@ -133,14 +135,14 @@ function findEntryExitMarkerPoints(segments: Segment[]) {
   let lastCutIndex = -1
 
   for (let index = 0; index < segments.length; index++) {
-    if (!segments[index].rapid) {
+    if (segments[index].moveType === 'feed') {
       firstCutIndex = index
       break
     }
   }
 
   for (let index = segments.length - 1; index >= 0; index--) {
-    if (!segments[index].rapid) {
+    if (segments[index].moveType === 'feed') {
       lastCutIndex = index
       break
     }
@@ -150,10 +152,10 @@ function findEntryExitMarkerPoints(segments: Segment[]) {
     return { entry: null, exit: null }
   }
 
-  const entryRapid = firstCutIndex > 0 && segments[firstCutIndex - 1].rapid
+  const entryRapid = firstCutIndex > 0 && segments[firstCutIndex - 1].moveType === 'rapid'
     ? segments[firstCutIndex - 1]
     : null
-  const exitRapid = lastCutIndex < segments.length - 1 && segments[lastCutIndex + 1].rapid
+  const exitRapid = lastCutIndex < segments.length - 1 && segments[lastCutIndex + 1].moveType === 'rapid'
     ? segments[lastCutIndex + 1]
     : null
 
@@ -1000,6 +1002,7 @@ export function GCodeViewer({ className, isTablet }: Props) {
     const triangleColors: number[] = []
 
     const RAPID_C     = [0.4,  0.5,  0.7,  1.0] as const
+    const TRAVERSE_C  = [0.35, 0.6,  0.35, 0.7] as const
     const CUT_C       = [0.94, 0.63, 0.19, 1.0] as const
     const DONE_C      = [0.13, 0.77, 0.37, 1.0] as const
     const TOOL_C      = [0.94, 0.27, 0.27, 1.0] as const
@@ -1009,9 +1012,10 @@ export function GCodeViewer({ className, isTablet }: Props) {
 
     for (let segIdx = 0; segIdx < segments.length; segIdx++) {
       const seg = segments[segIdx]
-      if (seg.rapid && !showRapidsRef.current) continue
+      if (seg.moveType !== 'feed' && !showRapidsRef.current) continue
 
-      if (seg.rapid) {
+      if (seg.moveType !== 'feed') {
+        const nonFeedColor = seg.moveType === 'rapid' ? RAPID_C : TRAVERSE_C
         if (seg.i !== undefined) {
           const arc = getArcGeometry(seg)
           const numSubs = Math.max(8, Math.min(64, Math.ceil(arc.sweep * arc.r * 4)))
@@ -1024,11 +1028,11 @@ export function GCodeViewer({ className, isTablet }: Props) {
               arc.cx + Math.cos(angle1) * arc.r, arc.cy + Math.sin(angle1) * arc.r, seg.z0 + (seg.z1 - seg.z0) * t1,
               arc.cx + Math.cos(angle2) * arc.r, arc.cy + Math.sin(angle2) * arc.r, seg.z0 + (seg.z1 - seg.z0) * t2,
             )
-            colors.push(...RAPID_C, ...RAPID_C)
+            colors.push(...nonFeedColor, ...nonFeedColor)
           }
         } else {
           vertices.push(seg.x0, seg.y0, seg.z0, seg.x1, seg.y1, seg.z1)
-          colors.push(...RAPID_C, ...RAPID_C)
+          colors.push(...nonFeedColor, ...nonFeedColor)
         }
         continue
       }
@@ -1146,12 +1150,14 @@ export function GCodeViewer({ className, isTablet }: Props) {
     if (cached && cached.model === mdl) return cached
 
     const rapidPath = new Path2D()
+    const traversePath = new Path2D()
     const cutPath = new Path2D()
     for (const seg of mdl.segments) {
-      addSegmentToPath(seg.rapid ? rapidPath : cutPath, seg)
+      const path = seg.moveType === 'rapid' ? rapidPath : seg.moveType === 'traverse' ? traversePath : cutPath
+      addSegmentToPath(path, seg)
     }
 
-    const paths = { model: mdl, rapidPath, cutPath }
+    const paths = { model: mdl, rapidPath, traversePath, cutPath }
     static2DPathsRef.current = paths
     return paths
   }
@@ -1183,7 +1189,7 @@ export function GCodeViewer({ className, isTablet }: Props) {
   useEffect(() => {
     modelRef.current = model
     static2DPathsRef.current = (storePaths2D && model)
-      ? { model, rapidPath: storePaths2D.rapidPath, cutPath: storePaths2D.cutPath }
+      ? { model, rapidPath: storePaths2D.rapidPath, traversePath: storePaths2D.traversePath, cutPath: storePaths2D.cutPath }
       : null
     staticPathGeometryRef.current = (storeGeometry3D && model)
       ? {
@@ -1402,6 +1408,7 @@ export function GCodeViewer({ className, isTablet }: Props) {
 
       strokeModelPath(ctx, staticPaths.cutPath, t, CUT_COLOR_FG, 1)
       if (showRapidsRef.current) {
+        strokeModelPath(ctx, staticPaths.traversePath, t, TRAVERSE_COLOR, 0.5, [2, 2])
         strokeModelPath(ctx, staticPaths.rapidPath, t, RAPID_COLOR, 0.5, [4, 3])
       }
 
@@ -1414,7 +1421,7 @@ export function GCodeViewer({ className, isTablet }: Props) {
 
         for (let i = 0; i <= progress.segmentIndex; i++) {
           const seg = segments[i]
-          if (seg.rapid) continue
+          if (seg.moveType !== 'feed') continue
           drawSegment(ctx, seg, t, i === progress.segmentIndex ? progress.fraction : 1)
         }
       }

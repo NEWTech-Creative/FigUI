@@ -3,7 +3,12 @@
 export interface Segment {
   x0: number; y0: number; z0: number
   x1: number; y1: number; z1: number
-  rapid: boolean
+  /**
+   * G0 move = 'rapid'
+   * G1/G2/G3 while spindle is on (or no spindle machine) = 'feed'
+   * G1/G2/G3 while spindle is off on a spindle machine = 'traverse'
+   */
+  moveType: 'rapid' | 'feed' | 'traverse'
   /** For arcs: center offsets (relative to start). undefined for lines. */
   i?: number; j?: number; k?: number
   /** true = clockwise arc (G2) */
@@ -30,7 +35,14 @@ export function parseGCode(text: string): GCodeModel {
   let plane = 17               // G17=XY, G18=ZX, G19=YZ
   let incremental = false
   let spindleOn = false        // Track spindle state
+  let spindleEverOn = false    // Whether spindle was ever activated (false = no spindle machine e.g. pen plotter)
   const bounds = { minX: Infinity, minY: Infinity, minZ: Infinity, maxX: -Infinity, maxY: -Infinity, maxZ: -Infinity }
+
+  function getMoveType(): 'rapid' | 'feed' | 'traverse' {
+    if (rapid) return 'rapid'
+    if (spindleEverOn && !spindleOn) return 'traverse'
+    return 'feed'
+  }
 
   function expandBounds(px: number, py: number, pz: number) {
     if (px < bounds.minX) bounds.minX = px
@@ -66,7 +78,7 @@ export function parseGCode(text: string): GCodeModel {
 
     // Process M codes (spindle control)
     for (const mc of mCodes) {
-      if (mc === 3 || mc === 4) { spindleOn = true }  // M3/M4 = spindle on
+      if (mc === 3 || mc === 4) { spindleOn = true; spindleEverOn = true }  // M3/M4 = spindle on
       else if (mc === 5) { spindleOn = false }        // M5 = spindle off
     }
 
@@ -97,13 +109,13 @@ export function parseGCode(text: string): GCodeModel {
         z = (words.Z ?? z) + offZ
         expandBounds(x0, y0, z0)
         expandBounds(x, y, z)
-        segments.push({ x0, y0, z0, x1: x, y1: y, z1: z, rapid: true })
+        segments.push({ x0, y0, z0, x1: x, y1: y, z1: z, moveType: 'rapid' })
       }
       const xi = x, yi = y, zi = z
       x = 0; y = 0; z = 0
       expandBounds(xi, yi, zi)
       expandBounds(x, y, z)
-      segments.push({ x0: xi, y0: yi, z0: zi, x1: x, y1: y, z1: z, rapid: true })
+      segments.push({ x0: xi, y0: yi, z0: zi, x1: x, y1: y, z1: z, moveType: 'rapid' })
       continue
     }
 
@@ -156,13 +168,13 @@ export function parseGCode(text: string): GCodeModel {
           const cx = x0 + i, cy = y0 + j, cz = z0 + k
           expandBounds(cx - r, cy - r, cz - r)
           expandBounds(cx + r, cy + r, cz + r)
-          segments.push({ x0, y0, z0, x1: x, y1: y, z1: z, rapid: rapid || !spindleOn, i, j, k, cw })
+          segments.push({ x0, y0, z0, x1: x, y1: y, z1: z, moveType: getMoveType(), i, j, k, cw })
         } else {
           // Treat degenerate arc as a line
-          segments.push({ x0, y0, z0, x1: x, y1: y, z1: z, rapid: rapid || !spindleOn })
+          segments.push({ x0, y0, z0, x1: x, y1: y, z1: z, moveType: getMoveType() })
         }
       } else {
-        segments.push({ x0, y0, z0, x1: x, y1: y, z1: z, rapid: rapid || !spindleOn })
+        segments.push({ x0, y0, z0, x1: x, y1: y, z1: z, moveType: getMoveType() })
       }
     }
   }
