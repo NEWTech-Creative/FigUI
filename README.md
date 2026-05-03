@@ -6,6 +6,29 @@ A modern web-based interface built with React & Typescript for [FluidNC](https:/
 
 ---
 
+## Table of Contents
+
+- [Overview](#overview)
+- [Features](#features)
+  - [Digital Readout (DRO)](#digital-readout-dro)
+  - [Jogging](#jogging)
+  - [G-Code Viewer](#g-code-viewer)
+  - [Job Control](#job-control)
+  - [Spindle Control](#spindle-control)
+  - [File Manager](#file-manager)
+  - [Code Editor](#code-editor)
+  - [Macros](#macros)
+  - [Settings](#settings)
+  - [Unit Support](#unit-support)
+  - [Themes](#themes)
+  - [Responsive Layouts](#responsive-layouts)
+- [Plugin API](#plugin-api)
+- [Deployment](#deployment)
+- [Tech Stack](#tech-stack)
+- [License](#license)
+
+---
+
 ## Overview
 
 FigUI connects to your FluidNC controller over WebSocket and HTTP, providing real-time machine control, job management, file operations, and configuration.
@@ -136,6 +159,14 @@ Tablet Layout
 
 Mobile Layout
 ![Mobile](docs/screenshots/FigUI-mobile.png) 
+
+---
+
+## Plugin API
+
+FigUI supports custom plugins — self-contained HTML files that run inside sandboxed iframes with access to machine control, file I/O, and UI theme integration.
+
+**[Plugin Developer Guide →](plugins/PLUGIN_GUIDE.md)**
 
 ---
 
