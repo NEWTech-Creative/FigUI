@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
-import { Plus, X, Pencil, Check, FileCode, FolderOpen, ChevronRight, ChevronLeft, Loader2, HardDrive, Server, Play, Square, Zap, Power, Settings, Home, Target, Crosshair, RotateCcw, ArrowLeft, ArrowUp, ArrowRight, ArrowDown, Lightbulb } from 'lucide-react'
+import { Plus, X, Pencil, Check, FileCode, FolderOpen, ChevronRight, ChevronLeft, Loader2, HardDrive, Server, Play, Square, Zap, Power, Settings, Home, Target, Crosshair, RotateCcw, ArrowLeft, ArrowUp, ArrowRight, ArrowDown, Lightbulb, Trash2 } from 'lucide-react'
 import { sendRaw } from '../lib/ws'
 import { useMachineStore } from '../store'
 import type { Macro, FileEntry } from '../types'
@@ -307,12 +307,12 @@ function MacroCard({ macro, onChange, onDelete, onOpenEditor }: MacroCardProps) 
         </button>
         <button
           className="shrink-0 w-7 h-7 flex items-center justify-center rounded
-                     text-danger hover:bg-danger/10 border border-transparent
+                     text-text-muted hover:text-danger hover:bg-danger/10 border border-transparent
                      hover:border-danger/30 transition-colors"
           onClick={onDelete}
           title="Delete macro"
         >
-          <X size={13} />
+          <Trash2 size={13} />
         </button>
       </div>
 
@@ -606,6 +606,9 @@ export function Macros({ isTablet }: { isTablet?: boolean }) {
   }
 
   function deleteMacro(id: string) {
+    const m = macros.find(m => m.id === id)
+    const label = m?.label?.trim() || 'this macro'
+    if (!window.confirm(`Delete "${label}"? This cannot be undone.`)) return
     const updated = macros.filter(m => m.id !== id)
     setMacros(updated)
     persist(updated)
@@ -641,6 +644,25 @@ export function Macros({ isTablet }: { isTablet?: boolean }) {
     persist(updated)
   }
 
+  async function openEditorForMacro(m: Macro) {
+    if (m.command) {
+      setEditorMacro(m)
+      return
+    }
+    if (m.filename) {
+      try {
+        const fs = m.target === 'SD' ? 'sd' : 'local'
+        const fullPath = m.target === 'SD' ? `/sd${m.filename}` : m.filename
+        const content = await fetchFileContent(fullPath, fs)
+        setEditorMacro({ ...m, command: content })
+      } catch {
+        setEditorMacro(m)
+      }
+      return
+    }
+    setEditorMacro(m)
+  }
+
   // CodeEditor save — handles both new scratch macros (not in list yet) and editing existing ones
   const handleEditorSave = useCallback(async (content: string) => {
     if (!editorMacro) return
@@ -657,11 +679,17 @@ export function Macros({ isTablet }: { isTablet?: boolean }) {
         // Folder may already exist
       }
 
-      // Save macro content to file
-      const sanitized = (editorMacro.label || 'macro').toLowerCase().replace(/[^a-z0-9_-]+/g, '_').slice(0, 40)
-      const timestamp = Date.now()
-      const filename = `${sanitized}_${timestamp}.g`
-      const filePath = `/.macros/${filename}`
+      let filename: string
+      let filePath: string
+      if (editorMacro.filename?.startsWith('/.macros/')) {
+        filePath = editorMacro.filename
+        filename = filePath.split('/').pop()!
+      } else {
+        const sanitized = (editorMacro.label || 'macro').toLowerCase().replace(/[^a-z0-9_-]+/g, '_').slice(0, 40)
+        const timestamp = Date.now()
+        filename = `${sanitized}_${timestamp}.g`
+        filePath = `/.macros/${filename}`
+      }
 
       await saveFileContent('/.macros', filename, content, 'local')
 
@@ -800,7 +828,7 @@ export function Macros({ isTablet }: { isTablet?: boolean }) {
                     macro={m}
                     onChange={updateMacro}
                     onDelete={() => deleteMacro(m.id)}
-                    onOpenEditor={() => setEditorMacro(m)}
+                    onOpenEditor={() => openEditorForMacro(m)}
                   />
                 ))}
               </div>
