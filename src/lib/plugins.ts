@@ -62,11 +62,10 @@ export async function uploadFolderPlugin(
   if (!manifest.name) throw new Error('plugin.json must have a "name" field')
 
   const firstPath = all[0]?.webkitRelativePath ?? ''
-  const folderName = firstPath.includes('/') ? firstPath.split('/')[0] : manifest.name.toLowerCase().replace(/[^a-z0-9_-]+/g, '-')
-  const rootFiles = all.filter(f => {
-    const parts = f.webkitRelativePath.split('/')
-    return parts.length <= 2
-  })
+  const folderName = firstPath.includes('/')
+    ? firstPath.split('/')[0]
+    : manifest.name.toLowerCase().replace(/[^a-z0-9_-]+/g, '-')
+  const rootFiles = all.filter(f => f.webkitRelativePath.split('/').length <= 2)
 
   try { await createDir('/', 'plugins', fs) } catch {}
   try { await createDir(PLUGINS_PATH, folderName, fs) } catch {}
@@ -77,8 +76,7 @@ export async function uploadFolderPlugin(
     const file = rootFiles[i]
     const filename = file.webkitRelativePath.split('/')[1]
     onProgress(i + 1, rootFiles.length, filename)
-    const uploadable = new File([file], filename, { type: file.type })
-    await uploadFile(targetDir, uploadable, fs)
+    await uploadFile(targetDir, new File([file], filename, { type: file.type }), fs)
   }
 
   return folderName

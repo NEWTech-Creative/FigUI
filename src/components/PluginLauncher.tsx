@@ -72,7 +72,6 @@ export function PluginLauncher({ isTablet }: { isTablet?: boolean }) {
   // Upload folder state
   const folderInputRef = useRef<HTMLInputElement>(null)
   const [progress, setProgress] = useState<ProgressState | null>(null)
-  const [uploadError, setUploadError] = useState<string | null>(null)
   const [uploadDone, setUploadDone] = useState(false)
 
   // Confirm delete
@@ -84,7 +83,6 @@ export function PluginLauncher({ isTablet }: { isTablet?: boolean }) {
   const [storeLoading, setStoreLoading] = useState(false)
   const [storeError, setStoreError] = useState<string | null>(null)
   const [installingId, setInstallingId] = useState<string | null>(null)
-  const [installError, setInstallError] = useState<string | null>(null)
   const [justInstalled, setJustInstalled] = useState<string | null>(null)
 
   const scan = useCallback(async () => {
@@ -115,7 +113,6 @@ export function PluginLauncher({ isTablet }: { isTablet?: boolean }) {
   async function handleFolderSelect(e: React.ChangeEvent<HTMLInputElement>) {
     const files = e.target.files
     if (!files || files.length === 0) return
-    setUploadError(null)
     setUploadDone(false)
     setProgress({ current: 0, total: files.length, filename: '', label: 'Preparing…' })
     try {
@@ -127,7 +124,7 @@ export function PluginLauncher({ isTablet }: { isTablet?: boolean }) {
       await scan()
       setTab('installed')
     } catch (err: any) {
-      setUploadError(err.message ?? 'Upload failed')
+      alert(err.message ?? 'Upload failed')
       setProgress(null)
     } finally {
       e.target.value = ''
@@ -146,14 +143,13 @@ export function PluginLauncher({ isTablet }: { isTablet?: boolean }) {
 
   async function handleInstall(entry: StoreEntry, fs: FsDest = destFs) {
     setInstallingId(entry.id)
-    setInstallError(null)
     try {
       await installStorePlugin(entry, fs, () => {})
       setJustInstalled(entry.id)
       await scan()
       setTimeout(() => setJustInstalled(null), 3000)
     } catch (err: any) {
-      setInstallError(err.message ?? 'Install failed')
+      alert(err.message ?? 'Install failed')
     } finally {
       setInstallingId(null)
     }
@@ -229,20 +225,6 @@ export function PluginLauncher({ isTablet }: { isTablet?: boolean }) {
                 />
               </div>
               <p className="text-xs text-text-dim">{progress.current} / {progress.total} files</p>
-            </div>
-          )}
-
-          {/* Upload error */}
-          {!progress && uploadError && (
-            <div className="m-4 p-3 rounded border border-danger/30 bg-danger/10 flex items-start gap-2">
-              <AlertCircle size={14} className="text-danger shrink-0 mt-0.5" />
-              <div className="flex-1 min-w-0">
-                <p className="text-sm text-danger font-medium">Install failed</p>
-                <p className="text-xs text-danger/80 mt-0.5 break-words">{uploadError}</p>
-              </div>
-              <button onClick={() => setUploadError(null)} className="text-danger/60 hover:text-danger shrink-0">
-                <X size={12} />
-              </button>
             </div>
           )}
 
@@ -349,15 +331,6 @@ export function PluginLauncher({ isTablet }: { isTablet?: boolean }) {
               </div>
             ) : (
               <div className={`flex flex-col gap-3 ${pad}`}>
-                {installError && (
-                  <div className="p-3 rounded border border-danger/30 bg-danger/10 flex items-start gap-2">
-                    <AlertCircle size={13} className="text-danger shrink-0 mt-0.5" />
-                    <p className="text-xs text-danger flex-1">{installError}</p>
-                    <button onClick={() => setInstallError(null)} className="text-danger/60 hover:text-danger shrink-0">
-                      <X size={11} />
-                    </button>
-                  </div>
-                )}
                 {(storeEntries ?? []).map(entry => {
                   const installed = isInstalled(entry)
                   const installing = installingId === entry.id

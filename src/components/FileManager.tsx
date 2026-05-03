@@ -248,6 +248,8 @@ export function FileManager({ isTablet }: { isTablet?: boolean }) {
         await uploadFile(path, file, fs, p => setUploadPct(p))
       }
       load(path, fs)
+    } catch (e) {
+      alert(e instanceof Error ? e.message : 'Upload failed')
     } finally {
       setUploading(false)
       if (fileInput.current) fileInput.current.value = ''

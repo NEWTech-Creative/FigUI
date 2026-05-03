@@ -101,12 +101,36 @@ export async function renameFile(path: string, filename: string, newname: string
   await get(fsEndpoint(fs), { path: apiPath, action: 'rename', filename, newname })
 }
 
+function fmtBytes(n: number): string {
+  if (n < 1024) return `${n} B`
+  if (n < 1048576) return `${(n / 1024).toFixed(1)} KB`
+  return `${(n / 1048576).toFixed(1)} MB`
+}
+
+async function checkFreeSpace(fs: 'sd' | 'local', bytes: number): Promise<void> {
+  if (fs !== 'local') return
+  try {
+    const info = await listFiles('/', fs)
+    if (!info.total) return
+    const available = info.total - info.used
+    if (bytes > available) {
+      throw new Error(
+        `Not enough space on Internal storage: ` +
+        `need ${fmtBytes(bytes)}, only ${fmtBytes(available)} free`
+      )
+    }
+  } catch (e) {
+    if (e instanceof Error && e.message.startsWith('Not enough')) throw e
+  }
+}
+
 export async function uploadFile(
   path: string,
   file: File,
   fs: 'sd' | 'local',
   onProgress?: (pct: number) => void,
 ): Promise<void> {
+  await checkFreeSpace(fs, file.size)
   return new Promise((resolve, reject) => {
     const xhr = new XMLHttpRequest()
     const fd = new FormData()
