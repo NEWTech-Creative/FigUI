@@ -15,6 +15,11 @@ Plugins are self-contained HTML files that run inside FigUI and can communicate 
   - [sendCommand](#sendcommand)
   - [sendQuery](#sendquery)
   - [subscribe / unsubscribe](#subscribe--unsubscribe)
+  - [readFile](#readfile)
+  - [writeFile](#writefile)
+  - [listFiles](#listfiles)
+  - [getDeviceInfo](#getdeviceinfo)
+  - [getSettings / saveSettings](#getsettings--savesettings)
 - [Minimal example](#minimal-example)
 - [Installing a plugin](#installing-a-plugin)
 - [Publishing to the store](#publishing-to-the-store)
@@ -161,20 +166,102 @@ const modes   = await call('sendQuery', { command: '$G' })  // parser state
 ```
 
 #### `subscribe` / `unsubscribe`
-Subscribe to live machine status events. Your plugin receives a `fluid-event` message whenever the status changes.
+Subscribe to live events. Two events are available: `'status'` and `'line'`.
+
+**`status`** — fires whenever the machine status changes (same shape as `getStatus`):
 
 ```js
 await call('subscribe', { event: 'status' })
 
 window.addEventListener('message', e => {
   if (e.data?.type === 'fluid-event' && e.data.event === 'status') {
-    render(e.data.data)   // same shape as getStatus result
+    render(e.data.data)
   }
 })
 
-// When done:
 await call('unsubscribe', { event: 'status' })
 ```
+
+**`line`** — fires for every raw line received from the machine over the WebSocket:
+
+```js
+await call('subscribe', { event: 'line' })
+
+window.addEventListener('message', e => {
+  if (e.data?.type === 'fluid-event' && e.data.event === 'line') {
+    console.log('machine says:', e.data.data)   // e.g. "ok", "<Idle|WPos:0,0,0>"
+  }
+})
+
+await call('unsubscribe', { event: 'line' })
+```
+
+#### `readFile`
+Read a file from the device filesystem. Returns the file contents as a string.
+
+```js
+const content = await call('readFile', { path: '/config.yaml' })
+const sdFile  = await call('readFile', { path: '/sd/data.txt', fs: 'sd' })
+```
+
+| Param | Default | Description |
+|---|---|---|
+| `path` | — | Full file path |
+| `fs` | `'local'` | `'local'` for internal flash, `'sd'` for SD card |
+
+#### `writeFile`
+Write a string to a file on the device filesystem.
+
+```js
+await call('writeFile', { path: '/output.txt', content: 'Hello!' })
+await call('writeFile', { path: '/sd/log.txt', content: data, fs: 'sd' })
+```
+
+| Param | Default | Description |
+|---|---|---|
+| `path` | — | Full file path |
+| `content` | — | String content to write |
+| `fs` | `'local'` | `'local'` or `'sd'` |
+
+#### `listFiles`
+List files in a directory.
+
+```js
+const result = await call('listFiles', { path: '/sd' })
+// result.files  → [{ name, size, isDir }, ...]
+// result.total  → total bytes on filesystem
+// result.used   → used bytes
+```
+
+| Param | Default | Description |
+|---|---|---|
+| `path` | `'/'` | Directory path |
+| `fs` | `'local'` | `'local'` or `'sd'` |
+
+#### `getDeviceInfo`
+Returns ESP32 device information.
+
+```js
+const info = await call('getDeviceInfo')
+// info.version    → firmware version string
+// info.hostname   → device hostname
+// info.axes       → number of axes
+// info.wsPort     → WebSocket port
+// info.primarySd  → primary SD path
+```
+
+#### `getSettings` / `saveSettings`
+Per-plugin persistent settings, stored on the device. Each plugin gets its own namespace — data is never shared between plugins.
+
+```js
+// Load saved settings (returns {} if none saved yet)
+const settings = await call('getSettings')
+
+// Save settings (any JSON-serializable object)
+await call('saveSettings', { data: { speed: 100, units: 'mm' } })
+```
+
+Settings are stored at `/plugins/<plugin-id>/settings.json`, co-located with the plugin files. They are automatically removed when the plugin is deleted.
 
 ---
 

@@ -1,8 +1,8 @@
 import { useEffect, useRef, useState } from 'react'
 import { Puzzle, X, RefreshCw } from 'lucide-react'
 import { useMachineStore } from '../store'
-import { sendCommand } from '../lib/http'
-import { sendRaw } from '../lib/ws'
+import { sendCommand, listFiles as listDeviceFiles, fetchFileContent, saveFileContent } from '../lib/http'
+import { sendRaw, onLine } from '../lib/ws'
 import type { Plugin } from '../types'
 
 interface PluginRequest {
@@ -48,6 +48,7 @@ function prepareHtml(html: string, baseUrl: string, themeVars: Record<string, st
 export function PluginFrame({ plugin, onClose }: { plugin: Plugin; onClose: () => void }) {
   const iframeRef = useRef<HTMLIFrameElement>(null)
   const statusSubscribed = useRef(false)
+  const lineUnsubRef = useRef<(() => void) | null>(null)
   const [srcDoc, setSrcDoc] = useState<string | null>(null)
   const [loadError, setLoadError] = useState<string | null>(null)
 
@@ -99,17 +100,70 @@ export function PluginFrame({ plugin, onClose }: { plugin: Plugin; onClose: () =
         }
         case 'subscribe':
           if (msg.params?.event === 'status') statusSubscribed.current = true
+          if (msg.params?.event === 'line' && !lineUnsubRef.current) {
+            lineUnsubRef.current = onLine(line => {
+              iframeRef.current?.contentWindow?.postMessage(
+                { type: 'fluid-event', event: 'line', data: line }, '*')
+            })
+          }
           reply(null); break
         case 'unsubscribe':
           if (msg.params?.event === 'status') statusSubscribed.current = false
+          if (msg.params?.event === 'line') {
+            lineUnsubRef.current?.()
+            lineUnsubRef.current = null
+          }
           reply(null); break
+        case 'readFile': {
+          const path = String(msg.params?.path ?? '')
+          const fs = (msg.params?.fs as 'sd' | 'local') ?? 'local'
+          fetchFileContent(path, fs).then(text => reply(text)).catch(err => reply(null, String(err)))
+          break
+        }
+        case 'writeFile': {
+          const fullPath = String(msg.params?.path ?? '')
+          const content = String(msg.params?.content ?? '')
+          const fs = (msg.params?.fs as 'sd' | 'local') ?? 'local'
+          const lastSlash = fullPath.lastIndexOf('/')
+          const dir = lastSlash > 0 ? fullPath.slice(0, lastSlash) : '/'
+          const filename = fullPath.slice(lastSlash + 1)
+          saveFileContent(dir, filename, content, fs).then(() => reply(null)).catch(err => reply(null, String(err)))
+          break
+        }
+        case 'listFiles': {
+          const path = String(msg.params?.path ?? '/')
+          const fs = (msg.params?.fs as 'sd' | 'local') ?? 'local'
+          listDeviceFiles(path, fs).then(result => reply(result)).catch(err => reply(null, String(err)))
+          break
+        }
+        case 'getDeviceInfo':
+          reply(useMachineStore.getState().espInfo); break
+        case 'getSettings': {
+          const fs = plugin.fs
+          fetchFileContent(`/plugins/${plugin.id}/settings.json`, fs)
+            .then(text => reply(JSON.parse(text)))
+            .catch(() => reply({}))
+          break
+        }
+        case 'saveSettings': {
+          const data = msg.params?.data ?? {}
+          const fs = plugin.fs
+          saveFileContent(`/plugins/${plugin.id}`, 'settings.json', JSON.stringify(data), fs)
+            .then(() => reply(null))
+            .catch(err => reply(null, String(err)))
+          break
+        }
         default:
           reply(null, `Unknown method: ${msg.method}`)
       }
     }
     window.addEventListener('message', onMessage)
-    return () => window.removeEventListener('message', onMessage)
-  }, [])
+    return () => {
+      window.removeEventListener('message', onMessage)
+      lineUnsubRef.current?.()
+      lineUnsubRef.current = null
+    }
+  }, [plugin.id])
 
   useEffect(() => {
     return useMachineStore.subscribe((state, prevState) => {

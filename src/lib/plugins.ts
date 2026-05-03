@@ -49,11 +49,7 @@ export async function uploadFolderPlugin(
 ): Promise<string> {
   const all = Array.from(files)
 
-  console.log('[plugins] uploadFolderPlugin: received', all.length, 'files')
-  all.forEach(f => console.log('[plugins]  file:', JSON.stringify({ name: f.name, webkitRelativePath: f.webkitRelativePath, size: f.size })))
-
   const manifestFile = all.find(f => f.name === 'plugin.json')
-  console.log('[plugins] manifestFile:', manifestFile ? `found (path="${manifestFile.webkitRelativePath}")` : 'NOT FOUND')
   if (!manifestFile) throw new Error('No plugin.json found in folder root')
 
   let manifest: PluginManifest
