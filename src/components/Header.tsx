@@ -94,7 +94,7 @@ export function Header({ onSettingsClick, onAboutClick, isTablet }: Props) {
                 <button
                   key={m.id}
                   className={`btn ${MACRO_BTN_CLASS[m.color]} flex items-center gap-1.5 px-2 py-1 ${
-                    isTablet ? 'h-8 text-sm' : 'h-7 text-xs'
+                    isTablet ? 'h-8 text-base' : 'h-7 text-sm'
                   } shrink-0`}
                   onClick={() => runMacro(m)}
                   title={m.label}

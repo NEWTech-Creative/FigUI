@@ -281,12 +281,13 @@ export function App() {
     }
   }, [connected])
 
-  // Load macros whenever we (re)connect
+  const macrosLoaded = useRef(false)
   useEffect(() => {
-    if (!connected) return
+    if (!connected || macrosLoaded.current) return
+    macrosLoaded.current = true
     loadMacroCfg()
       .then(data => { if (data.length > 0) setMacros(data) })
-      .catch(() => {})
+      .catch(() => { macrosLoaded.current = false })
   }, [connected]) // eslint-disable-line react-hooks/exhaustive-deps
 
   // Debounce the "Reconnecting…" overlay so transient drops don't flash it.

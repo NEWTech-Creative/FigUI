@@ -37,7 +37,15 @@ my-plugin/
 └── index.html    ← entry point (required)
 ```
 
-Additional assets (images, JS files) can be placed in the same folder. Subdirectories are not supported — keep everything flat.
+Additional assets (CSS files, images, JS files) can be placed in the same folder and referenced with relative paths — FigUI sets the `<base>` URL to your plugin's folder automatically. Subdirectories are not supported — keep everything flat.
+
+```
+my-plugin/
+├── plugin.json
+├── index.html
+├── style.css     ← link with <link rel="stylesheet" href="style.css">
+└── icon.png
+```
 
 ---
 

@@ -21,7 +21,7 @@ function StoragePicker({ onPick, onClose }: { onPick: (fs: FsDest) => void; onCl
         className="bg-surface border border-border rounded shadow-xl w-64 p-4 animate-in space-y-3"
         onClick={e => e.stopPropagation()}
       >
-        <p className="text-sm font-semibold text-text-primary">Install to…</p>
+        <p className="text-base font-semibold text-text-primary">Install to…</p>
         <div className="flex flex-col gap-2">
           {([
             ['local', 'Internal Storage', Server,  'Flash memory on the controller'],
@@ -35,8 +35,8 @@ function StoragePicker({ onPick, onClose }: { onPick: (fs: FsDest) => void; onCl
             >
               <Icon size={18} className="text-text-muted shrink-0" />
               <div>
-                <p className="text-sm font-medium text-text-primary">{label}</p>
-                <p className="text-xs text-text-dim">{hint}</p>
+                <p className="text-base font-medium text-text-primary">{label}</p>
+                <p className="text-sm text-text-dim">{hint}</p>
               </div>
             </button>
           ))}
@@ -48,7 +48,7 @@ function StoragePicker({ onPick, onClose }: { onPick: (fs: FsDest) => void; onCl
 
 function FsBadge({ fs }: { fs: 'sd' | 'local' }) {
   return (
-    <span className={`inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded text-[10px] font-medium border ${
+    <span className={`inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded text-sm font-medium border ${
       fs === 'sd'
         ? 'bg-info/10 border-info/30 text-info'
         : 'bg-elevated border-border text-text-dim'
@@ -166,10 +166,10 @@ export function PluginLauncher({ isTablet }: { isTablet?: boolean }) {
 
         {/* Header */}
         <div className={`flex items-center gap-2 ${pad} pb-3 border-b border-border shrink-0`}>
-          <span className="text-sm text-text-muted uppercase tracking-wide font-medium flex-1">Plugins</span>
+          <span className="text-base text-text-muted uppercase tracking-wide font-medium flex-1">Plugins</span>
           <button
             onClick={() => setShowAddPicker(true)}
-            className="btn btn-ghost text-sm py-1 px-2 gap-1.5 shrink-0"
+            className="btn btn-ghost text-base py-1 px-2 gap-1.5 shrink-0"
             title="Install from folder"
           >
             <Upload size={12} />
@@ -191,7 +191,7 @@ export function PluginLauncher({ isTablet }: { isTablet?: boolean }) {
             <button
               key={t}
               onClick={() => setTab(t)}
-              className={`flex-1 flex items-center justify-center gap-1.5 py-2 text-xs font-semibold
+              className={`flex-1 flex items-center justify-center gap-1.5 py-2 text-sm font-semibold
                           uppercase tracking-wide transition-colors border-b-2 -mb-px ${
                 tab === t
                   ? 'border-accent text-accent'
@@ -201,7 +201,7 @@ export function PluginLauncher({ isTablet }: { isTablet?: boolean }) {
               {t === 'installed' ? <Puzzle size={11} /> : <Store size={11} />}
               {t === 'installed' ? 'Installed' : 'Store'}
               {t === 'installed' && plugins.length > 0 && (
-                <span className="ml-0.5 bg-elevated border border-border rounded-full text-[10px] px-1.5 py-px text-text-dim">
+                <span className="ml-0.5 bg-elevated border border-border rounded-full text-sm px-1.5 py-px text-text-dim">
                   {plugins.length}
                 </span>
               )}
@@ -216,15 +216,15 @@ export function PluginLauncher({ isTablet }: { isTablet?: boolean }) {
           {progress && (
             <div className="flex flex-col items-center justify-center gap-3 h-full text-center px-6">
               <RefreshCw size={22} className="text-accent animate-spin" />
-              <p className="text-sm font-medium text-text-primary">{progress.label}…</p>
-              <p className="text-xs text-text-muted font-mono">{progress.filename}</p>
+              <p className="text-base font-medium text-text-primary">{progress.label}…</p>
+              <p className="text-sm text-text-muted font-mono">{progress.filename}</p>
               <div className="w-48 h-1 bg-elevated rounded-full overflow-hidden">
                 <div
                   className="h-full bg-accent rounded-full transition-all duration-300"
                   style={{ width: progress.total > 0 ? `${(progress.current / progress.total) * 100}%` : '0%' }}
                 />
               </div>
-              <p className="text-xs text-text-dim">{progress.current} / {progress.total} files</p>
+              <p className="text-sm text-text-dim">{progress.current} / {progress.total} files</p>
             </div>
           )}
 
@@ -232,7 +232,7 @@ export function PluginLauncher({ isTablet }: { isTablet?: boolean }) {
           {!progress && uploadDone && (
             <div className="m-4 p-3 rounded border border-ok/30 bg-ok/10 flex items-center gap-2">
               <CheckCircle size={14} className="text-ok shrink-0" />
-              <p className="text-sm text-ok flex-1">Plugin installed successfully</p>
+              <p className="text-base text-ok flex-1">Plugin installed successfully</p>
               <button onClick={() => setUploadDone(false)} className="text-ok/60 hover:text-ok shrink-0">
                 <X size={12} />
               </button>
@@ -248,57 +248,57 @@ export function PluginLauncher({ isTablet }: { isTablet?: boolean }) {
             ) : plugins.length === 0 ? (
               <div className="flex flex-col items-center justify-center gap-3 text-center px-6 py-12">
                 <Puzzle size={32} className="text-text-dim" />
-                <p className="text-sm font-medium text-text-muted">No plugins installed</p>
-                <p className="text-xs text-text-dim leading-relaxed">
+                <p className="text-base font-medium text-text-muted">No plugins installed</p>
+                <p className="text-sm text-text-dim leading-relaxed">
                   Click <strong className="text-text-muted">Add</strong> to install from a folder, or visit the <strong className="text-text-muted">Store</strong> tab.
                 </p>
               </div>
             ) : (
               <div className={`flex flex-col gap-3 ${pad}`}>
                 {plugins.map(plugin => (
-                  <div key={`${plugin.id}:${plugin.fs}`} className="panel flex items-start gap-3 p-3">
-                    <div className="shrink-0 w-12 h-12 rounded-lg bg-elevated flex items-center justify-center overflow-hidden">
+                  <div key={`${plugin.id}:${plugin.fs}`} className="panel flex items-center gap-3 p-3">
+                    <button
+                      onClick={() => setActivePlugin(plugin)}
+                      className="shrink-0 w-12 h-12 rounded-lg bg-elevated flex items-center justify-center overflow-hidden
+                                 hover:ring-2 hover:ring-accent/50 transition-all"
+                      title={`Launch ${plugin.manifest.name}`}
+                    >
                       {plugin.manifest.icon ? (
                         <img src={plugin.manifest.icon} alt="" className="w-10 h-10 object-contain" />
                       ) : (
                         <Puzzle size={22} className="text-accent" />
                       )}
-                    </div>
-                    <div className="flex-1 min-w-0">
+                    </button>
+                    <button
+                      onClick={() => setActivePlugin(plugin)}
+                      className="flex-1 min-w-0 text-left hover:opacity-80 transition-opacity"
+                    >
                       <div className="flex items-center gap-2 flex-wrap">
-                        <span className="font-medium text-text-primary text-sm truncate">
+                        <span className="font-medium text-text-primary text-base truncate">
                           {plugin.manifest.name}
                         </span>
                         {plugin.manifest.version && (
-                          <span className="text-[10px] text-text-dim font-mono shrink-0">
+                          <span className="text-sm text-text-dim font-mono shrink-0">
                             v{plugin.manifest.version}
                           </span>
                         )}
                         <FsBadge fs={plugin.fs} />
                       </div>
                       {plugin.manifest.description && (
-                        <p className="text-xs text-text-muted mt-0.5 line-clamp-2">
+                        <p className="text-sm text-text-muted mt-0.5 line-clamp-2">
                           {plugin.manifest.description}
                         </p>
                       )}
-                    </div>
-                    <div className="flex items-center gap-1 shrink-0">
-                      <button
-                        onClick={() => setActivePlugin(plugin)}
-                        className="btn btn-primary shrink-0 text-xs px-2.5 py-1.5"
-                      >
-                        Launch
-                      </button>
-                      <button
-                        onClick={() => setConfirmDelete(plugin)}
-                        className="w-7 h-7 flex items-center justify-center rounded text-text-muted
-                                   hover:text-danger hover:bg-danger/10 transition-colors border border-transparent
-                                   hover:border-danger/30"
-                        title="Uninstall plugin"
-                      >
-                        <Trash2 size={12} />
-                      </button>
-                    </div>
+                    </button>
+                    <button
+                      onClick={() => setConfirmDelete(plugin)}
+                      className="shrink-0 w-7 h-7 flex items-center justify-center rounded text-text-muted
+                                 hover:text-danger hover:bg-danger/10 transition-colors border border-transparent
+                                 hover:border-danger/30"
+                      title="Uninstall plugin"
+                    >
+                      <Trash2 size={12} />
+                    </button>
                   </div>
                 ))}
               </div>
@@ -310,15 +310,15 @@ export function PluginLauncher({ isTablet }: { isTablet?: boolean }) {
             storeLoading ? (
               <div className="flex flex-col items-center justify-center gap-2 py-16">
                 <RefreshCw size={22} className="text-text-muted animate-spin" />
-                <p className="text-xs text-text-dim">Loading store…</p>
+                <p className="text-sm text-text-dim">Loading store…</p>
               </div>
             ) : storeError ? (
               <div className="flex flex-col items-center justify-center gap-3 text-center px-6 py-12">
                 <AlertCircle size={28} className="text-danger" />
-                <p className="text-sm font-medium text-text-muted">Could not load store</p>
-                <p className="text-xs text-text-dim break-words">{storeError}</p>
+                <p className="text-base font-medium text-text-muted">Could not load store</p>
+                <p className="text-sm text-text-dim break-words">{storeError}</p>
                 <button
-                  className="btn btn-ghost text-xs px-3 py-1.5 mt-1"
+                  className="btn btn-ghost text-sm px-3 py-1.5 mt-1"
                   onClick={() => { setStoreEntries(null); setStoreError(null); loadStore() }}
                 >
                   Retry
@@ -327,7 +327,7 @@ export function PluginLauncher({ isTablet }: { isTablet?: boolean }) {
             ) : (storeEntries ?? []).length === 0 ? (
               <div className="flex flex-col items-center justify-center gap-3 text-center px-6 py-12">
                 <Store size={28} className="text-text-dim" />
-                <p className="text-sm text-text-muted">No plugins in the store yet</p>
+                <p className="text-base text-text-muted">No plugins in the store yet</p>
               </div>
             ) : (
               <div className={`flex flex-col gap-3 ${pad}`}>
@@ -346,36 +346,36 @@ export function PluginLauncher({ isTablet }: { isTablet?: boolean }) {
                       </div>
                       <div className="flex-1 min-w-0">
                         <div className="flex items-center gap-2 flex-wrap">
-                          <span className="font-medium text-text-primary text-sm truncate">
+                          <span className="font-medium text-text-primary text-base truncate">
                             {entry.name}
                           </span>
                           {entry.version && (
-                            <span className="text-[10px] text-text-dim font-mono shrink-0">
+                            <span className="text-sm text-text-dim font-mono shrink-0">
                               v{entry.version}
                             </span>
                           )}
                           {entry.author && (
-                            <span className="text-[10px] text-text-dim shrink-0">by {entry.author}</span>
+                            <span className="text-sm text-text-dim shrink-0">by {entry.author}</span>
                           )}
                         </div>
                         {entry.description && (
-                          <p className="text-xs text-text-muted mt-0.5 line-clamp-2">{entry.description}</p>
+                          <p className="text-sm text-text-muted mt-0.5 line-clamp-2">{entry.description}</p>
                         )}
                       </div>
                       <div className="shrink-0">
                         {done ? (
-                          <span className="flex items-center gap-1 text-xs text-ok font-medium px-2">
+                          <span className="flex items-center gap-1 text-sm text-ok font-medium px-2">
                             <CheckCircle size={12} /> Done
                           </span>
                         ) : installed ? (
-                          <span className="flex items-center gap-1 text-xs text-text-dim px-2 py-1.5 rounded border border-border">
+                          <span className="flex items-center gap-1 text-sm text-text-dim px-2 py-1.5 rounded border border-border">
                             <CheckCircle size={11} /> Installed
                           </span>
                         ) : (
                           <button
                             onClick={() => setPendingInstall(entry)}
                             disabled={!!installingId}
-                            className="btn btn-ghost text-xs px-2.5 py-1.5 gap-1.5 disabled:opacity-40"
+                            className="btn btn-ghost text-sm px-2.5 py-1.5 gap-1.5 disabled:opacity-40"
                           >
                             {installing
                               ? <><RefreshCw size={11} className="animate-spin" /> Installing…</>
@@ -426,17 +426,17 @@ export function PluginLauncher({ isTablet }: { isTablet?: boolean }) {
             className="bg-surface border border-border rounded shadow-xl w-72 p-4 animate-in space-y-3"
             onClick={e => e.stopPropagation()}
           >
-            <p className="text-sm font-semibold text-text-primary">Uninstall plugin?</p>
-            <p className="text-xs text-text-muted">
+            <p className="text-base font-semibold text-text-primary">Uninstall plugin?</p>
+            <p className="text-sm text-text-muted">
               This will delete <strong>{confirmDelete.manifest.name}</strong> from{' '}
               {confirmDelete.fs === 'sd' ? 'SD Card' : 'Internal'} storage.
             </p>
             <div className="flex justify-end gap-2 pt-1">
-              <button className="btn btn-ghost text-sm py-1.5 px-3" onClick={() => setConfirmDelete(null)}>
+              <button className="btn btn-ghost text-base py-1.5 px-3" onClick={() => setConfirmDelete(null)}>
                 Cancel
               </button>
               <button
-                className="btn btn-danger text-sm py-1.5 px-3"
+                className="btn btn-danger text-base py-1.5 px-3"
                 disabled={deleting}
                 onClick={() => handleDelete(confirmDelete)}
               >
