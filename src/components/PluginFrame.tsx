@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import { Puzzle, X, RefreshCw } from 'lucide-react'
 import { useMachineStore } from '../store'
 import { sendCommand, listFiles as listDeviceFiles, fetchFileContent, saveFileContent } from '../lib/http'
-import { sendRaw, onLine } from '../lib/ws'
+import { sendRaw, sendRealtime, onLine } from '../lib/ws'
 import type { Plugin } from '../types'
 
 interface PluginRequest {
@@ -45,7 +45,7 @@ function prepareHtml(html: string, baseUrl: string, themeVars: Record<string, st
     : injection + html
 }
 
-export function PluginFrame({ plugin, onClose }: { plugin: Plugin; onClose: () => void }) {
+export function PluginFrame({ plugin, onClose, inline }: { plugin: Plugin; onClose: () => void; inline?: boolean }) {
   const iframeRef = useRef<HTMLIFrameElement>(null)
   const statusSubscribed = useRef(false)
   const lineUnsubRef = useRef<(() => void) | null>(null)
@@ -89,6 +89,13 @@ export function PluginFrame({ plugin, onClose }: { plugin: Plugin; onClose: () =
           const cmd = String(msg.params?.command ?? '')
           if (!useMachineStore.getState().connected) { reply(null, 'Not connected'); break }
           sendRaw(cmd)
+          reply(null)
+          break
+        }
+        case 'sendRealtime': {
+          const byte = Number(msg.params?.byte ?? 0)
+          if (!useMachineStore.getState().connected) { reply(null, 'Not connected'); break }
+          sendRealtime(byte)
           reply(null)
           break
         }
@@ -208,6 +215,24 @@ export function PluginFrame({ plugin, onClose }: { plugin: Plugin; onClose: () =
       title={plugin.manifest.name}
     />
   )
+
+  if (inline) {
+    return (
+      <div className="flex flex-col h-full w-full overflow-hidden">
+        <div className="flex items-center gap-3 px-4 h-11 border-b border-border shrink-0 bg-surface">
+          <Puzzle size={16} className="text-accent shrink-0" />
+          <span className="font-semibold text-text-primary flex-1 truncate text-base">{plugin.manifest.name}</span>
+          {plugin.manifest.version && (
+            <span className="text-xs text-text-dim font-mono">v{plugin.manifest.version}</span>
+          )}
+          <button onClick={onClose} className="text-text-muted hover:text-text-primary transition-colors p-1" aria-label="Close plugin">
+            <X size={18} />
+          </button>
+        </div>
+        {frameContent}
+      </div>
+    )
+  }
 
   if (isMobile) {
     return (

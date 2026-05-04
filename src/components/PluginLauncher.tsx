@@ -59,7 +59,7 @@ function FsBadge({ fs }: { fs: 'sd' | 'local' }) {
   )
 }
 
-export function PluginLauncher({ isTablet }: { isTablet?: boolean }) {
+export function PluginLauncher({ isTablet, onLaunchFullview }: { isTablet?: boolean; onLaunchFullview?: (plugin: Plugin) => void }) {
   const [tab, setTab] = useState<Tab>('installed')
   const [plugins, setPlugins] = useState<Plugin[]>([])
   const [scanning, setScanning] = useState(true)
@@ -258,7 +258,7 @@ export function PluginLauncher({ isTablet }: { isTablet?: boolean }) {
                 {plugins.map(plugin => (
                   <div key={`${plugin.id}:${plugin.fs}`} className="panel flex items-center gap-3 p-3">
                     <button
-                      onClick={() => setActivePlugin(plugin)}
+                      onClick={() => plugin.manifest.layout === 'fullview' && onLaunchFullview ? onLaunchFullview(plugin) : setActivePlugin(plugin)}
                       className="shrink-0 w-12 h-12 rounded-lg bg-elevated flex items-center justify-center overflow-hidden
                                  hover:ring-2 hover:ring-accent/50 transition-all"
                       title={`Launch ${plugin.manifest.name}`}
@@ -270,7 +270,7 @@ export function PluginLauncher({ isTablet }: { isTablet?: boolean }) {
                       )}
                     </button>
                     <button
-                      onClick={() => setActivePlugin(plugin)}
+                      onClick={() => plugin.manifest.layout === 'fullview' && onLaunchFullview ? onLaunchFullview(plugin) : setActivePlugin(plugin)}
                       className="flex-1 min-w-0 text-left hover:opacity-80 transition-opacity"
                     >
                       <div className="flex items-center gap-2 flex-wrap">

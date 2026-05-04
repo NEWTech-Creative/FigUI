@@ -22,7 +22,8 @@ import { AboutModal } from './components/AboutModal'
 import { JobControl } from './components/JobControl'
 import { PluginLauncher } from './components/PluginLauncher'
 import { WifiOff, RefreshCw, Crosshair, Monitor, FolderOpen, TerminalSquare, AlertTriangle } from 'lucide-react'
-import type { SidebarTab } from './types'
+import type { Plugin, SidebarTab } from './types'
+import { PluginFrame } from './components/PluginFrame'
 
 const SIDEBAR_TABS: { id: SidebarTab; label: string }[] = [
   { id: 'files',   label: 'Files'   },
@@ -83,6 +84,7 @@ export function App() {
   const [aboutOpen, setAboutOpen] = useState(false)
   const [mobilePanel, setMobilePanel]     = useState<MobilePanel>('control')
   const [tabletTab,   setTabletTab]       = useState<TabletRightTab>('viewer')
+  const [fullviewPlugin, setFullviewPlugin] = useState<Plugin | null>(null)
 
   const reconnectTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
   const stableConnectTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
@@ -472,7 +474,6 @@ export function App() {
         )}
       </div>}
 
-      {/* ── Mobile bottom nav ───────────────────────────────────────────── */}
       {activeLayout === 'mobile' && <nav className="fixed bottom-0 left-0 right-0 z-40 h-16 bg-surface border-t border-border flex items-stretch">
         {([
           { id: 'control'  as MobilePanel, Icon: Crosshair,    label: 'Control' },
@@ -506,7 +507,7 @@ export function App() {
 
 </div>}
 
-{activeLayout === 'desktop' && <div className="flex-1 min-h-0 grid grid-cols-[380px_1fr_340px] gap-3 p-3 overflow-hidden">
+{activeLayout === 'desktop' && !fullviewPlugin && <div className="flex-1 min-h-0 grid grid-cols-[380px_1fr_340px] gap-3 p-3 overflow-hidden">
 
         {/* Left: DRO + jog controls */}
         <div className="flex flex-col gap-3 min-h-0 overflow-y-auto">
@@ -527,7 +528,7 @@ export function App() {
             <div className="flex-1 min-h-0 overflow-hidden">
               {sidebarTab === 'files'   && <FileManager />}
               {sidebarTab === 'macros'  && <Macros />}
-              {sidebarTab === 'plugins' && <PluginLauncher />}
+              {sidebarTab === 'plugins' && <PluginLauncher onLaunchFullview={setFullviewPlugin} />}
             </div>
           </div>
 
@@ -538,7 +539,22 @@ export function App() {
 
       </div>}
 
-      {/* ── Settings Modal ── */}
+      {activeLayout === 'desktop' && fullviewPlugin && <div className="flex-1 min-h-0 grid grid-cols-[380px_1fr] gap-3 p-3 overflow-hidden">
+
+        {/* Left: DRO + jog controls */}
+        <div className="flex flex-col gap-3 min-h-0 overflow-y-auto">
+          <DRO />
+          <JogPad />
+        </div>
+
+        {/* Fullview plugin occupies center + right */}
+        <div className="panel flex flex-col min-h-0 overflow-hidden">
+          <PluginFrame plugin={fullviewPlugin} onClose={() => setFullviewPlugin(null)} inline />
+        </div>
+
+      </div>}
+
+
       {settingsOpen && (
         <div
           className="fixed inset-0 z-[100] flex items-end sm:items-center justify-center sm:p-4"
@@ -557,7 +573,7 @@ export function App() {
 
       {aboutOpen && <AboutModal onClose={() => setAboutOpen(false)} />}
 
-      {/* ── Startup Config Errors Modal ── */}
+
       {startupErrorsOpen && (
         <div
           className="fixed inset-0 z-[100] flex items-end sm:items-center justify-center sm:p-4"

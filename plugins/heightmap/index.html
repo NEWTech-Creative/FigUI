@@ -1,0 +1,1195 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Heightmap</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+<!-- Header -->
+<div class="header">
+  <span class="header-title">Heightmap</span>
+  <div class="tab-group">
+    <button class="tab active" id="tab-probe" onclick="switchTab('probe')">Probe</button>
+    <button class="tab" id="tab-apply" onclick="switchTab('apply')">Apply</button>
+  </div>
+</div>
+
+<div class="split-layout">
+
+  <!-- ── LEFT: settings ──────────────────────────────── -->
+  <div class="split-left">
+
+    <!-- ═══════════════════════════════════ PROBE PANEL -->
+    <div id="panel-probe">
+
+      <!-- G-Code File -->
+      <div class="section">
+        <div class="section-hd">
+          <span class="section-label">G-Code File</span>
+          <button class="icon-btn" onclick="togglePicker('gcode')">
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 20h16a2 2 0 0 0 2-2V8l-6-6H6a2 2 0 0 0-2 2v4"/><path d="M14 2v6h6"/><path d="M2 15h10"/><path d="m5 12-3 3 3 3"/></svg>
+            Browse SD
+          </button>
+        </div>
+        <div id="gcode-picker" class="file-picker" style="display:none">
+          <div id="gcode-picker-list"></div>
+        </div>
+        <div class="selected-file-row">
+          <span id="gcode-name" class="no-name">Load G-code file to auto-set probe area, or set manually below</span>
+        </div>
+      </div>
+
+      <!-- Parameters -->
+      <div class="section">
+        <div class="section-hd">
+          <span class="section-label">Probe Parameters</span>
+        </div>
+        <div class="params-body">
+
+          <div class="param-row">
+            <span class="param-label">Grid</span>
+            <div class="param-controls">
+              <input class="param-input narrow" type="number" id="p-cols" value="5" min="2" max="30" oninput="syncParams()">
+              <span class="param-sep">cols ×</span>
+              <input class="param-input narrow" type="number" id="p-rows" value="5" min="2" max="30" oninput="syncParams()">
+              <span class="param-unit">rows</span>
+            </div>
+          </div>
+
+          <div class="param-row">
+            <span class="param-label">Probe area X</span>
+            <div class="param-controls">
+              <input class="param-input" type="number" id="p-xmin" value="0" step="any" oninput="syncParams()">
+              <span class="param-sep">→</span>
+              <input class="param-input" type="number" id="p-xmax" value="100" step="any" oninput="syncParams()">
+              <span class="param-unit">mm</span>
+            </div>
+          </div>
+
+          <div class="param-row">
+            <span class="param-label">Probe area Y</span>
+            <div class="param-controls">
+              <input class="param-input" type="number" id="p-ymin" value="0" step="any" oninput="syncParams()">
+              <span class="param-sep">→</span>
+              <input class="param-input" type="number" id="p-ymax" value="100" step="any" oninput="syncParams()">
+              <span class="param-unit">mm</span>
+            </div>
+          </div>
+
+          <div class="param-row">
+            <span class="param-label">Safe Z</span>
+            <div class="param-controls">
+              <input class="param-input" type="number" id="p-safez" value="5" step="0.1" oninput="syncParams()">
+              <span class="param-unit">mm</span>
+            </div>
+          </div>
+
+          <div class="param-row">
+            <span class="param-label">Probe depth</span>
+            <div class="param-controls">
+              <input class="param-input" type="number" id="p-depth" value="10" step="0.1" oninput="syncParams()">
+              <span class="param-unit">mm</span>
+            </div>
+          </div>
+
+          <div class="param-row">
+            <span class="param-label">Feed rate</span>
+            <div class="param-controls">
+              <input class="param-input" type="number" id="p-feed" value="60" step="1" oninput="syncParams()">
+              <span class="param-unit">mm/min</span>
+            </div>
+          </div>
+
+          <div class="param-row">
+            <span class="param-label">Interpolation</span>
+            <div class="param-controls">
+              <input class="param-input narrow" type="number" id="p-interp" value="1" min="1" max="10" oninput="syncParams()">
+              <span class="param-unit">×</span>
+            </div>
+          </div>
+
+        </div>
+      </div>
+
+      <!-- Action bar -->
+      <div class="action-bar">
+        <button class="primary-btn" id="start-btn" onclick="startProbing()">Start Probing</button>
+        <button class="danger-btn" id="abort-btn" onclick="abortProbing()" style="display:none">Abort</button>
+        <div class="progress-wrap" id="progress-wrap" style="display:none">
+          <div class="progress-track"><div class="progress-fill" id="progress-fill"></div></div>
+          <span class="progress-label" id="progress-label">0 / 0</span>
+        </div>
+      </div>
+
+      <!-- Probe Results Table -->
+      <div id="results-section" class="results-section" style="display:none">
+        <div class="section-hd">
+          <span class="section-label">Probe Results</span>
+          <span id="results-count" class="results-count">0 / 0 points</span>
+        </div>
+        <div class="results-grid-wrap">
+          <div id="results-grid" class="results-grid">
+          </div>
+        </div>
+      </div>
+
+      <!-- Save bar (appears after probing) -->
+      <div id="save-bar" class="save-bar" style="display:none">
+        <span class="save-bar-summary" id="probe-summary"></span>
+        <button class="secondary-btn" onclick="saveHeightmap()">Save to SD</button>
+      </div>
+
+    </div><!-- end #panel-probe -->
+
+    <!-- ═══════════════════════════════════ APPLY PANEL -->
+    <div id="panel-apply" style="display:none">
+
+      <!-- Heightmap source -->
+      <div class="section">
+        <div class="section-hd">
+          <span class="section-label">Heightmap</span>
+          <button class="icon-btn" onclick="togglePicker('hmap')">
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 20h16a2 2 0 0 0 2-2V8l-6-6H6a2 2 0 0 0-2 2v4"/><path d="M14 2v6h6"/><path d="M2 15h10"/><path d="m5 12-3 3 3 3"/></svg>
+            Load from SD
+          </button>
+        </div>
+
+        <!-- Session heightmap badge -->
+        <div id="hmap-session-row" class="hmap-session-row" style="display:none">
+          <div class="hmap-session-badge">
+            <div class="hmap-session-dot"></div>
+            <div class="hmap-session-info">
+              <div class="hmap-session-name">Session probe result</div>
+              <div class="hmap-session-meta" id="hmap-session-meta"></div>
+            </div>
+            <button class="use-btn" id="use-session-btn" onclick="useSessionHmap()">Use</button>
+          </div>
+        </div>
+
+        <!-- File picker -->
+        <div id="hmap-picker" class="file-picker" style="display:none">
+          <div id="hmap-picker-list"></div>
+        </div>
+
+        <!-- Active heightmap indicator -->
+        <div id="active-hmap-row" class="active-hmap-row" style="display:none">
+          <div class="active-hmap-pill">
+            <div class="active-hmap-pill-dot"></div>
+            <span id="active-hmap-label">—</span>
+          </div>
+        </div>
+
+        <div class="selected-file-row" id="hmap-file-row">
+          <span class="no-name" id="hmap-name">No heightmap loaded</span>
+        </div>
+      </div>
+
+      <!-- G-Code Files -->
+      <div class="section">
+        <div class="section-hd">
+          <span class="section-label">G-Code Files</span>
+          <button class="icon-btn" id="load-files-btn" onclick="loadApplyFileList()">
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 1 1-.18-4.25"/></svg>
+            Load from SD
+          </button>
+        </div>
+        <div id="apply-file-list" class="apply-file-list">
+          <div class="picker-msg">Press "Load from SD" to browse files</div>
+        </div>
+        <div id="selection-info" class="selection-info" style="display:none">
+          <span id="selected-count">0 files selected</span>
+        </div>
+      </div>
+
+      <!-- Apply action -->
+      <div class="action-bar">
+        <button class="primary-btn" id="apply-btn" onclick="applyToFiles()">Apply Heightmap</button>
+      </div>
+
+      <!-- Results -->
+      <div id="apply-results" class="section" style="display:none">
+        <div class="section-hd">
+          <span class="section-label">Results</span>
+        </div>
+        <div id="apply-results-list"></div>
+      </div>
+
+    </div><!-- end #panel-apply -->
+
+  </div><!-- end .split-left -->
+
+  <!-- ── RIGHT: preview ──────────────────────────────── -->
+  <div class="split-right">
+    <div class="preview-hd">
+      <span class="section-label">Preview</span>
+      <div class="zoom-controls">
+        <button class="zoom-btn" onclick="zoomFit()" title="Fit to view">⤢</button>
+        <button class="zoom-btn" onclick="zoomOut()" title="Zoom out">−</button>
+        <button class="zoom-btn" onclick="zoomIn()" title="Zoom in">+</button>
+      </div>
+      <span id="grid-info" style="font-size:13px;color:var(--text-dim,#3c4860)"></span>
+    </div>
+    <div class="canvas-wrap">
+      <canvas id="preview-canvas"></canvas>
+    </div>
+    <div id="z-range-bar" class="z-range-bar" style="display:none">
+      <span class="z-range-label">Low</span>
+      <div class="z-gradient"></div>
+      <span class="z-range-label">High</span>
+      <span id="z-range-vals" class="z-range-vals"></span>
+    </div>
+  </div><!-- end .split-right -->
+
+</div><!-- end .split-layout -->
+
+<div id="toast"></div>
+
+<script>
+let msgId = 0
+const pending = {}
+
+function call(method, params) {
+  return new Promise((resolve, reject) => {
+    const id = String(++msgId)
+    pending[id] = { resolve, reject }
+    window.parent.postMessage({ type: 'fluid-request', id, method, params: params ?? {} }, '*')
+  })
+}
+
+window.addEventListener('message', e => {
+  if (e.data?.type === 'fluid-response') {
+    const p = pending[e.data.id]
+    if (p) { delete pending[e.data.id]; e.data.error ? p.reject(new Error(e.data.error)) : p.resolve(e.data.result) }
+  }
+  if (e.data?.type === 'fluid-event' && e.data.event === 'status') {
+    const s = e.data.data
+    if (s?.wco) state.wco = s.wco
+    if (s?.wpos) { state.toolPos = s.wpos; if (!animFrame) drawCanvas() }
+  }
+})
+
+let toastTimer
+function toast(msg, type = 'ok') {
+  const el = document.getElementById('toast')
+  el.textContent = msg
+  el.className = 'show ' + type
+  clearTimeout(toastTimer)
+  toastTimer = setTimeout(() => el.className = '', 2400)
+}
+
+const state = {
+  wco: { x: 0, y: 0, z: 0 },
+  toolPos: null,
+  probeResults: null,
+  activeRow: -1, activeCol: -1,
+  probing: false,
+  probeAbort: false,
+  sessionHmap: null,
+  activeHmap: null,
+  applyFiles: new Set(),
+  // Zoom and pan state
+  zoom: 1.0,
+  panX: 0,
+  panY: 0,
+  isDragging: false,
+  lastMouseX: 0,
+  lastMouseY: 0,
+}
+
+const params = { cols: 5, rows: 5, xMin: 0, xMax: 100, yMin: 0, yMax: 100, safeZ: 5, probeDepth: 10, feedRate: 60, interpFactor: 1 }
+
+function syncParams() {
+  params.cols = Math.max(2, parseInt(document.getElementById('p-cols').value) || 5)
+  params.rows = Math.max(2, parseInt(document.getElementById('p-rows').value) || 5)
+  params.xMin = parseFloat(document.getElementById('p-xmin').value) || 0
+  params.xMax = parseFloat(document.getElementById('p-xmax').value) || 100
+  params.yMin = parseFloat(document.getElementById('p-ymin').value) || 0
+  params.yMax = parseFloat(document.getElementById('p-ymax').value) || 100
+  params.safeZ = parseFloat(document.getElementById('p-safez').value) || 5
+  params.probeDepth = parseFloat(document.getElementById('p-depth').value) || 10
+  params.feedRate = parseFloat(document.getElementById('p-feed').value) || 60
+  params.interpFactor = Math.max(1, parseInt(document.getElementById('p-interp').value) || 1)
+  updateGridInfo()
+  zoomFit()
+}
+
+function updateGridInfo() {
+  const probeTotal = params.cols * params.rows
+  const interpTotal = probeTotal * params.interpFactor * params.interpFactor
+  const dx = params.cols > 1 ? ((params.xMax - params.xMin) / (params.cols - 1)).toFixed(1) : '—'
+  const dy = params.rows > 1 ? ((params.yMax - params.yMin) / (params.rows - 1)).toFixed(1) : '—'
+  document.getElementById('grid-info').textContent = `${params.cols}×${params.rows} · ${probeTotal} pts · Δ${dx}×${dy} mm${params.interpFactor > 1 ? ` · interp ${params.interpFactor}× → ${interpTotal} pts` : ''}`
+}
+
+let toolpathMoves = []  // flat: [type(0=rapid,1=cut), x0, y0, x1, y1, ...]
+
+function parseToolpath(content) {
+  const moves = []
+  let x = 0, y = 0, abs = true, hasPos = false, isCut = false
+  for (const line of content.split('\n')) {
+    const s = line.replace(/;.*$/, '').replace(/\(.*?\)/g, '').toUpperCase().trim()
+    if (!s || s[0] === '%') continue
+    if (/\bG91\b/.test(s)) abs = false
+    else if (/\bG90\b/.test(s)) abs = true
+    if (/\bG00?\b/.test(s)) isCut = false   // G0 or G00
+    if (/\bG0?1\b/.test(s)) isCut = true    // G1 or G01
+    const xm = s.match(/X(-?\d+(?:\.\d*)?)/)
+    const ym = s.match(/Y(-?\d+(?:\.\d*)?)/)
+    if (!xm && !ym) continue
+    const nx = xm ? (abs ? parseFloat(xm[1]) : x + parseFloat(xm[1])) : x
+    const ny = ym ? (abs ? parseFloat(ym[1]) : y + parseFloat(ym[1])) : y
+    if (hasPos) moves.push(isCut ? 1 : 0, x, y, nx, ny)
+    x = nx; y = ny; hasPos = true
+  }
+  return moves
+}
+
+function cssVar(v, fallback) {
+  return getComputedStyle(document.documentElement).getPropertyValue(v).trim() || fallback
+}
+
+let animFrame = null
+
+function startCanvasAnim() {
+  let t = 0
+  const frame = () => { drawCanvas(t += 0.06); animFrame = requestAnimationFrame(frame) }
+  frame()
+}
+
+function stopCanvasAnim() {
+  if (animFrame) { cancelAnimationFrame(animFrame); animFrame = null }
+  drawCanvas(0)
+}
+
+function heatColor(t, alpha = 0.72) {
+  // blue (240°) → cyan → green → yellow → red (0°)
+  return `hsla(${Math.round(240 - t * 240)},85%,52%,${alpha})`
+}
+
+function drawCanvas(t = 0) {
+  const canvas = document.getElementById('preview-canvas')
+  if (!canvas) return
+
+  const wrap = canvas.parentElement
+  const W = wrap.clientWidth || 300
+  const H = wrap.clientHeight || 400
+
+  const dpr = window.devicePixelRatio || 1
+  canvas.width = W * dpr
+  canvas.height = H * dpr
+  canvas.style.width = W + 'px'
+  canvas.style.height = H + 'px'
+
+  const ctx = canvas.getContext('2d')
+  ctx.scale(dpr, dpr)
+  const mg = 22
+
+  const xSpan = Math.max(0.001, params.xMax - params.xMin)
+  const ySpan = Math.max(0.001, params.yMax - params.yMin)
+
+  const sc = Math.min((W - 2 * mg) / xSpan, (H - 2 * mg) / ySpan)
+  const dw = xSpan * sc, dh = ySpan * sc
+  const ox = mg + (W - 2 * mg - dw) / 2
+  const oy = mg + (H - 2 * mg - dh) / 2
+
+  const centerX = (params.xMin + params.xMax) / 2
+  const centerY = (params.yMin + params.yMax) / 2
+  
+  const tx = x => ox + (x - centerX) * sc * state.zoom + state.panX
+  const ty = y => H - oy - (y - centerY) * sc * state.zoom + state.panY
+
+  // Background
+  ctx.fillStyle = cssVar('--elevated', '#191e30')
+  ctx.fillRect(0, 0, W, H)
+
+  // ── Heatmap cells (filled when probe data exists) ────
+  const { min: zMin, max: zMax } = getZRange()
+  const hasAnyProbe = state.probeResults?.some(row => row.some(c => c?.ok))
+  if (hasAnyProbe) {
+    for (let r = 0; r < params.rows - 1; r++) {
+      for (let c = 0; c < params.cols - 1; c++) {
+        const corners = [
+          state.probeResults[r][c],
+          state.probeResults[r][c + 1],
+          state.probeResults[r + 1][c],
+          state.probeResults[r + 1][c + 1],
+        ].filter(p => p?.ok)
+        if (!corners.length) continue
+
+        const avgZ = corners.reduce((s, p) => s + p.z, 0) / corners.length
+        const tn = zMax !== zMin ? (avgZ - zMin) / (zMax - zMin) : 0.5
+
+        // Cell rectangle in canvas coords
+        const x0 = tx(gridToXY(r, c).x)
+        const x1 = tx(gridToXY(r, c + 1).x)
+        const y0 = ty(gridToXY(r + 1, c).y)  // high G-code Y = top of canvas rect
+        const y1 = ty(gridToXY(r, c).y)       // low  G-code Y = bottom of canvas rect
+
+        ctx.fillStyle = heatColor(tn)
+        ctx.fillRect(x0, y0, x1 - x0, y1 - y0)
+      }
+    }
+  }
+
+  // ── Toolpath cuts ────────────────────────────────────
+  if (toolpathMoves.length > 0) {
+    const step = Math.max(1, Math.floor(toolpathMoves.length / 5 / 15000))
+    ctx.lineWidth = 0.9
+    for (let i = 0; i < toolpathMoves.length; i += 5 * step) {
+      if (toolpathMoves[i] !== 1) continue
+      ctx.strokeStyle = cssVar('--info', '#60a5fa')
+      ctx.beginPath()
+      ctx.moveTo(tx(toolpathMoves[i + 1]), ty(toolpathMoves[i + 2]))
+      ctx.lineTo(tx(toolpathMoves[i + 3]), ty(toolpathMoves[i + 4]))
+      ctx.stroke()
+    }
+  }
+
+  // ── Probe area border ────────────────────────────────
+  ctx.strokeStyle = cssVar('--border', '#222840')
+  ctx.lineWidth = 1
+  ctx.setLineDash([4, 4])
+  ctx.strokeRect(tx(params.xMin), ty(params.yMax), dw, dh)
+  ctx.setLineDash([])
+
+  // ── Grid lines ───────────────────────────────────────
+  ctx.strokeStyle = cssVar('--border', '#222840')
+  ctx.lineWidth = 0.5
+  for (let r = 0; r < params.rows; r++) {
+    const py = ty(gridToXY(r, 0).y)
+    ctx.beginPath(); ctx.moveTo(tx(params.xMin), py); ctx.lineTo(tx(params.xMax), py); ctx.stroke()
+  }
+  for (let c = 0; c < params.cols; c++) {
+    const px = tx(gridToXY(0, c).x)
+    ctx.beginPath(); ctx.moveTo(px, ty(params.yMin)); ctx.lineTo(px, ty(params.yMax)); ctx.stroke()
+  }
+
+  // ── Probe dots ───────────────────────────────────────
+  const accent = cssVar('--accent', '#f0a030')
+  const danger = cssVar('--danger', '#ef4444')
+
+  for (let r = 0; r < params.rows; r++) {
+    for (let c = 0; c < params.cols; c++) {
+      const { x, y } = gridToXY(r, c)
+      const cx = tx(x), cy = ty(y)
+      const res = state.probeResults?.[r]?.[c]
+      const isActive = state.activeRow === r && state.activeCol === c
+
+      let color, radius = 3
+
+      if (isActive) {
+        const pulse = 7 + Math.sin(t) * 2.5
+        ctx.strokeStyle = accent
+        ctx.lineWidth = 1.5
+        ctx.globalAlpha = 0.45 + Math.abs(Math.sin(t)) * 0.4
+        ctx.beginPath(); ctx.arc(cx, cy, pulse, 0, Math.PI * 2); ctx.stroke()
+        ctx.globalAlpha = 1
+        color = accent; radius = 4.5
+      } else if (!res) {
+        color = cssVar('--text-dim', '#3c4860'); radius = 3
+      } else if (!res.ok) {
+        color = danger; radius = 4
+      } else {
+        const tn = zMax !== zMin ? (res.z - zMin) / (zMax - zMin) : 0.5
+        color = `hsl(${Math.round(220 - tn * 80)},65%,50%)`
+        radius = 4.5
+      }
+
+      ctx.fillStyle = color
+      ctx.beginPath(); ctx.arc(cx, cy, radius, 0, Math.PI * 2); ctx.fill()
+    }
+  }
+
+  // ── Toolhead position ────────────────────────────────
+  if (state.toolPos) {
+    const { x, y } = state.toolPos
+    const cx = tx(x), cy = ty(y)
+    const arm = 9
+
+    // Shadow for contrast
+    ctx.strokeStyle = 'rgba(0,0,0,0.5)'
+    ctx.lineWidth = 3
+    ctx.beginPath()
+    ctx.moveTo(cx - arm, cy); ctx.lineTo(cx + arm, cy)
+    ctx.moveTo(cx, cy - arm); ctx.lineTo(cx, cy + arm)
+    ctx.stroke()
+
+    // White crosshair
+    ctx.strokeStyle = '#ffffff'
+    ctx.lineWidth = 1.5
+    ctx.beginPath()
+    ctx.moveTo(cx - arm, cy); ctx.lineTo(cx + arm, cy)
+    ctx.moveTo(cx, cy - arm); ctx.lineTo(cx, cy + arm)
+    ctx.stroke()
+
+    // Center dot
+    ctx.fillStyle = '#ffffff'
+    ctx.beginPath(); ctx.arc(cx, cy, 2.5, 0, Math.PI * 2); ctx.fill()
+  }
+
+  // ── Axis labels ──────────────────────────────────────
+  ctx.fillStyle = cssVar('--text-dim', '#3c4860')
+  ctx.font = '10px ui-monospace,monospace'
+  ctx.textAlign = 'center'
+  ctx.fillText(`X ${params.xMin.toFixed(0)}`, tx(params.xMin), H - 4)
+  ctx.fillText(`X ${params.xMax.toFixed(0)}`, tx(params.xMax), H - 4)
+  ctx.textAlign = 'right'
+  ctx.fillText(`Y ${params.yMax.toFixed(0)}`, tx(params.xMin) - 4, ty(params.yMax) + 4)
+  ctx.fillText(`Y ${params.yMin.toFixed(0)}`, tx(params.xMin) - 4, ty(params.yMin) + 4)
+}
+
+function zoomFit() {
+  const canvas = document.getElementById('preview-canvas')
+  if (!canvas) return
+  
+  const wrap = canvas.parentElement
+  const W = wrap.clientWidth || 300
+  const H = wrap.clientHeight || 400
+  
+  const mg = 22
+  const xSpan = Math.max(0.001, params.xMax - params.xMin)
+  const ySpan = Math.max(0.001, params.yMax - params.yMin)
+  const sc = Math.min((W - 2 * mg) / xSpan, (H - 2 * mg) / ySpan)
+  const dw = xSpan * sc, dh = ySpan * sc
+  const ox = mg + (W - 2 * mg - dw) / 2
+  const oy = mg + (H - 2 * mg - dh) / 2
+  
+  // Center the probe area in the canvas
+  state.panX = W/2 - ox
+  state.panY = oy - H/2
+  state.zoom = 1.0
+  drawCanvas()
+}
+
+function zoomIn() {
+  state.zoom = Math.min(state.zoom * 1.5, 10.0)
+  drawCanvas()
+}
+
+function zoomOut() {
+  state.zoom = Math.max(state.zoom / 1.5, 0.1)
+  drawCanvas()
+}
+
+function initCanvasInteraction() {
+  const canvas = document.getElementById('preview-canvas')
+  if (!canvas) return
+
+  canvas.addEventListener('wheel', (e) => {
+    e.preventDefault()
+    const rect = canvas.getBoundingClientRect()
+    const mouseX = e.clientX - rect.left
+    const mouseY = e.clientY - rect.top
+    
+    // Calculate canvas dimensions and scaling (same as in drawCanvas)
+    const wrap = canvas.parentElement
+    const W = wrap.clientWidth || 300
+    const H = wrap.clientHeight || 400
+    const mg = 22
+    const xSpan = Math.max(0.001, params.xMax - params.xMin)
+    const ySpan = Math.max(0.001, params.yMax - params.yMin)
+    const sc = Math.min((W - 2 * mg) / xSpan, (H - 2 * mg) / ySpan)
+    const ox = mg + (W - 2 * mg - xSpan * sc) / 2
+    const oy = mg + (H - 2 * mg - ySpan * sc) / 2
+    const centerX = (params.xMin + params.xMax) / 2
+    const centerY = (params.yMin + params.yMax) / 2
+    
+    // Convert mouse position to world coordinates before zoom
+    const worldX = centerX + (mouseX - ox - state.panX) / (sc * state.zoom)
+    const worldY = centerY + (H - oy - mouseY + state.panY) / (sc * state.zoom)
+    
+    // Apply zoom
+    const zoomFactor = e.deltaY > 0 ? 0.9 : 1.1
+    const newZoom = Math.max(0.1, Math.min(10.0, state.zoom * zoomFactor))
+    
+    if (newZoom !== state.zoom) {
+      // Adjust pan so the same world point stays under the mouse
+      state.panX = mouseX - ox - (worldX - centerX) * sc * newZoom
+      state.panY = mouseY - (H - oy) + (worldY - centerY) * sc * newZoom
+      state.zoom = newZoom
+      drawCanvas()
+    }
+  })
+
+  canvas.addEventListener('mousedown', (e) => {
+    if (e.button === 0) { // Left mouse button
+      state.isDragging = true
+      state.lastMouseX = e.clientX
+      state.lastMouseY = e.clientY
+      canvas.style.cursor = 'grabbing'
+      e.preventDefault()
+    }
+  })
+
+  canvas.addEventListener('mousemove', (e) => {
+    if (state.isDragging) {
+      const dx = e.clientX - state.lastMouseX
+      const dy = e.clientY - state.lastMouseY
+      
+      state.panX += dx
+      state.panY += dy
+      
+      state.lastMouseX = e.clientX
+      state.lastMouseY = e.clientY
+      
+      drawCanvas()
+    }
+  })
+
+  canvas.addEventListener('mouseup', (e) => {
+    if (e.button === 0) {
+      state.isDragging = false
+      canvas.style.cursor = 'grab'
+    }
+  })
+
+  canvas.addEventListener('mouseleave', () => {
+    state.isDragging = false
+    canvas.style.cursor = 'default'
+  })
+
+  // Set initial cursor
+  canvas.style.cursor = 'grab'
+}
+
+function getZRange() {
+  let min = Infinity, max = -Infinity
+  if (state.probeResults) {
+    for (const row of state.probeResults)
+      for (const cell of row)
+        if (cell?.ok) { min = Math.min(min, cell.z); max = Math.max(max, cell.z) }
+  }
+  return isFinite(min) ? { min, max } : { min: 0, max: 0 }
+}
+
+function zColor(z) {
+  const { min, max } = getZRange()
+  if (max === min) return 'hsl(140,65%,40%)'
+  const t = (z - min) / (max - min)
+  const h = Math.round(220 - t * 80) // blue→green
+  return `hsl(${h},65%,40%)`
+}
+
+function showZRangeBar() {
+  const bar = document.getElementById('z-range-bar')
+  const { min, max } = getZRange()
+  document.getElementById('z-range-vals').textContent = `${min.toFixed(3)} → ${max.toFixed(3)} mm`
+  bar.style.display = 'flex'
+}
+
+function buildProbeOrder(rows, cols) {
+  const order = []
+  for (let r = 0; r < rows; r++)
+    for (let c = 0; c < cols; c++)
+      order.push([r, r % 2 === 0 ? c : cols - 1 - c])
+  return order
+}
+
+function gridToXY(row, col) {
+  return {
+    x: params.cols > 1 ? params.xMin + col / (params.cols - 1) * (params.xMax - params.xMin) : params.xMin,
+    y: params.rows > 1 ? params.yMin + row / (params.rows - 1) * (params.yMax - params.yMin) : params.yMin,
+  }
+}
+
+function doProbe(x, y) {
+  return new Promise((resolve, reject) => {
+    let settled = false
+    const tid = setTimeout(() => {
+      if (!settled) { settled = true; reject(new Error('No probe response after 30 s')) }
+    }, 30000)
+
+    const onMsg = e => {
+      if (e.data?.type !== 'fluid-event' || e.data.event !== 'line') return
+      const m = String(e.data.data ?? '').match(/\[PRB:([^,]+),([^,]+),([^:]+):([01])\]/)
+      if (m && !settled) {
+        settled = true
+        clearTimeout(tid)
+        window.removeEventListener('message', onMsg)
+        resolve({ mz: parseFloat(m[3]), ok: m[4] === '1' })
+      }
+    }
+    window.addEventListener('message', onMsg)
+
+    call('sendCommand', { command: `G0 X${x.toFixed(3)} Y${y.toFixed(3)}` })
+    call('sendCommand', { command: `G38.2 Z${(-params.probeDepth).toFixed(3)} F${params.feedRate}` })
+  })
+}
+
+function initResultsTable() {
+  const grid = document.getElementById('results-grid')
+  grid.innerHTML = ''
+  grid.style.gridTemplateColumns = `repeat(${params.cols}, 1fr)`
+  
+  // Create grid in reverse row order to match visual preview (high Y at top)
+  for (let r = params.rows - 1; r >= 0; r--) {
+    for (let c = 0; c < params.cols; c++) {
+      const cell = document.createElement('div')
+      cell.className = 'results-grid-cell'
+      cell.textContent = 'N/A'
+      cell.dataset.row = r
+      cell.dataset.col = c
+      grid.appendChild(cell)
+    }
+  }
+  
+  document.getElementById('results-count').textContent = `0 / ${params.rows * params.cols} points`
+  document.getElementById('results-section').style.display = ''
+}
+
+function updateResultRow(r, c, result) {
+  const cell = document.querySelector(`.results-grid-cell[data-row="${r}"][data-col="${c}"]`)
+  if (!cell) return
+  
+  if (result.ok) {
+    cell.textContent = result.z.toFixed(3)
+    cell.classList.add('probed')
+    cell.classList.remove('failed')
+  } else {
+    cell.textContent = 'Failed'
+    cell.classList.add('failed')
+    cell.classList.remove('probed')
+  }
+  
+  // Update count
+  const probed = document.querySelectorAll('.results-grid-cell.probed, .results-grid-cell.failed').length
+  const total = params.rows * params.cols
+  document.getElementById('results-count').textContent = `${probed} / ${total} points`
+}
+
+async function startProbing() {
+  syncParams()
+  if (params.xMax <= params.xMin) { toast('X max must be greater than X min', 'err'); return }
+  if (params.yMax <= params.yMin) { toast('Y max must be greater than Y min', 'err'); return }
+
+  state.probeResults = Array.from({ length: params.rows }, () => Array(params.cols).fill(null))
+  state.activeRow = -1
+  state.activeCol = -1
+  state.probeAbort = false
+  state.probing = true
+
+  document.getElementById('start-btn').style.display = 'none'
+  document.getElementById('abort-btn').style.display = ''
+  document.getElementById('progress-wrap').style.display = 'flex'
+  document.getElementById('save-bar').style.display = 'none'
+  document.getElementById('z-range-bar').style.display = 'none'
+
+  initResultsTable()
+  startCanvasAnim()
+
+  await call('subscribe', { event: 'line' })
+
+  // Move to safe height and enable absolute mode
+  call('sendCommand', { command: 'G90' })
+  call('sendCommand', { command: `G0 Z${params.safeZ}` })
+
+  const order = buildProbeOrder(params.rows, params.cols)
+  let done = 0
+
+  for (let i = 0; i < order.length; i++) {
+    const [r, c] = order[i]
+    if (state.probeAbort) break
+
+    state.activeRow = r
+    state.activeCol = c
+
+    const { x, y } = gridToXY(r, c)
+
+    try {
+      const prb = await doProbe(x, y)
+      const workZ = prb.mz - (state.wco?.z ?? 0)
+      state.probeResults[r][c] = { z: workZ, ok: prb.ok }
+      updateResultRow(r, c, { z: workZ, ok: prb.ok })
+      if (!prb.ok) toast(`Point (${c+1},${r+1}) did not trigger`, 'warn')
+    } catch (err) {
+      state.probeResults[r][c] = { z: 0, ok: false }
+      updateResultRow(r, c, { z: 0, ok: false })
+      if (!state.probeAbort) toast(`Error: ${err.message}`, 'err')
+    }
+
+    state.activeRow = -1
+    state.activeCol = -1
+    done++
+    setProgress(done, order.length)
+
+    // Retract between points (fire-and-forget; next iteration also starts with safe Z)
+    call('sendCommand', { command: `G0 Z${params.safeZ}` })
+  }
+
+  await call('unsubscribe', { event: 'line' })
+  state.probing = false
+
+  document.getElementById('abort-btn').style.display = 'none'
+  document.getElementById('start-btn').style.display = ''
+  document.getElementById('progress-wrap').style.display = 'none'
+
+  if (!state.probeAbort) {
+    stopCanvasAnim()
+    showZRangeBar()
+    buildSessionHmap()
+
+    const okCount = state.probeResults.flat().filter(r => r?.ok).length
+    const { min, max } = getZRange()
+    document.getElementById('probe-summary').textContent =
+      `${okCount} / ${order.length} probed  ·  Z ${min.toFixed(3)} → ${max.toFixed(3)} mm`
+    document.getElementById('save-bar').style.display = 'flex'
+
+    toast('Probing complete', 'ok')
+  }
+}
+
+function abortProbing() {
+  // Send realtime cancel command (0x18)
+  call('sendRealtime', { byte: 0x18 })
+  // Then set abort flag and stop animation
+  state.probeAbort = true
+  stopCanvasAnim()
+  toast('Aborting…', 'warn')
+}
+
+function setProgress(done, total) {
+  document.getElementById('progress-fill').style.width = `${(done / total * 100).toFixed(1)}%`
+  document.getElementById('progress-label').textContent = `${done} / ${total}`
+}
+
+function buildSessionHmap() {
+  const allZ = state.probeResults.flat().filter(r => r?.ok).map(r => r.z)
+  const meanZ = allZ.length ? allZ.reduce((a, b) => a + b, 0) / allZ.length : 0
+  
+  // Interpolate the grid if interpFactor > 1
+  let points = state.probeResults.map(row => row.map(cell => cell?.ok ? cell.z : meanZ))
+  let cols = params.cols
+  let rows = params.rows
+  
+  if (params.interpFactor > 1) {
+    const interpPoints = []
+    for (let r = 0; r < params.rows * params.interpFactor; r++) {
+      const row = []
+      for (let c = 0; c < params.cols * params.interpFactor; c++) {
+        const r0 = Math.floor(r / params.interpFactor)
+        const c0 = Math.floor(c / params.interpFactor)
+        const r1 = Math.min(r0 + 1, params.rows - 1)
+        const c1 = Math.min(c0 + 1, params.cols - 1)
+        
+        const fr = (r % params.interpFactor) / params.interpFactor
+        const fc = (c % params.interpFactor) / params.interpFactor
+        
+        const z00 = points[r0][c0]
+        const z01 = points[r0][c1]
+        const z10 = points[r1][c0]
+        const z11 = points[r1][c1]
+        
+        // Bilinear interpolation
+        const z = z00 * (1 - fr) * (1 - fc) + z01 * (1 - fr) * fc + z10 * fr * (1 - fc) + z11 * fr * fc
+        row.push(z)
+      }
+      interpPoints.push(row)
+    }
+    points = interpPoints
+    cols = params.cols * params.interpFactor
+    rows = params.rows * params.interpFactor
+  }
+  
+  state.sessionHmap = {
+    version: 1,
+    cols, rows,
+    xMin: params.xMin, xMax: params.xMax,
+    yMin: params.yMin, yMax: params.yMax,
+    meanZ,
+    points,
+  }
+  updateSessionBadge()
+}
+
+async function saveHeightmap() {
+  if (!state.sessionHmap) { toast('No probe data', 'err'); return }
+  const ts = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19)
+  const filename = `heightmap-${ts}.hmap`
+  try {
+    await call('writeFile', { path: '/sd/' + filename, content: JSON.stringify(state.sessionHmap, null, 2), fs: 'sd' })
+    toast(`Saved: ${filename}`, 'ok')
+  } catch (e) {
+    toast('Save failed: ' + e.message, 'err')
+  }
+}
+
+async function togglePicker(id) {
+  const picker = document.getElementById(id + '-picker')
+  if (!picker) return
+  const open = picker.style.display !== 'none'
+  picker.style.display = open ? 'none' : ''
+  if (open) return
+
+  const list = document.getElementById(id + '-picker-list')
+  list.innerHTML = '<div class="picker-msg">Loading…</div>'
+
+  const gcodeExts = ['.nc', '.gcode', '.ngc', '.gc', '.g', '.tap', '.cnc']
+  const exts = id === 'hmap' ? ['.hmap'] : gcodeExts
+
+  try {
+    const res = await call('listFiles', { path: '/', fs: 'sd' })
+    const files = (res.files ?? []).filter(f => !f.isDir && exts.some(e => f.name.toLowerCase().endsWith(e)))
+    list.innerHTML = files.length
+      ? files.map(f =>
+          `<div class="picker-file" onclick="onPickFile('${id}','${esc(f.name)}')">`
+          + `<span class="picker-fname">${f.name}</span>`
+          + `<span class="picker-size">${fmtSize(f.size)}</span></div>`
+        ).join('')
+      : `<div class="picker-msg">No ${id === 'hmap' ? '.hmap' : 'G-code'} files found on SD</div>`
+  } catch (err) {
+    list.innerHTML = `<div class="picker-msg" style="color:var(--danger)">${err.message}</div>`
+  }
+}
+
+function esc(s) { return s.replace(/\\/g, '\\\\').replace(/'/g, "\\'") }
+
+async function onPickFile(id, name) {
+  if (id === 'gcode') await loadGCodeFile(name)
+  else if (id === 'hmap') await loadHmapFile(name)
+}
+
+async function loadGCodeFile(name) {
+  document.getElementById('gcode-name').className = 'no-name'
+  document.getElementById('gcode-name').textContent = 'Loading…'
+  document.getElementById('gcode-picker').style.display = 'none'
+  try {
+    const content = await call('readFile', { path: '/sd/' + name })
+    toolpathMoves = parseToolpath(content)
+    const bounds = detectBounds(content)
+    if (bounds.valid) {
+      document.getElementById('p-xmin').value = bounds.xMin.toFixed(3)
+      document.getElementById('p-xmax').value = bounds.xMax.toFixed(3)
+      document.getElementById('p-ymin').value = bounds.yMin.toFixed(3)
+      document.getElementById('p-ymax').value = bounds.yMax.toFixed(3)
+      syncParams()
+      document.getElementById('gcode-name').textContent =
+        `${name}  (X ${bounds.xMin.toFixed(2)}→${bounds.xMax.toFixed(2)},  Y ${bounds.yMin.toFixed(2)}→${bounds.yMax.toFixed(2)})`
+    } else {
+      document.getElementById('gcode-name').textContent = name + '  (bounds not detected)'
+    }
+    document.getElementById('gcode-name').className = 'selected-name'
+    drawCanvas()
+  } catch (err) {
+    document.getElementById('gcode-name').textContent = 'Error: ' + err.message
+  }
+}
+
+function detectBounds(gcode) {
+  let xMin = Infinity, xMax = -Infinity, yMin = Infinity, yMax = -Infinity
+  let isCut = false
+  for (const line of gcode.split('\n')) {
+    const s = line.replace(/;.*$/, '').replace(/\(.*?\)/g, '').toUpperCase()
+    if (/\bG00?\b/.test(s)) isCut = false
+    if (/\bG0?1\b/.test(s)) isCut = true
+    if (!isCut) continue  // ignore rapid moves for bounds (avoids tool-change positions skewing the range)
+    const xm = s.match(/X(-?\d+(?:\.\d*)?)/)
+    const ym = s.match(/Y(-?\d+(?:\.\d*)?)/)
+    if (xm) { const v = parseFloat(xm[1]); xMin = Math.min(xMin, v); xMax = Math.max(xMax, v) }
+    if (ym) { const v = parseFloat(ym[1]); yMin = Math.min(yMin, v); yMax = Math.max(yMax, v) }
+  }
+  return isFinite(xMin) && isFinite(yMin) ? { valid: true, xMin, xMax, yMin, yMax } : { valid: false }
+}
+
+async function loadHmapFile(name) {
+  document.getElementById('hmap-name').textContent = 'Loading…'
+  document.getElementById('hmap-picker').style.display = 'none'
+  try {
+    const content = await call('readFile', { path: '/sd/' + name })
+    const data = JSON.parse(content)
+    if (!data.points || !data.cols || !data.rows) throw new Error('Invalid heightmap file')
+    state.activeHmap = data
+    setActiveHmapLabel(name)
+    document.getElementById('hmap-name').textContent = ''
+    zoomFit()
+    toast('Heightmap loaded', 'ok')
+  } catch (err) {
+    document.getElementById('hmap-name').textContent = 'Error: ' + err.message
+    toast('Failed: ' + err.message, 'err')
+  }
+}
+
+function updateSessionBadge() {
+  if (!state.sessionHmap) return
+  const h = state.sessionHmap
+  document.getElementById('hmap-session-row').style.display = ''
+  document.getElementById('hmap-session-meta').textContent =
+    `${h.cols}×${h.rows}  ·  X ${h.xMin}→${h.xMax}  Y ${h.yMin}→${h.yMax}`
+}
+
+function useSessionHmap() {
+  if (!state.sessionHmap) return
+  state.activeHmap = state.sessionHmap
+  setActiveHmapLabel('Session probe result')
+  document.getElementById('use-session-btn').className = 'use-btn active-hmap'
+  document.getElementById('hmap-name').textContent = ''
+  zoomFit()
+  toast('Using session probe data', 'ok')
+}
+
+function setActiveHmapLabel(label) {
+  const row = document.getElementById('active-hmap-row')
+  document.getElementById('active-hmap-label').textContent = label
+  row.style.display = ''
+  document.getElementById('hmap-file-row').style.display = 'none'
+}
+
+async function loadApplyFileList() {
+  const list = document.getElementById('apply-file-list')
+  list.innerHTML = '<div class="picker-msg">Loading…</div>'
+  state.applyFiles = new Set()
+  updateSelectionCount()
+
+  const exts = ['.nc', '.gcode', '.ngc', '.gc', '.g', '.tap', '.cnc']
+  try {
+    const res = await call('listFiles', { path: '/', fs: 'sd' })
+    const files = (res.files ?? []).filter(f => !f.isDir && exts.some(e => f.name.toLowerCase().endsWith(e)))
+
+    if (!files.length) {
+      list.innerHTML = '<div class="picker-msg">No G-code files found on SD</div>'
+      return
+    }
+
+    list.innerHTML = files.map(f =>
+      `<label class="check-file">`
+      + `<input type="checkbox" onchange="toggleFile('${esc(f.name)}', this.checked)">`
+      + `<span class="check-fname">${f.name}</span>`
+      + `<span class="check-fsize">${fmtSize(f.size)}</span>`
+      + `</label>`
+    ).join('')
+
+    document.getElementById('selection-info').style.display = ''
+  } catch (err) {
+    list.innerHTML = `<div class="picker-msg" style="color:var(--danger)">${err.message}</div>`
+  }
+}
+
+function toggleFile(name, checked) {
+  if (checked) state.applyFiles.add(name)
+  else state.applyFiles.delete(name)
+  updateSelectionCount()
+}
+
+function updateSelectionCount() {
+  const n = state.applyFiles.size
+  document.getElementById('selected-count').textContent =
+    n === 0 ? 'No files selected' : `${n} file${n !== 1 ? 's' : ''} selected`
+}
+
+async function applyToFiles() {
+  if (!state.activeHmap) { toast('No heightmap selected', 'err'); return }
+  if (!state.applyFiles.size) { toast('No G-code files selected', 'err'); return }
+
+  const btn = document.getElementById('apply-btn')
+  btn.disabled = true
+
+  const results = []
+  for (const filename of state.applyFiles) {
+    try {
+      const gcode = await call('readFile', { path: '/sd/' + filename })
+      const corrected = applyHmap(gcode, state.activeHmap)
+      const outName = derivedFilename(filename)
+      await call('writeFile', { path: '/sd/' + outName, content: corrected, fs: 'sd' })
+      results.push({ file: filename, out: outName, ok: true })
+    } catch (err) {
+      results.push({ file: filename, ok: false, err: err.message })
+    }
+  }
+
+  btn.disabled = false
+  renderApplyResults(results)
+  const ok = results.filter(r => r.ok).length
+  toast(`${ok} / ${results.length} files processed`, ok === results.length ? 'ok' : 'warn')
+}
+
+function derivedFilename(name) {
+  const dot = name.lastIndexOf('.')
+  return dot === -1 ? name + '-heightmapped' : name.slice(0, dot) + '-heightmapped' + name.slice(dot)
+}
+
+function renderApplyResults(results) {
+  const section = document.getElementById('apply-results')
+  const list = document.getElementById('apply-results-list')
+  section.style.display = ''
+  list.innerHTML = results.map(r => `
+    <div class="result-row">
+      <span class="result-icon">${r.ok ? '✓' : '✗'}</span>
+      <div class="result-body">
+        <div class="result-files">${r.file}</div>
+        ${r.ok
+          ? `<div class="result-out">→ ${r.out}</div>`
+          : `<div class="result-err-msg">${r.err}</div>`}
+      </div>
+    </div>
+  `).join('')
+}
+
+function applyHmap(gcode, hmap) {
+  const { xMin, xMax, yMin, yMax, cols, rows, points, meanZ } = hmap
+
+  function interp(px, py) {
+    const cx = Math.max(xMin, Math.min(xMax, px))
+    const cy = Math.max(yMin, Math.min(yMax, py))
+    const cf = cols > 1 ? (cx - xMin) / (xMax - xMin) * (cols - 1) : 0
+    const rf = rows > 1 ? (cy - yMin) / (yMax - yMin) * (rows - 1) : 0
+    const c0 = Math.max(0, Math.min(cols - 2, Math.floor(cf)))
+    const r0 = Math.max(0, Math.min(rows - 2, Math.floor(rf)))
+    const c1 = Math.min(cols - 1, c0 + 1)
+    const r1 = Math.min(rows - 1, r0 + 1)
+    const tx = cf - c0, ty = rf - r0
+    return (1 - ty) * ((1 - tx) * points[r0][c0] + tx * points[r0][c1])
+         +      ty  * ((1 - tx) * points[r1][c0] + tx * points[r1][c1])
+  }
+
+  let curX = 0, curY = 0
+  let absolute = true
+  const out = []
+
+  for (const line of gcode.split('\n')) {
+    const s = line.replace(/;.*$/, '').replace(/\(.*?\)/g, '')
+    const u = s.toUpperCase()
+
+    if (/\bG91\b/.test(u)) absolute = false
+    else if (/\bG90\b/.test(u)) absolute = true
+
+    const xm = u.match(/X(-?\d+(?:\.\d*)?)/)
+    const ym = u.match(/Y(-?\d+(?:\.\d*)?)/)
+    const zm = u.match(/Z(-?\d+(?:\.\d*)?)/)
+
+    const nx = xm ? (absolute ? parseFloat(xm[1]) : curX + parseFloat(xm[1])) : curX
+    const ny = ym ? (absolute ? parseFloat(ym[1]) : curY + parseFloat(ym[1])) : curY
+
+    if (zm) {
+      const rawZ = parseFloat(zm[1])
+      const offset = interp(nx, ny) - meanZ
+      const newZ = (rawZ + offset).toFixed(4)
+      out.push(line.replace(/Z(-?\d+(?:\.\d*)?)/i, 'Z' + newZ))
+    } else {
+      out.push(line)
+    }
+
+    curX = nx
+    curY = ny
+  }
+
+  return out.join('\n')
+}
+
+function fmtSize(b) {
+  if (b < 1024) return b + ' B'
+  if (b < 1048576) return (b / 1024).toFixed(1) + ' KB'
+  return (b / 1048576).toFixed(1) + ' MB'
+}
+
+/* ── Init ────────────────────────────────────────────── */
+call('subscribe', { event: 'status' })
+call('getStatus').then(s => { if (s?.wco) state.wco = s.wco; if (s?.wpos) state.toolPos = s.wpos }).catch(() => {})
+syncParams()
+initCanvasInteraction()
+window.addEventListener('resize', () => drawCanvas())
+zoomFit()
+</script>
+</body>
+</html>

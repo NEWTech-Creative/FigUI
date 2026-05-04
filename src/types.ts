@@ -84,6 +84,7 @@ export interface PluginManifest {
   version?: string
   entry?: string
   files?: string[]
+  layout?: 'default' | 'fullview'
 }
 
 export interface Plugin {
