@@ -8,7 +8,6 @@
 </head>
 <body>
 
-<!-- Header -->
 <div class="header">
   <span class="header-title">Heightmap</span>
   <div class="tab-group">
@@ -19,13 +18,10 @@
 
 <div class="split-layout">
 
-  <!-- ── LEFT: settings ──────────────────────────────── -->
   <div class="split-left">
 
-    <!-- ═══════════════════════════════════ PROBE PANEL -->
     <div id="panel-probe">
 
-      <!-- G-Code File -->
       <div class="section">
         <div class="section-hd">
           <span class="section-label">G-Code File</span>
@@ -42,7 +38,6 @@
         </div>
       </div>
 
-      <!-- Parameters -->
       <div class="section">
         <div class="section-hd">
           <span class="section-label">Probe Parameters</span>
@@ -114,7 +109,6 @@
         </div>
       </div>
 
-      <!-- Action bar -->
       <div class="action-bar">
         <button class="primary-btn" id="start-btn" onclick="startProbing()">Start Probing</button>
         <button class="danger-btn" id="abort-btn" onclick="abortProbing()" style="display:none">Abort</button>
@@ -124,7 +118,6 @@
         </div>
       </div>
 
-      <!-- Probe Results Table -->
       <div id="results-section" class="results-section" style="display:none">
         <div class="section-hd">
           <span class="section-label">Probe Results</span>
@@ -136,18 +129,24 @@
         </div>
       </div>
 
-      <!-- Save bar (appears after probing) -->
       <div id="save-bar" class="save-bar" style="display:none">
         <span class="save-bar-summary" id="probe-summary"></span>
-        <button class="secondary-btn" onclick="saveHeightmap()">Save to SD</button>
+        <div class="save-bar-name-row">
+          <span class="save-name-label">Save as</span>
+          <input class="save-name-input" id="save-name-input" type="text" spellcheck="false" placeholder="filename">
+          <span class="save-name-ext">.hmap</span>
+        </div>
+        <div class="save-bar-actions">
+          <button class="secondary-btn" id="save-to-sd-btn" onclick="saveHeightmap()">Save to SD</button>
+          <button class="primary-btn" onclick="useAndApply()">Use &amp; Apply →</button>
+          <button class="danger-btn" id="discard-btn" onclick="discardProbing()" style="display:none">Discard</button>
+        </div>
       </div>
 
-    </div><!-- end #panel-probe -->
+    </div>
 
-    <!-- ═══════════════════════════════════ APPLY PANEL -->
     <div id="panel-apply" style="display:none">
 
-      <!-- Heightmap source -->
       <div class="section">
         <div class="section-hd">
           <span class="section-label">Heightmap</span>
@@ -157,7 +156,6 @@
           </button>
         </div>
 
-        <!-- Session heightmap badge -->
         <div id="hmap-session-row" class="hmap-session-row" style="display:none">
           <div class="hmap-session-badge">
             <div class="hmap-session-dot"></div>
@@ -169,12 +167,10 @@
           </div>
         </div>
 
-        <!-- File picker -->
         <div id="hmap-picker" class="file-picker" style="display:none">
           <div id="hmap-picker-list"></div>
         </div>
 
-        <!-- Active heightmap indicator -->
         <div id="active-hmap-row" class="active-hmap-row" style="display:none">
           <div class="active-hmap-pill">
             <div class="active-hmap-pill-dot"></div>
@@ -187,7 +183,6 @@
         </div>
       </div>
 
-      <!-- G-Code Files -->
       <div class="section">
         <div class="section-hd">
           <span class="section-label">G-Code Files</span>
@@ -204,12 +199,10 @@
         </div>
       </div>
 
-      <!-- Apply action -->
       <div class="action-bar">
         <button class="primary-btn" id="apply-btn" onclick="applyToFiles()">Apply Heightmap</button>
       </div>
 
-      <!-- Results -->
       <div id="apply-results" class="section" style="display:none">
         <div class="section-hd">
           <span class="section-label">Results</span>
@@ -217,11 +210,10 @@
         <div id="apply-results-list"></div>
       </div>
 
-    </div><!-- end #panel-apply -->
+    </div>
 
-  </div><!-- end .split-left -->
+  </div>
 
-  <!-- ── RIGHT: preview ──────────────────────────────── -->
   <div class="split-right">
     <div class="preview-hd">
       <span class="section-label">Preview</span>
@@ -241,9 +233,9 @@
       <span class="z-range-label">High</span>
       <span id="z-range-vals" class="z-range-vals"></span>
     </div>
-  </div><!-- end .split-right -->
+  </div>
 
-</div><!-- end .split-layout -->
+</div>
 
 <div id="toast"></div>
 
@@ -268,6 +260,13 @@ window.addEventListener('message', e => {
     const s = e.data.data
     if (s?.wco) state.wco = s.wco
     if (s?.wpos) { state.toolPos = s.wpos; if (!animFrame) drawCanvas() }
+    if (state.probing && (s?.state === 'Alarm' || s?.state === 'Door')) {
+      state.probeAbort = true
+      if (state.probeReject) {
+        state.probeReject(new Error('Machine alarm — probing interrupted'))
+        state.probeReject = null
+      }
+    }
   }
 })
 
@@ -287,8 +286,11 @@ const state = {
   activeRow: -1, activeCol: -1,
   probing: false,
   probeAbort: false,
+  probeReject: null,   // set while doProbe is awaiting; called on alarm
   sessionHmap: null,
   activeHmap: null,
+  sourceGcodeFile: null,
+  savedHmapFile: null,
   applyFiles: new Set(),
   // Zoom and pan state
   zoom: 1.0,
@@ -405,31 +407,54 @@ function drawCanvas(t = 0) {
   ctx.fillStyle = cssVar('--elevated', '#191e30')
   ctx.fillRect(0, 0, W, H)
 
-  // ── Heatmap cells (filled when probe data exists) ────
+  // ── Heatmap cells (bilinear gradient when probe data exists) ────
   const { min: zMin, max: zMax } = getZRange()
+  const zRange = zMax !== zMin ? zMax - zMin : 1
   const hasAnyProbe = state.probeResults?.some(row => row.some(c => c?.ok))
+
+  function cornerT(r, c) {
+    const cell = state.probeResults?.[r]?.[c]
+    if (cell?.ok) return (cell.z - zMin) / zRange
+    const nz = [
+      state.probeResults?.[r-1]?.[c], state.probeResults?.[r+1]?.[c],
+      state.probeResults?.[r]?.[c-1], state.probeResults?.[r]?.[c+1],
+    ].filter(p => p?.ok).map(p => p.z)
+    return nz.length ? (nz.reduce((a,b) => a+b,0) / nz.length - zMin) / zRange : 0.5
+  }
+
   if (hasAnyProbe) {
     for (let r = 0; r < params.rows - 1; r++) {
       for (let c = 0; c < params.cols - 1; c++) {
         const corners = [
-          state.probeResults[r][c],
-          state.probeResults[r][c + 1],
-          state.probeResults[r + 1][c],
-          state.probeResults[r + 1][c + 1],
-        ].filter(p => p?.ok)
-        if (!corners.length) continue
+          state.probeResults?.[r]?.[c],
+          state.probeResults?.[r]?.[c + 1],
+          state.probeResults?.[r + 1]?.[c],
+          state.probeResults?.[r + 1]?.[c + 1],
+        ]
+        if (!corners.every(p => p?.ok)) continue
 
-        const avgZ = corners.reduce((s, p) => s + p.z, 0) / corners.length
-        const tn = zMax !== zMin ? (avgZ - zMin) / (zMax - zMin) : 0.5
+        const cx0 = tx(gridToXY(r, c).x)
+        const cx1 = tx(gridToXY(r, c + 1).x)
+        const cy0 = ty(gridToXY(r + 1, c).y)
+        const cy1 = ty(gridToXY(r, c).y)
 
-        // Cell rectangle in canvas coords
-        const x0 = tx(gridToXY(r, c).x)
-        const x1 = tx(gridToXY(r, c + 1).x)
-        const y0 = ty(gridToXY(r + 1, c).y)  // high G-code Y = top of canvas rect
-        const y1 = ty(gridToXY(r, c).y)       // low  G-code Y = bottom of canvas rect
+        const tTL = cornerT(r + 1, c)
+        const tTR = cornerT(r + 1, c + 1)
+        const tBL = cornerT(r, c)
+        const tBR = cornerT(r, c + 1)
 
-        ctx.fillStyle = heatColor(tn)
-        ctx.fillRect(x0, y0, x1 - x0, y1 - y0)
+        const cellH = cy1 - cy0
+        const strips = Math.min(32, Math.max(4, Math.ceil(Math.abs(cellH) / 1.5)))
+        for (let i = 0; i < strips; i++) {
+          const ta = i / strips, tb = (i + 1) / strips, tm = (ta + tb) / 2
+          const tL = tTL + (tBL - tTL) * tm
+          const tR = tTR + (tBR - tTR) * tm
+          const grad = ctx.createLinearGradient(cx0, 0, cx1, 0)
+          grad.addColorStop(0, heatColor(tL, 0.6))
+          grad.addColorStop(1, heatColor(tR, 0.6))
+          ctx.fillStyle = grad
+          ctx.fillRect(cx0, cy0 + ta * cellH, cx1 - cx0, (tb - ta) * cellH + 0.5)
+        }
       }
     }
   }
@@ -449,14 +474,14 @@ function drawCanvas(t = 0) {
   }
 
   // ── Probe area border ────────────────────────────────
-  ctx.strokeStyle = cssVar('--border', '#222840')
-  ctx.lineWidth = 1
-  ctx.setLineDash([4, 4])
+  ctx.strokeStyle = hasAnyProbe ? 'rgba(255,255,255,0.5)' : cssVar('--border', '#222840')
+  ctx.lineWidth = hasAnyProbe ? 1.5 : 1
+  ctx.setLineDash(hasAnyProbe ? [] : [4, 4])
   ctx.strokeRect(tx(params.xMin), ty(params.yMax), dw, dh)
   ctx.setLineDash([])
 
   // ── Grid lines ───────────────────────────────────────
-  ctx.strokeStyle = cssVar('--border', '#222840')
+  ctx.strokeStyle = hasAnyProbe ? 'rgba(255,255,255,0.18)' : cssVar('--border', '#222840')
   ctx.lineWidth = 0.5
   for (let r = 0; r < params.rows; r++) {
     const py = ty(gridToXY(r, 0).y)
@@ -494,7 +519,7 @@ function drawCanvas(t = 0) {
         color = danger; radius = 4
       } else {
         const tn = zMax !== zMin ? (res.z - zMin) / (zMax - zMin) : 0.5
-        color = `hsl(${Math.round(220 - tn * 80)},65%,50%)`
+        color = heatColor(tn, 1)
         radius = 4.5
       }
 
@@ -698,21 +723,26 @@ function gridToXY(row, col) {
 function doProbe(x, y) {
   return new Promise((resolve, reject) => {
     let settled = false
-    const tid = setTimeout(() => {
-      if (!settled) { settled = true; reject(new Error('No probe response after 30 s')) }
-    }, 30000)
+
+    function settle(fn) {
+      if (settled) return
+      settled = true
+      state.probeReject = null
+      clearTimeout(tid)
+      window.removeEventListener('message', onMsg)
+      fn()
+    }
+
+    const tid = setTimeout(() => settle(() => reject(new Error('No probe response after 30 s'))), 30000)
 
     const onMsg = e => {
       if (e.data?.type !== 'fluid-event' || e.data.event !== 'line') return
       const m = String(e.data.data ?? '').match(/\[PRB:([^,]+),([^,]+),([^:]+):([01])\]/)
-      if (m && !settled) {
-        settled = true
-        clearTimeout(tid)
-        window.removeEventListener('message', onMsg)
-        resolve({ mz: parseFloat(m[3]), ok: m[4] === '1' })
-      }
+      if (m) settle(() => resolve({ mz: parseFloat(m[3]), ok: m[4] === '1' }))
     }
     window.addEventListener('message', onMsg)
+
+    state.probeReject = (err) => settle(() => reject(err))
 
     call('sendCommand', { command: `G0 X${x.toFixed(3)} Y${y.toFixed(3)}` })
     call('sendCommand', { command: `G38.2 Z${(-params.probeDepth).toFixed(3)} F${params.feedRate}` })
@@ -760,6 +790,17 @@ function updateResultRow(r, c, result) {
   document.getElementById('results-count').textContent = `${probed} / ${total} points`
 }
 
+function setProbeInputsDisabled(disabled) {
+  const ids = ['p-cols','p-rows','p-xmin','p-xmax','p-ymin','p-ymax','p-safez','p-depth','p-feed','p-interp']
+  ids.forEach(id => {
+    const el = document.getElementById(id)
+    if (el) el.disabled = disabled
+  })
+
+  const gcodeBtn = document.querySelector('#panel-probe .section:first-child .icon-btn')
+  if (gcodeBtn) gcodeBtn.disabled = disabled
+}
+
 async function startProbing() {
   syncParams()
   if (params.xMax <= params.xMin) { toast('X max must be greater than X min', 'err'); return }
@@ -771,9 +812,16 @@ async function startProbing() {
   state.probeAbort = false
   state.probing = true
 
+  setProbeInputsDisabled(true)
   document.getElementById('start-btn').style.display = 'none'
   document.getElementById('abort-btn').style.display = ''
+  document.getElementById('discard-btn').style.display = 'none'
   document.getElementById('progress-wrap').style.display = 'flex'
+  const saveBtn = document.getElementById('save-to-sd-btn')
+  if (saveBtn) { saveBtn.textContent = 'Save to SD'; saveBtn.disabled = false }
+  const nameInput = document.getElementById('save-name-input')
+  if (nameInput) nameInput.value = ''
+  state.savedHmapFile = null
   document.getElementById('save-bar').style.display = 'none'
   document.getElementById('z-range-bar').style.display = 'none'
 
@@ -823,11 +871,14 @@ async function startProbing() {
   state.probing = false
 
   document.getElementById('abort-btn').style.display = 'none'
-  document.getElementById('start-btn').style.display = ''
   document.getElementById('progress-wrap').style.display = 'none'
+  stopCanvasAnim()
 
-  if (!state.probeAbort) {
-    stopCanvasAnim()
+  if (state.probeAbort) {
+    setProbeInputsDisabled(false)
+    document.getElementById('start-btn').style.display = ''
+    drawCanvas()
+  } else {
     showZRangeBar()
     buildSessionHmap()
 
@@ -835,19 +886,46 @@ async function startProbing() {
     const { min, max } = getZRange()
     document.getElementById('probe-summary').textContent =
       `${okCount} / ${order.length} probed  ·  Z ${min.toFixed(3)} → ${max.toFixed(3)} mm`
-    document.getElementById('save-bar').style.display = 'flex'
+    const nameInput = document.getElementById('save-name-input')
+    if (nameInput && !nameInput.value) nameInput.value = defaultHmapStem()
+    document.getElementById('discard-btn').style.display = ''
+    document.getElementById('save-bar').style.display = ''
 
     toast('Probing complete', 'ok')
   }
 }
 
 function abortProbing() {
-  // Send realtime cancel command (0x18)
-  call('sendRealtime', { byte: 0x18 })
-  // Then set abort flag and stop animation
   state.probeAbort = true
+  if (state.probeReject) {
+    state.probeReject(new Error('Aborted'))
+    state.probeReject = null
+  }
+  call('sendRealtime', { byte: 0x18 })
   stopCanvasAnim()
   toast('Aborting…', 'warn')
+}
+
+function discardProbing() {
+  state.probeResults = null
+  state.activeRow = -1
+  state.activeCol = -1
+  state.sessionHmap = null
+  state.savedHmapFile = null
+
+  setProbeInputsDisabled(false)
+  document.getElementById('start-btn').style.display = ''
+  document.getElementById('discard-btn').style.display = 'none'
+  document.getElementById('progress-wrap').style.display = 'none'
+  document.getElementById('results-section').style.display = 'none'
+  document.getElementById('save-bar').style.display = 'none'
+  document.getElementById('z-range-bar').style.display = 'none'
+
+  document.getElementById('hmap-session-row').style.display = 'none'
+
+  stopCanvasAnim()
+  drawCanvas()
+  toast('Results discarded', 'warn')
 }
 
 function setProgress(done, total) {
@@ -904,14 +982,33 @@ function buildSessionHmap() {
   updateSessionBadge()
 }
 
+function defaultHmapStem() {
+  if (state.sourceGcodeFile) {
+    const dot = state.sourceGcodeFile.lastIndexOf('.')
+    return dot === -1 ? state.sourceGcodeFile : state.sourceGcodeFile.slice(0, dot)
+  }
+  const now = new Date()
+  const mm = String(now.getMonth() + 1).padStart(2, '0')
+  const dd = String(now.getDate()).padStart(2, '0')
+  const hh = String(now.getHours()).padStart(2, '0')
+  const mn = String(now.getMinutes()).padStart(2, '0')
+  return `probe-${mm}${dd}-${hh}${mn}`
+}
+
 async function saveHeightmap() {
   if (!state.sessionHmap) { toast('No probe data', 'err'); return }
-  const ts = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19)
-  const filename = `heightmap-${ts}.hmap`
+  const raw = (document.getElementById('save-name-input')?.value.trim() || defaultHmapStem())
+  const stem = raw.replace(/\.hmap$/i, '').replace(/[/\\]/g, '-').trim() || defaultHmapStem()
+  const filename = stem + '.hmap'
+  const btn = document.getElementById('save-to-sd-btn')
+  if (btn) btn.disabled = true
   try {
     await call('writeFile', { path: '/sd/' + filename, content: JSON.stringify(state.sessionHmap, null, 2), fs: 'sd' })
+    state.savedHmapFile = filename
+    if (btn) { btn.textContent = '✓ Saved'; btn.disabled = false }
     toast(`Saved: ${filename}`, 'ok')
   } catch (e) {
+    if (btn) btn.disabled = false
     toast('Save failed: ' + e.message, 'err')
   }
 }
@@ -931,7 +1028,9 @@ async function togglePicker(id) {
 
   try {
     const res = await call('listFiles', { path: '/', fs: 'sd' })
-    const files = (res.files ?? []).filter(f => !f.isDir && exts.some(e => f.name.toLowerCase().endsWith(e)))
+    const files = (res.files ?? [])
+      .filter(f => !f.isDir && exts.some(e => f.name.toLowerCase().endsWith(e)))
+      .sort((a, b) => a.name.localeCompare(b.name))
     list.innerHTML = files.length
       ? files.map(f =>
           `<div class="picker-file" onclick="onPickFile('${id}','${esc(f.name)}')">`
@@ -957,6 +1056,7 @@ async function loadGCodeFile(name) {
   document.getElementById('gcode-picker').style.display = 'none'
   try {
     const content = await call('readFile', { path: '/sd/' + name })
+    state.sourceGcodeFile = name
     toolpathMoves = parseToolpath(content)
     const bounds = detectBounds(content)
     if (bounds.valid) {
@@ -1036,7 +1136,7 @@ function setActiveHmapLabel(label) {
   document.getElementById('hmap-file-row').style.display = 'none'
 }
 
-async function loadApplyFileList() {
+async function loadApplyFileList(precheckFile = null) {
   const list = document.getElementById('apply-file-list')
   list.innerHTML = '<div class="picker-msg">Loading…</div>'
   state.applyFiles = new Set()
@@ -1045,7 +1145,9 @@ async function loadApplyFileList() {
   const exts = ['.nc', '.gcode', '.ngc', '.gc', '.g', '.tap', '.cnc']
   try {
     const res = await call('listFiles', { path: '/', fs: 'sd' })
-    const files = (res.files ?? []).filter(f => !f.isDir && exts.some(e => f.name.toLowerCase().endsWith(e)))
+    const files = (res.files ?? [])
+      .filter(f => !f.isDir && exts.some(e => f.name.toLowerCase().endsWith(e)))
+      .sort((a, b) => a.name.localeCompare(b.name))
 
     if (!files.length) {
       list.innerHTML = '<div class="picker-msg">No G-code files found on SD</div>'
@@ -1061,6 +1163,17 @@ async function loadApplyFileList() {
     ).join('')
 
     document.getElementById('selection-info').style.display = ''
+
+    if (precheckFile) {
+      for (const label of list.querySelectorAll('.check-file')) {
+        if (label.querySelector('.check-fname')?.textContent === precheckFile) {
+          const cb = label.querySelector('input')
+          if (cb) { cb.checked = true; toggleFile(precheckFile, true) }
+          label.scrollIntoView({ block: 'nearest' })
+          break
+        }
+      }
+    }
   } catch (err) {
     list.innerHTML = `<div class="picker-msg" style="color:var(--danger)">${err.message}</div>`
   }
@@ -1083,10 +1196,14 @@ async function applyToFiles() {
   if (!state.applyFiles.size) { toast('No G-code files selected', 'err'); return }
 
   const btn = document.getElementById('apply-btn')
+  const files = [...state.applyFiles]
+  const total = files.length
   btn.disabled = true
 
   const results = []
-  for (const filename of state.applyFiles) {
+  for (let i = 0; i < files.length; i++) {
+    const filename = files[i]
+    btn.textContent = `Processing ${i + 1} / ${total}…`
     try {
       const gcode = await call('readFile', { path: '/sd/' + filename })
       const corrected = applyHmap(gcode, state.activeHmap)
@@ -1099,6 +1216,7 @@ async function applyToFiles() {
   }
 
   btn.disabled = false
+  btn.textContent = 'Apply Heightmap'
   renderApplyResults(results)
   const ok = results.filter(r => r.ok).length
   toast(`${ok} / ${results.length} files processed`, ok === results.length ? 'ok' : 'warn')
@@ -1106,7 +1224,7 @@ async function applyToFiles() {
 
 function derivedFilename(name) {
   const dot = name.lastIndexOf('.')
-  return dot === -1 ? name + '-heightmapped' : name.slice(0, dot) + '-heightmapped' + name.slice(dot)
+  return dot === -1 ? name + '_leveled' : name.slice(0, dot) + '_leveled' + name.slice(dot)
 }
 
 function renderApplyResults(results) {
@@ -1183,6 +1301,30 @@ function fmtSize(b) {
   return (b / 1048576).toFixed(1) + ' MB'
 }
 
+function switchTab(tab) {
+  document.getElementById('panel-probe').style.display = tab === 'probe' ? '' : 'none'
+  document.getElementById('panel-apply').style.display = tab === 'apply' ? '' : 'none'
+  document.getElementById('tab-probe').classList.toggle('active', tab === 'probe')
+  document.getElementById('tab-apply').classList.toggle('active', tab === 'apply')
+
+  if (tab === 'apply' && state.sessionHmap && !state.activeHmap) {
+    useSessionHmap()
+  }
+}
+
+async function useAndApply() {
+  if (!state.sessionHmap) { toast('No probe data', 'err'); return }
+  state.activeHmap = state.sessionHmap
+  setActiveHmapLabel('Session probe result')
+  const useBtn = document.getElementById('use-session-btn')
+  if (useBtn) useBtn.className = 'use-btn active-hmap'
+  document.getElementById('hmap-name').textContent = ''
+  zoomFit()
+  switchTab('apply')
+  await loadApplyFileList(state.sourceGcodeFile)
+  toast(state.sourceGcodeFile ? `${state.sourceGcodeFile} pre-selected — apply when ready` : 'Select files and apply heightmap', 'ok')
+}
+
 /* ── Init ────────────────────────────────────────────── */
 call('subscribe', { event: 'status' })
 call('getStatus').then(s => { if (s?.wco) state.wco = s.wco; if (s?.wpos) state.toolPos = s.wpos }).catch(() => {})
@@ -1190,6 +1332,8 @@ syncParams()
 initCanvasInteraction()
 window.addEventListener('resize', () => drawCanvas())
 zoomFit()
+togglePicker('gcode')
+loadApplyFileList()
 </script>
 </body>
 </html>

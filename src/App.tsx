@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { useMachineStore } from './store'
 import { useGCodeStore } from './store/gcode'
 import { useTerminalStore } from './store/terminal'
@@ -84,7 +84,13 @@ export function App() {
   const [aboutOpen, setAboutOpen] = useState(false)
   const [mobilePanel, setMobilePanel]     = useState<MobilePanel>('control')
   const [tabletTab,   setTabletTab]       = useState<TabletRightTab>('viewer')
-  const [fullviewPlugin, setFullviewPlugin] = useState<Plugin | null>(null)
+  const [workspacePlugin, setWorkspacePlugin] = useState<Plugin | null>(null)
+  const [controlsPlugin,  setControlsPlugin]  = useState<Plugin | null>(null)
+
+  const handleLaunchPanel = useCallback((plugin: Plugin) => {
+    if (plugin.manifest.layout === 'workspace') setWorkspacePlugin(plugin)
+    else if (plugin.manifest.layout === 'controls') setControlsPlugin(plugin)
+  }, [])
 
   const reconnectTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
   const stableConnectTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
@@ -507,7 +513,7 @@ export function App() {
 
 </div>}
 
-{activeLayout === 'desktop' && !fullviewPlugin && <div className="flex-1 min-h-0 grid grid-cols-[380px_1fr_340px] gap-3 p-3 overflow-hidden">
+{activeLayout === 'desktop' && !workspacePlugin && !controlsPlugin && <div className="flex-1 min-h-0 grid grid-cols-[380px_1fr_340px] gap-3 p-3 overflow-hidden">
 
         {/* Left: DRO + jog controls */}
         <div className="flex flex-col gap-3 min-h-0 overflow-y-auto">
@@ -528,7 +534,7 @@ export function App() {
             <div className="flex-1 min-h-0 overflow-hidden">
               {sidebarTab === 'files'   && <FileManager />}
               {sidebarTab === 'macros'  && <Macros />}
-              {sidebarTab === 'plugins' && <PluginLauncher onLaunchFullview={setFullviewPlugin} />}
+              {sidebarTab === 'plugins' && <PluginLauncher onLaunchPanel={handleLaunchPanel} />}
             </div>
           </div>
 
@@ -539,17 +545,43 @@ export function App() {
 
       </div>}
 
-      {activeLayout === 'desktop' && fullviewPlugin && <div className="flex-1 min-h-0 grid grid-cols-[380px_1fr] gap-3 p-3 overflow-hidden">
+      {/* workspace layout: plugin takes center + right, DRO/JogPad stays on left */}
+      {activeLayout === 'desktop' && workspacePlugin && <div className="flex-1 min-h-0 grid grid-cols-[380px_1fr] gap-3 p-3 overflow-hidden">
 
-        {/* Left: DRO + jog controls */}
         <div className="flex flex-col gap-3 min-h-0 overflow-y-auto">
           <DRO />
           <JogPad />
         </div>
 
-        {/* Fullview plugin occupies center + right */}
         <div className="panel flex flex-col min-h-0 overflow-hidden">
-          <PluginFrame plugin={fullviewPlugin} onClose={() => setFullviewPlugin(null)} inline />
+          <PluginFrame plugin={workspacePlugin} onClose={() => setWorkspacePlugin(null)} inline />
+        </div>
+
+      </div>}
+
+      {activeLayout === 'desktop' && controlsPlugin && <div className="flex-1 min-h-0 grid grid-cols-[380px_1fr_340px] gap-3 p-3 overflow-hidden">
+
+        <div className="panel flex flex-col min-h-0 overflow-hidden">
+          <PluginFrame plugin={controlsPlugin} onClose={() => setControlsPlugin(null)} inline />
+        </div>
+
+        <div className="min-h-0 flex flex-col gap-3 overflow-y-auto">
+          <GCodeViewer className="flex-1 min-h-[300px]" />
+          <ProbePanel />
+        </div>
+
+        <div className="flex flex-col min-h-0 gap-3 overflow-hidden">
+          <div className="panel flex flex-col min-h-0 flex-1 overflow-hidden">
+            {sidebarTabBar}
+            <div className="flex-1 min-h-0 overflow-hidden">
+              {sidebarTab === 'files'   && <FileManager />}
+              {sidebarTab === 'macros'  && <Macros />}
+              {sidebarTab === 'plugins' && <PluginLauncher onLaunchPanel={handleLaunchPanel} />}
+            </div>
+          </div>
+          <div className="panel flex flex-col min-h-[200px] flex-1 overflow-hidden">
+            <Terminal />
+          </div>
         </div>
 
       </div>}

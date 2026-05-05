@@ -68,7 +68,7 @@ my-plugin/
 | `version` | No | Shown as a small badge (e.g. `v1.0.0`) |
 | `entry` | No | Entry HTML file. Defaults to `index.html` |
 | `icon` | No | Icon image filename. Recommended size: **48×48 px**. Must be `icon.png` for store submissions. |
-| `layout` | No | `"fullview"` makes the plugin occupy the center + right area of the desktop layout (replacing the G-code viewer and file manager columns) instead of opening as a floating window. Omit or use `"default"` for the standard floating window. |
+| `layout` | No | Controls how the plugin is embedded in the desktop layout instead of opening as a floating window. `"workspace"` gives the plugin the center + right area (replacing the G-code viewer and file manager), keeping the DRO and jog controls visible on the left. `"controls"` gives the plugin the left column (replacing the DRO and jog controls), keeping the G-code viewer and file manager visible. Omit or use `"default"` for the standard floating window. |
 | `files` | No | List of files to download when installing from the store. If omitted, only `entry` and `icon` are fetched. **Required if you have additional assets** (e.g. `style.css`). |
 
 Example with a stylesheet:

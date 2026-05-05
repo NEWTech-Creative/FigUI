@@ -359,7 +359,13 @@ body {
   flex: 1;
   height: 6px;
   border-radius: 3px;
-  background: linear-gradient(to right, hsl(220,65%,45%), hsl(140,65%,40%));
+  background: linear-gradient(to right,
+    hsl(240,85%,52%),
+    hsl(180,85%,52%),
+    hsl(120,85%,52%),
+    hsl(60,85%,52%),
+    hsl(0,85%,52%)
+  );
 }
 .z-range-vals { font-size: 12px; color: var(--text-muted, #6a7898); font-family: ui-monospace, monospace; white-space: nowrap; }
 
@@ -450,15 +456,49 @@ body {
   border-radius: 6px;
   padding: 12px 14px;
   display: flex;
-  align-items: center;
-  justify-content: space-between;
+  flex-direction: column;
   gap: 10px;
-  flex-wrap: wrap;
 }
 .save-bar-summary {
   font-size: 14px;
   color: var(--ok, #22c55e);
   font-family: ui-monospace, monospace;
+}
+.save-bar-name-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.save-name-label {
+  font-size: 13px;
+  color: var(--text-muted, #6a7898);
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+.save-name-input {
+  flex: 1;
+  min-width: 0;
+  padding: 5px 8px;
+  background: var(--elevated, #191e30);
+  border: 1px solid var(--border, #222840);
+  border-radius: 4px;
+  color: var(--text-primary, #e2e6f4);
+  font-size: 14px;
+  font-family: ui-monospace, monospace;
+  transition: border-color 0.15s;
+}
+.save-name-input:focus { outline: none; border-color: var(--ok, #22c55e); }
+.save-name-ext {
+  font-size: 14px;
+  color: var(--text-dim, #3c4860);
+  font-family: ui-monospace, monospace;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+.save-bar-actions {
+  display: flex;
+  gap: 8px;
+  align-items: center;
 }
 
 
@@ -532,6 +572,8 @@ body {
 .apply-file-list {
   display: flex;
   flex-direction: column;
+  max-height: 220px;
+  overflow-y: auto;
 }
 .check-file {
   display: flex;
