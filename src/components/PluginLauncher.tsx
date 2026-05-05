@@ -4,6 +4,7 @@ import { discoverPlugins, uploadFolderPlugin, deletePlugin, fetchRegistry, insta
 import { PluginFrame } from './PluginFrame'
 import type { Plugin, StoreEntry, ActiveLayout } from '../types'
 import { getEffectiveLayout } from '../types'
+import { semverGt } from '../lib/updateCheck'
 
 type Tab = 'installed' | 'store'
 type FsDest = 'local' | 'sd'
@@ -91,6 +92,7 @@ export function PluginLauncher({ isTablet, onLaunchPanel, activeLayout }: { isTa
   const [storeError, setStoreError] = useState<string | null>(null)
   const [installingId, setInstallingId] = useState<string | null>(null)
   const [justInstalled, setJustInstalled] = useState<string | null>(null)
+  const [updatingId, setUpdatingId] = useState<string | null>(null)
 
   const scan = useCallback(async () => {
     setScanning(true)
@@ -150,20 +152,49 @@ export function PluginLauncher({ isTablet, onLaunchPanel, activeLayout }: { isTa
 
   async function handleInstall(entry: StoreEntry, fs: FsDest = destFs) {
     setInstallingId(entry.id)
+    setUploadDone(false)
+    setProgress({ current: 0, total: 1, filename: '', label: 'Installing' })
     try {
-      await installStorePlugin(entry, fs, () => {})
+      await installStorePlugin(entry, fs, (current, total, filename) => {
+        setProgress({ current, total, filename, label: 'Installing' })
+      })
       setJustInstalled(entry.id)
+      setProgress(null)
       await scan()
       setTimeout(() => setJustInstalled(null), 3000)
     } catch (err: any) {
       alert(err.message ?? 'Install failed')
+      setProgress(null)
     } finally {
       setInstallingId(null)
     }
   }
 
-  const isInstalled = (entry: StoreEntry) =>
-    plugins.some(p => p.id === entry.id)
+  async function handleUpdate(entry: StoreEntry, plugin: Plugin) {
+    setUpdatingId(entry.id)
+    setUploadDone(false)
+    setProgress({ current: 0, total: 1, filename: '', label: 'Updating' })
+    try {
+      await installStorePlugin(entry, plugin.fs, (current, total, filename) => {
+        setProgress({ current, total, filename, label: 'Updating' })
+      }, { cleanExisting: true })
+      setJustInstalled(entry.id)
+      setProgress(null)
+      await scan()
+      setTimeout(() => setJustInstalled(null), 3000)
+    } catch (err: any) {
+      alert(err.message ?? 'Update failed')
+      setProgress(null)
+    } finally {
+      setUpdatingId(null)
+    }
+  }
+
+  const installedPluginFor = (entry: StoreEntry) =>
+    plugins.find(p => p.id === entry.id)
+
+  const hasStoreUpdate = (entry: StoreEntry, plugin?: Plugin) =>
+    Boolean(entry.version && plugin?.manifest.version && semverGt(entry.version, plugin.manifest.version))
 
   const pad = isTablet ? 'p-5' : 'p-4'
 
@@ -337,8 +368,11 @@ export function PluginLauncher({ isTablet, onLaunchPanel, activeLayout }: { isTa
             ) : (
               <div className={`flex flex-col gap-3 ${pad}`}>
                 {(storeEntries ?? []).map(entry => {
-                  const installed = isInstalled(entry)
+                  const installedPlugin = installedPluginFor(entry)
+                  const installed = Boolean(installedPlugin)
+                  const updateAvailable = hasStoreUpdate(entry, installedPlugin)
                   const installing = installingId === entry.id
+                  const updating = updatingId === entry.id
                   const done = justInstalled === entry.id
                   return (
                     <div key={entry.id} className="panel flex flex-col gap-2 p-3">
@@ -370,6 +404,17 @@ export function PluginLauncher({ isTablet, onLaunchPanel, activeLayout }: { isTa
                           <span className="flex items-center gap-1 text-sm text-ok font-medium">
                             <CheckCircle size={12} /> Done
                           </span>
+                        ) : updateAvailable && installedPlugin ? (
+                          <button
+                            onClick={() => handleUpdate(entry, installedPlugin)}
+                            disabled={!!installingId || !!updatingId}
+                            className="btn btn-warn text-sm px-2.5 py-1.5 gap-1.5 disabled:opacity-40"
+                            title={`Update ${entry.name} from v${installedPlugin.manifest.version} to v${entry.version}`}
+                          >
+                            {updating
+                              ? <><RefreshCw size={11} className="animate-spin" /> Updating…</>
+                              : <><Download size={11} /> Update to v{entry.version}</>}
+                          </button>
                         ) : installed ? (
                           <span className="inline-flex items-center gap-1 text-sm text-text-dim px-2 py-1.5 rounded border border-border">
                             <CheckCircle size={11} /> Installed

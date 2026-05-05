@@ -85,6 +85,7 @@ export async function installStorePlugin(
   entry: StoreEntry,
   fs: 'sd' | 'local',
   onProgress: (current: number, total: number, filename: string) => void,
+  options: { cleanExisting?: boolean } = {},
 ): Promise<void> {
   const manifestRes = await fetch(entry.base + 'plugin.json')
   if (!manifestRes.ok) throw new Error(`Failed to fetch plugin.json: HTTP ${manifestRes.status}`)
@@ -98,6 +99,16 @@ export async function installStorePlugin(
   try { await createDir(PLUGINS_PATH, entry.id, fs) } catch {}
 
   const targetDir = `${PLUGINS_PATH}/${entry.id}`
+
+  if (options.cleanExisting) {
+    try {
+      const existing = await listFiles(targetDir, fs)
+      const nextFiles = new Set(files)
+      for (const file of existing.files.filter(f => !f.isDir && !nextFiles.has(f.name))) {
+        await deleteFile(targetDir, file.name, fs)
+      }
+    } catch {}
+  }
 
   for (let i = 0; i < files.length; i++) {
     const filename = files[i]

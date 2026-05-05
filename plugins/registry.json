@@ -5,9 +5,17 @@
       "id": "work-origins",
       "name": "Work Origins",
       "description": "Live position display, one-tap axis zeroing, and a full G54–G59 work coordinate system manager with offset table.",
-      "version": "1.0.0",
+      "version": "1.0.1",
       "author": "figamore",
       "base": "https://raw.githubusercontent.com/figamore/FigUI/main/plugins/work-origins/"
+    },
+    {
+      "id": "heightmap",
+      "name": "Heightmap",
+      "description": "Probe a surface heightmap and apply Z-correction to G-code files for PCB milling, engraving, and other precision work.",
+      "version": "1.0.0",
+      "author": "figamore",
+      "base": "https://raw.githubusercontent.com/figamore/FigUI/main/plugins/heightmap/"
     }
   ]
 }
