@@ -74,17 +74,17 @@
           </div>
 
           <div class="param-row">
-            <span class="param-label">Safe Z</span>
+            <span class="param-label">Safe Z Height</span>
             <div class="param-controls">
-              <input class="param-input" type="number" id="p-safez" value="5" step="0.1" oninput="syncParams()">
+              <input class="param-input" type="number" id="p-safez" value="2" step="0.5" oninput="syncParams()">
               <span class="param-unit">mm</span>
             </div>
           </div>
 
           <div class="param-row">
-            <span class="param-label">Probe depth</span>
+            <span class="param-label">Max Probe Travel</span>
             <div class="param-controls">
-              <input class="param-input" type="number" id="p-depth" value="10" step="0.1" oninput="syncParams()">
+              <input class="param-input" type="number" id="p-depth" value="5" step="0.1" oninput="syncParams()">
               <span class="param-unit">mm</span>
             </div>
           </div>
@@ -100,7 +100,7 @@
           <div class="param-row">
             <span class="param-label">Interpolation</span>
             <div class="param-controls">
-              <input class="param-input narrow" type="number" id="p-interp" value="1" min="1" max="10" oninput="syncParams()">
+              <input class="param-input narrow" type="number" id="p-interp" value="4" min="1" max="10" oninput="syncParams()">
               <span class="param-unit">×</span>
             </div>
           </div>
@@ -321,7 +321,9 @@ function syncParams() {
 
 function updateGridInfo() {
   const probeTotal = params.cols * params.rows
-  const interpTotal = probeTotal * params.interpFactor * params.interpFactor
+  const interpCols = (params.cols - 1) * params.interpFactor + 1
+  const interpRows = (params.rows - 1) * params.interpFactor + 1
+  const interpTotal = interpCols * interpRows
   const dx = params.cols > 1 ? ((params.xMax - params.xMin) / (params.cols - 1)).toFixed(1) : '—'
   const dy = params.rows > 1 ? ((params.yMax - params.yMin) / (params.rows - 1)).toFixed(1) : '—'
   document.getElementById('grid-info').textContent = `${params.cols}×${params.rows} · ${probeTotal} pts · Δ${dx}×${dy} mm${params.interpFactor > 1 ? ` · interp ${params.interpFactor}× → ${interpTotal} pts` : ''}`
@@ -959,16 +961,20 @@ function buildSessionHmap() {
   
   if (params.interpFactor > 1) {
     const interpPoints = []
-    for (let r = 0; r < params.rows * params.interpFactor; r++) {
+    const interpRows = (params.rows - 1) * params.interpFactor + 1
+    const interpCols = (params.cols - 1) * params.interpFactor + 1
+    for (let r = 0; r < interpRows; r++) {
       const row = []
-      for (let c = 0; c < params.cols * params.interpFactor; c++) {
-        const r0 = Math.floor(r / params.interpFactor)
-        const c0 = Math.floor(c / params.interpFactor)
+      for (let c = 0; c < interpCols; c++) {
+        const srcR = r / params.interpFactor
+        const srcC = c / params.interpFactor
+        const r0 = Math.floor(srcR)
+        const c0 = Math.floor(srcC)
         const r1 = Math.min(r0 + 1, params.rows - 1)
         const c1 = Math.min(c0 + 1, params.cols - 1)
         
-        const fr = (r % params.interpFactor) / params.interpFactor
-        const fc = (c % params.interpFactor) / params.interpFactor
+        const fr = srcR - r0
+        const fc = srcC - c0
         
         const z00 = points[r0][c0]
         const z01 = points[r0][c1]
@@ -982,8 +988,8 @@ function buildSessionHmap() {
       interpPoints.push(row)
     }
     points = interpPoints
-    cols = params.cols * params.interpFactor
-    rows = params.rows * params.interpFactor
+    cols = interpCols
+    rows = interpRows
   }
   
   state.sessionHmap = {
@@ -1276,6 +1282,7 @@ function renderApplyResults(results) {
 
 function applyHmap(gcode, hmap) {
   const { xMin, xMax, yMin, yMax, cols, rows, points, meanZ } = hmap
+  const num = '[-+]?((\\d+(\\.\\d*)?)|(\\.\\d+))'
 
   function interp(px, py) {
     const cx = Math.max(xMin, Math.min(xMax, px))
@@ -1291,8 +1298,25 @@ function applyHmap(gcode, hmap) {
          +      ty  * ((1 - tx) * points[r1][c0] + tx * points[r1][c1])
   }
 
-  let curX = 0, curY = 0
+  function correctedZ(x, y, z) {
+    return z + interp(x, y) - meanZ
+  }
+
+  function replaceOrAppendZ(line, z) {
+    const formatted = 'Z' + z.toFixed(4)
+    if (new RegExp(`\\bZ${num}`, 'i').test(line)) {
+      return line.replace(new RegExp(`\\bZ${num}`, 'i'), formatted)
+    }
+
+    const commentIndex = line.search(/[;(]/)
+    if (commentIndex === -1) return line.trimEnd() + ' ' + formatted
+    return line.slice(0, commentIndex).trimEnd() + ' ' + formatted + ' ' + line.slice(commentIndex)
+  }
+
+  let curX = 0, curY = 0, curZ = 0
+  let hasZ = false
   let absolute = true
+  let motionMode = null
   const out = []
 
   for (const line of gcode.split('\n')) {
@@ -1301,25 +1325,38 @@ function applyHmap(gcode, hmap) {
 
     if (/\bG91\b/.test(u)) absolute = false
     else if (/\bG90\b/.test(u)) absolute = true
+    if (/\bG00?\b/.test(u)) motionMode = 'G0'
+    if (/\bG0?1\b/.test(u)) motionMode = 'G1'
+    if (/\bG0?[2-9]\b/.test(u)) motionMode = null
 
-    const xm = u.match(/X(-?\d+(?:\.\d*)?)/)
-    const ym = u.match(/Y(-?\d+(?:\.\d*)?)/)
-    const zm = u.match(/Z(-?\d+(?:\.\d*)?)/)
+    const xm = u.match(new RegExp(`\\bX(${num})`, 'i'))
+    const ym = u.match(new RegExp(`\\bY(${num})`, 'i'))
+    const zm = u.match(new RegExp(`\\bZ(${num})`, 'i'))
 
     const nx = xm ? (absolute ? parseFloat(xm[1]) : curX + parseFloat(xm[1])) : curX
     const ny = ym ? (absolute ? parseFloat(ym[1]) : curY + parseFloat(ym[1])) : curY
+    const nz = zm ? (absolute ? parseFloat(zm[1]) : curZ + parseFloat(zm[1])) : curZ
 
     if (zm) {
-      const rawZ = parseFloat(zm[1])
-      const offset = interp(nx, ny) - meanZ
-      const newZ = (rawZ + offset).toFixed(4)
-      out.push(line.replace(/Z(-?\d+(?:\.\d*)?)/i, 'Z' + newZ))
+      const newZ = absolute
+        ? correctedZ(nx, ny, nz)
+        : correctedZ(nx, ny, nz) - correctedZ(curX, curY, curZ)
+      out.push(replaceOrAppendZ(line, newZ))
+    } else if ((xm || ym) && hasZ && (motionMode === 'G0' || motionMode === 'G1')) {
+      const newZ = absolute
+        ? correctedZ(nx, ny, curZ)
+        : correctedZ(nx, ny, curZ) - correctedZ(curX, curY, curZ)
+      out.push(replaceOrAppendZ(line, newZ))
     } else {
       out.push(line)
     }
 
     curX = nx
     curY = ny
+    if (zm) {
+      curZ = nz
+      hasZ = true
+    }
   }
 
   return out.join('\n')
