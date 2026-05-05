@@ -77,6 +77,9 @@ export interface Macro {
 
 export type SidebarTab = 'files' | 'macros' | 'plugins'
 
+export type PluginLayout = 'default' | 'workspace' | 'controls' | 'full'
+export type ActiveLayout = 'mobile' | 'tablet' | 'desktop'
+
 export interface PluginManifest {
   name: string
   description?: string
@@ -84,7 +87,15 @@ export interface PluginManifest {
   version?: string
   entry?: string
   files?: string[]
-  layout?: 'default' | 'workspace' | 'controls'
+  layout?: PluginLayout
+  layoutTablet?: PluginLayout
+  layoutMobile?: PluginLayout
+}
+
+export function getEffectiveLayout(manifest: PluginManifest, activeLayout: ActiveLayout): PluginLayout {
+  if (activeLayout === 'tablet' && manifest.layoutTablet) return manifest.layoutTablet
+  if (activeLayout === 'mobile' && manifest.layoutMobile) return manifest.layoutMobile
+  return manifest.layout ?? 'default'
 }
 
 export interface Plugin {

@@ -2,7 +2,8 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import { Puzzle, RefreshCw, Upload, Store, HardDrive, Server, Trash2, Download, AlertCircle, X, CheckCircle } from 'lucide-react'
 import { discoverPlugins, uploadFolderPlugin, deletePlugin, fetchRegistry, installStorePlugin } from '../lib/plugins'
 import { PluginFrame } from './PluginFrame'
-import type { Plugin, StoreEntry } from '../types'
+import type { Plugin, StoreEntry, ActiveLayout } from '../types'
+import { getEffectiveLayout } from '../types'
 
 type Tab = 'installed' | 'store'
 type FsDest = 'local' | 'sd'
@@ -46,6 +47,12 @@ function StoragePicker({ onPick, onClose }: { onPick: (fs: FsDest) => void; onCl
   )
 }
 
+function PluginIcon({ src, size = 22 }: { src?: string; size?: number }) {
+  const [error, setError] = useState(false)
+  if (!src || error) return <Puzzle size={size} className="text-accent" />
+  return <img src={src} alt="" className="w-10 h-10 object-contain" onError={() => setError(true)} />
+}
+
 function FsBadge({ fs }: { fs: 'sd' | 'local' }) {
   return (
     <span className={`inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded text-sm font-medium border ${
@@ -59,7 +66,7 @@ function FsBadge({ fs }: { fs: 'sd' | 'local' }) {
   )
 }
 
-export function PluginLauncher({ isTablet, onLaunchPanel }: { isTablet?: boolean; onLaunchPanel?: (plugin: Plugin) => void }) {
+export function PluginLauncher({ isTablet, onLaunchPanel, activeLayout }: { isTablet?: boolean; onLaunchPanel?: (plugin: Plugin) => void; activeLayout?: ActiveLayout }) {
   const [tab, setTab] = useState<Tab>('installed')
   const [plugins, setPlugins] = useState<Plugin[]>([])
   const [scanning, setScanning] = useState(true)
@@ -256,49 +263,47 @@ export function PluginLauncher({ isTablet, onLaunchPanel }: { isTablet?: boolean
             ) : (
               <div className={`flex flex-col gap-3 ${pad}`}>
                 {plugins.map(plugin => (
-                  <div key={`${plugin.id}:${plugin.fs}`} className="panel flex items-center gap-3 p-3">
-                    <button
-                      onClick={() => plugin.manifest.layout && plugin.manifest.layout !== 'default' && onLaunchPanel ? onLaunchPanel(plugin) : setActivePlugin(plugin)}
-                      className="shrink-0 w-12 h-12 rounded-lg bg-elevated flex items-center justify-center overflow-hidden
-                                 hover:ring-2 hover:ring-accent/50 transition-all"
-                      title={`Launch ${plugin.manifest.name}`}
-                    >
-                      {plugin.manifest.icon ? (
-                        <img src={plugin.manifest.icon} alt="" className="w-10 h-10 object-contain" />
-                      ) : (
-                        <Puzzle size={22} className="text-accent" />
-                      )}
-                    </button>
-                    <button
-                      onClick={() => plugin.manifest.layout && plugin.manifest.layout !== 'default' && onLaunchPanel ? onLaunchPanel(plugin) : setActivePlugin(plugin)}
-                      className="flex-1 min-w-0 text-left hover:opacity-80 transition-opacity"
-                    >
-                      <div className="flex items-center gap-2 flex-wrap">
-                        <span className="font-medium text-text-primary text-base truncate">
+                  <div key={`${plugin.id}:${plugin.fs}`} className="panel flex flex-col gap-2 p-3">
+                    <div className="flex items-center gap-3">
+                      <button
+                        onClick={() => getEffectiveLayout(plugin.manifest, activeLayout ?? 'desktop') !== 'default' && onLaunchPanel ? onLaunchPanel(plugin) : setActivePlugin(plugin)}
+                        className="shrink-0 w-12 h-12 rounded-lg bg-elevated flex items-center justify-center overflow-hidden
+                                   hover:ring-2 hover:ring-accent/50 transition-all"
+                        title={`Launch ${plugin.manifest.name}`}
+                      >
+                        <PluginIcon src={plugin.manifest.icon} />
+                      </button>
+                      <button
+                        onClick={() => getEffectiveLayout(plugin.manifest, activeLayout ?? 'desktop') !== 'default' && onLaunchPanel ? onLaunchPanel(plugin) : setActivePlugin(plugin)}
+                        className="flex-1 min-w-0 text-left hover:opacity-80 transition-opacity"
+                      >
+                        <p className="font-medium text-text-primary text-base truncate">
                           {plugin.manifest.name}
-                        </span>
-                        {plugin.manifest.version && (
-                          <span className="text-sm text-text-dim font-mono shrink-0">
-                            v{plugin.manifest.version}
-                          </span>
-                        )}
-                        <FsBadge fs={plugin.fs} />
-                      </div>
-                      {plugin.manifest.description && (
-                        <p className="text-sm text-text-muted mt-0.5 line-clamp-2">
-                          {plugin.manifest.description}
                         </p>
-                      )}
-                    </button>
-                    <button
-                      onClick={() => setConfirmDelete(plugin)}
-                      className="shrink-0 w-7 h-7 flex items-center justify-center rounded text-text-muted
-                                 hover:text-danger hover:bg-danger/10 transition-colors border border-transparent
-                                 hover:border-danger/30"
-                      title="Uninstall plugin"
-                    >
-                      <Trash2 size={12} />
-                    </button>
+                        <div className="flex items-center gap-2 mt-0.5">
+                          {plugin.manifest.version && (
+                            <span className="text-sm text-text-dim font-mono shrink-0">
+                              v{plugin.manifest.version}
+                            </span>
+                          )}
+                          <FsBadge fs={plugin.fs} />
+                        </div>
+                      </button>
+                      <button
+                        onClick={() => setConfirmDelete(plugin)}
+                        className="shrink-0 w-7 h-7 flex items-center justify-center rounded text-text-muted
+                                   hover:text-danger hover:bg-danger/10 transition-colors border border-transparent
+                                   hover:border-danger/30"
+                        title="Uninstall plugin"
+                      >
+                        <Trash2 size={12} />
+                      </button>
+                    </div>
+                    {plugin.manifest.description && (
+                      <p className="text-sm text-text-muted">
+                        {plugin.manifest.description}
+                      </p>
+                    )}
                   </div>
                 ))}
               </div>
@@ -336,36 +341,37 @@ export function PluginLauncher({ isTablet, onLaunchPanel }: { isTablet?: boolean
                   const installing = installingId === entry.id
                   const done = justInstalled === entry.id
                   return (
-                    <div key={entry.id} className="panel flex items-start gap-3 p-3">
-                      <div className="shrink-0 w-12 h-12 rounded-lg bg-elevated flex items-center justify-center overflow-hidden">
-                        <img src={entry.base + 'icon.png'} alt="" className="w-10 h-10 object-contain"
-                          onError={e => { (e.currentTarget as HTMLImageElement).style.display = 'none' }} />
-                      </div>
-                      <div className="flex-1 min-w-0">
-                        <div className="flex items-center gap-2 flex-wrap">
-                          <span className="font-medium text-text-primary text-base truncate">
-                            {entry.name}
-                          </span>
-                          {entry.version && (
-                            <span className="text-sm text-text-dim font-mono shrink-0">
-                              v{entry.version}
-                            </span>
-                          )}
-                          {entry.author && (
-                            <span className="text-sm text-text-dim shrink-0">by {entry.author}</span>
-                          )}
+                    <div key={entry.id} className="panel flex flex-col gap-2 p-3">
+                      <div className="flex items-center gap-3">
+                        <div className="shrink-0 w-12 h-12 rounded-lg bg-elevated flex items-center justify-center overflow-hidden">
+                          <PluginIcon src={entry.base + 'icon.png'} />
                         </div>
-                        {entry.description && (
-                          <p className="text-sm text-text-muted mt-0.5 line-clamp-2">{entry.description}</p>
-                        )}
+                        <div className="flex-1 min-w-0">
+                          <p className="font-medium text-text-primary text-base truncate">
+                            {entry.name}
+                          </p>
+                          <div className="flex items-center gap-2 mt-0.5">
+                            {entry.version && (
+                              <span className="text-sm text-text-dim font-mono shrink-0">
+                                v{entry.version}
+                              </span>
+                            )}
+                            {entry.author && (
+                              <span className="text-sm text-text-dim shrink-0">by {entry.author}</span>
+                            )}
+                          </div>
+                        </div>
                       </div>
-                      <div className="shrink-0">
+                      {entry.description && (
+                        <p className="text-sm text-text-muted">{entry.description}</p>
+                      )}
+                      <div>
                         {done ? (
-                          <span className="flex items-center gap-1 text-sm text-ok font-medium px-2">
+                          <span className="flex items-center gap-1 text-sm text-ok font-medium">
                             <CheckCircle size={12} /> Done
                           </span>
                         ) : installed ? (
-                          <span className="flex items-center gap-1 text-sm text-text-dim px-2 py-1.5 rounded border border-border">
+                          <span className="inline-flex items-center gap-1 text-sm text-text-dim px-2 py-1.5 rounded border border-border">
                             <CheckCircle size={11} /> Installed
                           </span>
                         ) : (

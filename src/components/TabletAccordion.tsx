@@ -7,8 +7,15 @@ import { Terminal } from './Terminal'
 import { ProbePanel } from './ProbePanel'
 import { OverridesPanel, SpindlePanel } from './JogPad'
 import { PluginLauncher } from './PluginLauncher'
+import type { Plugin } from '../types'
 
-export function TabletAccordion({ tabletTab, setTabletTab }: { tabletTab: string; setTabletTab: (s: any) => void }) {
+interface TabletAccordionProps {
+  tabletTab: string
+  setTabletTab: (s: any) => void
+  onLaunchPanel?: (plugin: Plugin) => void
+}
+
+export function TabletAccordion({ tabletTab, setTabletTab, onLaunchPanel }: TabletAccordionProps) {
   const [expanded, setExpanded] = useState<'visualizer' | 'controls'>('visualizer')
   const [portraitTab, setPortraitTab] = useState<string>('viewer')
 
@@ -73,7 +80,7 @@ export function TabletAccordion({ tabletTab, setTabletTab }: { tabletTab: string
                 <OverridesPanel className="border-none shadow-none p-0" isTablet />
               </div>
             )}
-            {portraitTab === 'plugins'   && <PluginLauncher isTablet />}
+            {portraitTab === 'plugins'   && <PluginLauncher isTablet onLaunchPanel={onLaunchPanel} activeLayout="tablet" />}
           </div>
         </div>
 
@@ -122,7 +129,7 @@ export function TabletAccordion({ tabletTab, setTabletTab }: { tabletTab: string
                 {tabletTab === 'files'    && <FileManager isTablet />}
                 {tabletTab === 'macros'   && <Macros isTablet />}
                 {tabletTab === 'terminal' && <Terminal />}
-                {tabletTab === 'plugins'  && <PluginLauncher isTablet />}
+                {tabletTab === 'plugins'  && <PluginLauncher isTablet onLaunchPanel={onLaunchPanel} activeLayout="tablet" />}
               </div>
             </div>
           )}

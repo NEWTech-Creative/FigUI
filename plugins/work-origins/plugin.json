@@ -4,5 +4,6 @@
   "version": "1.0.0",
   "entry": "index.html",
   "icon": "icon.png",
+  "layout": "workspace",
   "files": ["index.html", "style.css", "icon.png"]
 }

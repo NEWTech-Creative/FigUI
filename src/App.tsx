@@ -22,7 +22,8 @@ import { AboutModal } from './components/AboutModal'
 import { JobControl } from './components/JobControl'
 import { PluginLauncher } from './components/PluginLauncher'
 import { WifiOff, RefreshCw, Crosshair, Monitor, FolderOpen, TerminalSquare, AlertTriangle } from 'lucide-react'
-import type { Plugin, SidebarTab } from './types'
+import type { Plugin, SidebarTab, ActiveLayout } from './types'
+import { getEffectiveLayout } from './types'
 import { PluginFrame } from './components/PluginFrame'
 
 const SIDEBAR_TABS: { id: SidebarTab; label: string }[] = [
@@ -35,7 +36,6 @@ type MobilePanel = 'control' | 'viewer' | 'right' | 'terminal'
 type TabletRightTab = 'viewer' | 'files' | 'macros' | 'terminal'
 
 type Phase = 'connecting' | 'error' | 'ready'
-type ActiveLayout = 'mobile' | 'tablet' | 'desktop'
 
 function useActiveLayout(layoutMode: 'auto' | 'tablet' | 'desktop'): ActiveLayout {
   const [width, setWidth] = useState(() =>
@@ -86,11 +86,14 @@ export function App() {
   const [tabletTab,   setTabletTab]       = useState<TabletRightTab>('viewer')
   const [workspacePlugin, setWorkspacePlugin] = useState<Plugin | null>(null)
   const [controlsPlugin,  setControlsPlugin]  = useState<Plugin | null>(null)
+  const [fullPlugin,      setFullPlugin]      = useState<Plugin | null>(null)
 
   const handleLaunchPanel = useCallback((plugin: Plugin) => {
-    if (plugin.manifest.layout === 'workspace') setWorkspacePlugin(plugin)
-    else if (plugin.manifest.layout === 'controls') setControlsPlugin(plugin)
-  }, [])
+    const layout = getEffectiveLayout(plugin.manifest, activeLayout)
+    if (layout === 'workspace') setWorkspacePlugin(plugin)
+    else if (layout === 'controls') setControlsPlugin(plugin)
+    else if (layout === 'full') setFullPlugin(plugin)
+  }, [activeLayout])
 
   const reconnectTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
   const stableConnectTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
@@ -444,7 +447,15 @@ export function App() {
       />
 
 
-      {activeLayout === 'mobile' && <div className="flex flex-col">
+      {fullPlugin && (
+        <div className="flex-1 min-h-0 flex flex-col overflow-hidden p-3">
+          <div className="panel flex flex-col flex-1 min-h-0 overflow-hidden">
+            <PluginFrame plugin={fullPlugin} onClose={() => setFullPlugin(null)} inline />
+          </div>
+        </div>
+      )}
+
+      {!fullPlugin && activeLayout === 'mobile' && <div className="flex flex-col">
         {mobilePanel === 'control' && (
           <div className="flex flex-col gap-3 p-3 pb-20">
             <DRO />
@@ -480,7 +491,7 @@ export function App() {
         )}
       </div>}
 
-      {activeLayout === 'mobile' && <nav className="fixed bottom-0 left-0 right-0 z-40 h-16 bg-surface border-t border-border flex items-stretch">
+      {!fullPlugin && activeLayout === 'mobile' && <nav className="fixed bottom-0 left-0 right-0 z-40 h-16 bg-surface border-t border-border flex items-stretch">
         {([
           { id: 'control'  as MobilePanel, Icon: Crosshair,    label: 'Control' },
           { id: 'viewer'   as MobilePanel, Icon: Monitor,      label: 'Viewer'  },
@@ -502,18 +513,38 @@ export function App() {
       </nav>}
 
 
-      {activeLayout === 'tablet' && <div className="flex-1 min-h-[0px] flex portrait:flex-col landscape:flex landscape:flex-row gap-3 p-3 overflow-y-auto landscape:overflow-hidden">
-  
-  <div className="flex flex-col gap-1 portrait:shrink-0 landscape:flex-1 landscape:basis-1/2 landscape:min-h-0 landscape:overflow-hidden">
-    <DRO isTablet />
-    <TabletJogPad />
-  </div>
+      {!fullPlugin && activeLayout === 'tablet' && !workspacePlugin && !controlsPlugin && (
+        <div className="flex-1 min-h-[0px] flex portrait:flex-col landscape:flex landscape:flex-row gap-3 p-3 overflow-y-auto landscape:overflow-hidden">
+          <div className="flex flex-col gap-1 portrait:shrink-0 landscape:flex-1 landscape:basis-1/2 landscape:min-h-0 landscape:overflow-hidden">
+            <DRO isTablet />
+            <TabletJogPad />
+          </div>
+          <TabletAccordion tabletTab={tabletTab} setTabletTab={setTabletTab} onLaunchPanel={handleLaunchPanel} />
+        </div>
+      )}
 
-  <TabletAccordion tabletTab={tabletTab} setTabletTab={setTabletTab} />
+      {!fullPlugin && activeLayout === 'tablet' && workspacePlugin && (
+        <div className="flex-1 min-h-[0px] flex portrait:flex-col landscape:flex-row gap-3 p-3 overflow-y-auto landscape:overflow-hidden">
+          <div className="flex flex-col gap-1 portrait:shrink-0 landscape:flex-1 landscape:basis-1/2 landscape:min-h-0 landscape:overflow-hidden">
+            <DRO isTablet />
+            <TabletJogPad />
+          </div>
+          <div className="panel flex flex-col landscape:flex-1 landscape:basis-1/2 landscape:min-h-0 portrait:min-h-[55vh] landscape:overflow-hidden">
+            <PluginFrame plugin={workspacePlugin} onClose={() => setWorkspacePlugin(null)} inline />
+          </div>
+        </div>
+      )}
 
-</div>}
+      {!fullPlugin && activeLayout === 'tablet' && controlsPlugin && (
+        <div className="flex-1 min-h-[0px] flex portrait:flex-col landscape:flex-row gap-3 p-3 overflow-y-auto landscape:overflow-hidden">
+          <div className="panel flex flex-col portrait:shrink-0 landscape:flex-1 landscape:basis-1/2 landscape:min-h-0 portrait:min-h-[55vh] landscape:overflow-hidden">
+            <PluginFrame plugin={controlsPlugin} onClose={() => setControlsPlugin(null)} inline />
+          </div>
+          <TabletAccordion tabletTab={tabletTab} setTabletTab={setTabletTab} onLaunchPanel={handleLaunchPanel} />
+        </div>
+      )}
 
-{activeLayout === 'desktop' && !workspacePlugin && !controlsPlugin && <div className="flex-1 min-h-0 grid grid-cols-[380px_1fr_340px] gap-3 p-3 overflow-hidden">
+{!fullPlugin && activeLayout === 'desktop' && !workspacePlugin && !controlsPlugin && <div className="flex-1 min-h-0 grid grid-cols-[380px_1fr_340px] gap-3 p-3 overflow-hidden">
 
         {/* Left: DRO + jog controls */}
         <div className="flex flex-col gap-3 min-h-0 overflow-y-auto">
@@ -534,7 +565,7 @@ export function App() {
             <div className="flex-1 min-h-0 overflow-hidden">
               {sidebarTab === 'files'   && <FileManager />}
               {sidebarTab === 'macros'  && <Macros />}
-              {sidebarTab === 'plugins' && <PluginLauncher onLaunchPanel={handleLaunchPanel} />}
+              {sidebarTab === 'plugins' && <PluginLauncher onLaunchPanel={handleLaunchPanel} activeLayout={activeLayout} />}
             </div>
           </div>
 
@@ -546,7 +577,7 @@ export function App() {
       </div>}
 
       {/* workspace layout: plugin takes center + right, DRO/JogPad stays on left */}
-      {activeLayout === 'desktop' && workspacePlugin && <div className="flex-1 min-h-0 grid grid-cols-[380px_1fr] gap-3 p-3 overflow-hidden">
+      {!fullPlugin && activeLayout === 'desktop' && workspacePlugin && <div className="flex-1 min-h-0 grid grid-cols-[380px_1fr] gap-3 p-3 overflow-hidden">
 
         <div className="flex flex-col gap-3 min-h-0 overflow-y-auto">
           <DRO />
@@ -559,7 +590,7 @@ export function App() {
 
       </div>}
 
-      {activeLayout === 'desktop' && controlsPlugin && <div className="flex-1 min-h-0 grid grid-cols-[380px_1fr_340px] gap-3 p-3 overflow-hidden">
+      {!fullPlugin && activeLayout === 'desktop' && controlsPlugin && <div className="flex-1 min-h-0 grid grid-cols-[380px_1fr_340px] gap-3 p-3 overflow-hidden">
 
         <div className="panel flex flex-col min-h-0 overflow-hidden">
           <PluginFrame plugin={controlsPlugin} onClose={() => setControlsPlugin(null)} inline />
@@ -576,7 +607,7 @@ export function App() {
             <div className="flex-1 min-h-0 overflow-hidden">
               {sidebarTab === 'files'   && <FileManager />}
               {sidebarTab === 'macros'  && <Macros />}
-              {sidebarTab === 'plugins' && <PluginLauncher onLaunchPanel={handleLaunchPanel} />}
+              {sidebarTab === 'plugins' && <PluginLauncher onLaunchPanel={handleLaunchPanel} activeLayout={activeLayout} />}
             </div>
           </div>
           <div className="panel flex flex-col min-h-[200px] flex-1 overflow-hidden">
