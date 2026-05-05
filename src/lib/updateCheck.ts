@@ -1,4 +1,4 @@
-export const CURRENT_VERSION = '1.0.9'
+export const CURRENT_VERSION = '1.1.1'
 export const GITHUB_REPO = 'figamore/FigUI'
 export const DISMISSED_VERSION_KEY = 'dismissed_update_version'
 

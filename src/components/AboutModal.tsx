@@ -120,6 +120,24 @@ export function AboutModal({ onClose }: Props) {
     return () => window.removeEventListener('keydown', onKey)
   }, [onClose])
 
+  useEffect(() => {
+    if (!pendingUpdateVersion || releaseNotes) return
+
+    let cancelled = false
+    fetch(`https://api.github.com/repos/${GITHUB_REPO}/releases/latest`)
+      .then(res => res.ok ? res.json() : null)
+      .then((data: { tag_name?: string; body?: string } | null) => {
+        if (cancelled || !data) return
+        const version = (data.tag_name ?? '').replace(/^v/, '')
+        if (version !== pendingUpdateVersion) return
+        setLatestVersion(version)
+        setReleaseNotes(data.body ?? '')
+      })
+      .catch(() => {})
+
+    return () => { cancelled = true }
+  }, [pendingUpdateVersion, releaseNotes])
+
   async function checkForUpdates() {
     setUpdateState('checking')
     setUpdateError('')
