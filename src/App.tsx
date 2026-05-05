@@ -132,9 +132,12 @@ export function App() {
     const info = parseESP800(raw)
     const wsComm = info['webcommunication']?.trim() ?? ''
     const parts  = wsComm.split(':')
+    const asyncMode = parts[0]?.trim() === 'Async'
     const wsPort = parts[1]?.trim() ?? '80'
     const wsIp   = parts[2]?.trim() ?? httpHost.split(':')[0]
-    const wsHost = wsPort === '80' ? wsIp : `${wsIp}:${wsPort}`
+    const wsHost = asyncMode
+      ? `${httpHost}/ws`
+      : wsPort === '80' ? wsIp : `${wsIp}:${wsPort}`
     cachedWsHost.current = wsHost
     cachedHostFailures.current = 0
     // Only refresh ESP info on a fresh probe.
@@ -143,7 +146,7 @@ export function App() {
       version:        info['FW version']?.trim()     ?? '',
       hostname:       info['hostname']?.trim()        ?? httpHost,
       authentication: info['authentication']?.trim()  === 'yes',
-      asyncMode:      parts[0]?.trim()               === 'Async',
+      asyncMode,
       wsPort:         parseInt(wsPort, 10),
       wsIp,
       axes:           isNaN(axes) ? 3 : axes,

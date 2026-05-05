@@ -337,10 +337,10 @@ function parseToolpath(content) {
   for (const line of content.split('\n')) {
     const s = line.replace(/;.*$/, '').replace(/\(.*?\)/g, '').toUpperCase().trim()
     if (!s || s[0] === '%') continue
-    if (/\bG91\b/.test(s)) abs = false
-    else if (/\bG90\b/.test(s)) abs = true
-    if (/\bG00?\b/.test(s)) isCut = false   // G0 or G00
-    if (/\bG0?1\b/.test(s)) isCut = true    // G1 or G01
+    if (/(?<![A-Z])G91(?![0-9])/.test(s)) abs = false
+    else if (/(?<![A-Z])G90(?![0-9])/.test(s)) abs = true
+    if (/(?<![A-Z])G00?(?![0-9])/.test(s)) isCut = false
+    if (/(?<![A-Z])G0?1(?![0-9])/.test(s)) isCut = true
     const xm = s.match(/X(-?\d+(?:\.\d*)?)/)
     const ym = s.match(/Y(-?\d+(?:\.\d*)?)/)
     if (!xm && !ym) continue
@@ -1118,8 +1118,8 @@ function detectBounds(gcode) {
   let isCut = false
   for (const line of gcode.split('\n')) {
     const s = line.replace(/;.*$/, '').replace(/\(.*?\)/g, '').toUpperCase()
-    if (/\bG00?\b/.test(s)) isCut = false
-    if (/\bG0?1\b/.test(s)) isCut = true
+    if (/(?<![A-Z])G00?(?![0-9])/.test(s)) isCut = false
+    if (/(?<![A-Z])G0?1(?![0-9])/.test(s)) isCut = true
     if (!isCut) continue  // ignore rapid moves for bounds (avoids tool-change positions skewing the range)
     const xm = s.match(/X(-?\d+(?:\.\d*)?)/)
     const ym = s.match(/Y(-?\d+(?:\.\d*)?)/)
@@ -1304,8 +1304,8 @@ function applyHmap(gcode, hmap) {
 
   function replaceOrAppendZ(line, z) {
     const formatted = 'Z' + z.toFixed(4)
-    if (new RegExp(`\\bZ${num}`, 'i').test(line)) {
-      return line.replace(new RegExp(`\\bZ${num}`, 'i'), formatted)
+    if (new RegExp(`(?<![A-Za-z])Z${num}`, 'i').test(line)) {
+      return line.replace(new RegExp(`(?<![A-Za-z])Z${num}`, 'i'), formatted)
     }
 
     const commentIndex = line.search(/[;(]/)
@@ -1323,15 +1323,15 @@ function applyHmap(gcode, hmap) {
     const s = line.replace(/;.*$/, '').replace(/\(.*?\)/g, '')
     const u = s.toUpperCase()
 
-    if (/\bG91\b/.test(u)) absolute = false
-    else if (/\bG90\b/.test(u)) absolute = true
-    if (/\bG00?\b/.test(u)) motionMode = 'G0'
-    if (/\bG0?1\b/.test(u)) motionMode = 'G1'
-    if (/\bG0?[2-9]\b/.test(u)) motionMode = null
+    if (/(?<![A-Z])G91(?![0-9])/.test(u)) absolute = false
+    else if (/(?<![A-Z])G90(?![0-9])/.test(u)) absolute = true
+    if (/(?<![A-Z])G00?(?![0-9])/.test(u)) motionMode = 'G0'
+    if (/(?<![A-Z])G0?1(?![0-9])/.test(u)) motionMode = 'G1'
+    if (/(?<![A-Z])G0?[2-9](?![0-9])/.test(u)) motionMode = null
 
-    const xm = u.match(new RegExp(`\\bX(${num})`, 'i'))
-    const ym = u.match(new RegExp(`\\bY(${num})`, 'i'))
-    const zm = u.match(new RegExp(`\\bZ(${num})`, 'i'))
+    const xm = u.match(new RegExp(`(?<![A-Z])X(${num})`))
+    const ym = u.match(new RegExp(`(?<![A-Z])Y(${num})`))
+    const zm = u.match(new RegExp(`(?<![A-Z])Z(${num})`))
 
     const nx = xm ? (absolute ? parseFloat(xm[1]) : curX + parseFloat(xm[1])) : curX
     const ny = ym ? (absolute ? parseFloat(ym[1]) : curY + parseFloat(ym[1])) : curY

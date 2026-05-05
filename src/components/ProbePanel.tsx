@@ -59,7 +59,7 @@ export function ProbePanel({ isTablet }: { isTablet?: boolean }) {
   const [probeFeed, setProbeFeed] = usePersisted('probe.feed', 100)
   const [maxTravel, setMaxTravel] = usePersisted('probe.travel', 50)
   const [retract, setRetract]     = usePersisted('probe.retract', 3)
-  const [plateThick, setPlateThick] = usePersisted('probe.plate', 0.8)
+  const [plateThick, setPlateThick] = usePersisted('probe.plate', 0)
 
   const status = useMachineStore(s => s.status)
   const units = useMachineStore(s => s.units)

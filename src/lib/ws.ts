@@ -162,8 +162,9 @@ export function connect(host: string): Promise<void> {
     const myGen = generation
 
     let ws: WebSocket
+    const url = host.includes('/') ? `ws://${host}` : `ws://${host}/`
     try {
-      ws = new WebSocket(`ws://${host}/`, 'arduino')
+      ws = new WebSocket(url, 'arduino')
     } catch (e) {
       reject(e instanceof Error ? e : new Error('WebSocket constructor failed'))
       return
@@ -222,7 +223,7 @@ export function connect(host: string): Promise<void> {
         settled = true
         clearTimeout(openTimeout)
         try { ws.close() } catch { /* noop */ }
-        reject(new Error(`WebSocket error connecting to ws://${host}/`))
+        reject(new Error(`WebSocket error connecting to ${url}`))
       }
     }
 
