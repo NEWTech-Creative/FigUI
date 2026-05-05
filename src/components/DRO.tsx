@@ -4,6 +4,7 @@ import { useMachineStore, activePosition } from '../store'
 import { sendRaw, sendRealtime, sendSilentAlarmQuery } from '../lib/ws'
 import { jogFeedKeyForAxis, loadPersistedJogFeed } from '../lib/jog'
 import { droFeedUnitLabel, formatAxisCoord, formatFeedRate } from '../lib/units'
+import type { MachineState } from '../types'
 
 const ALARM_MESSAGES: Record<number, string> = {
   1: 'Hard limit triggered',
@@ -38,6 +39,7 @@ type PendingAxisAction = {
 }
 
 const MOTION_STATES = new Set(['Jog', 'Hold', 'Home'])
+const E_STOP_HIDE_DELAY_MS = 1500
 
 function useIsPortrait() {
   const [portrait, setPortrait] = useState(() =>
@@ -50,6 +52,22 @@ function useIsPortrait() {
     return () => mq.removeEventListener('change', handler)
   }, [])
   return portrait
+}
+
+function useMotionControlLock(state: MachineState) {
+  const [locked, setLocked] = useState(() => state === 'Run' || state === 'Hold')
+
+  useEffect(() => {
+    if (state === 'Run' || state === 'Hold') {
+      setLocked(true)
+      return
+    }
+
+    const timeoutId = window.setTimeout(() => setLocked(false), E_STOP_HIDE_DELAY_MS)
+    return () => window.clearTimeout(timeoutId)
+  }, [state])
+
+  return locked
 }
 
 export function DRO({ isTablet = false }: { isTablet?: boolean }) {
@@ -80,7 +98,7 @@ export function DRO({ isTablet = false }: { isTablet?: boolean }) {
   }
 
   const visibleAxes = AXES.slice(0, axes)
-  const isJobActive = status.state === 'Run' || status.state === 'Hold'
+  const isJobActive = useMotionControlLock(status.state)
   const isPendingAxisActionInMotion = pendingAxisAction !== null && (pendingAxisActionStarted || status.state === 'Home')
   const shouldHideMotionControls = isJobActive && pendingAxisAction === null
   const areAxisButtonsDisabled = pendingAxisAction !== null

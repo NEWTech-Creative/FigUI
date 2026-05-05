@@ -267,8 +267,8 @@ export function PluginLauncher({ isTablet, onLaunchPanel, activeLayout }: { isTa
                     <div className="flex items-center gap-3">
                       <button
                         onClick={() => getEffectiveLayout(plugin.manifest, activeLayout ?? 'desktop') !== 'default' && onLaunchPanel ? onLaunchPanel(plugin) : setActivePlugin(plugin)}
-                        className="shrink-0 w-12 h-12 rounded-lg bg-elevated flex items-center justify-center overflow-hidden
-                                   hover:ring-2 hover:ring-accent/50 transition-all"
+                        className="shrink-0 w-12 h-12 flex items-center justify-center overflow-hidden
+                                   hover:opacity-80 transition-opacity"
                         title={`Launch ${plugin.manifest.name}`}
                       >
                         <PluginIcon src={plugin.manifest.icon} />
@@ -343,7 +343,7 @@ export function PluginLauncher({ isTablet, onLaunchPanel, activeLayout }: { isTa
                   return (
                     <div key={entry.id} className="panel flex flex-col gap-2 p-3">
                       <div className="flex items-center gap-3">
-                        <div className="shrink-0 w-12 h-12 rounded-lg bg-elevated flex items-center justify-center overflow-hidden">
+                        <div className="shrink-0 w-12 h-12 flex items-center justify-center overflow-hidden">
                           <PluginIcon src={entry.base + 'icon.png'} />
                         </div>
                         <div className="flex-1 min-w-0">

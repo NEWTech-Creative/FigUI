@@ -4,7 +4,7 @@ import { useMachineStore } from '../store'
 import { loadPersistedJogFeed } from '../lib/jog'
 import { sendRaw, sendRealtime } from '../lib/ws'
 import { setLocalJogActive } from '../lib/jogWatchdog'
-import type { Units } from '../types'
+import type { MachineState, Units } from '../types'
 import {
   axisStepToCommand,
   displayToMm,
@@ -20,6 +20,7 @@ const RADII = [22, 40, 56, 74, 94] as const
 const CONTINUOUS_DISTANCE = 10000
 const MM_FEED_PRESETS = [50, 100, 200, 500, 1000, 2000, 3000] as const
 const IN_FEED_PRESETS = [5, 10, 20, 50, 100, 200, 300] as const
+const JOB_HIDE_DELAY_MS = 1500
 
 const RING_OPACITY = [0.12, 0.22, 0.35, 0.50]
 
@@ -35,6 +36,22 @@ const AX_HOVER: Record<string, string> = {
 
 function sendJogCancel() {
   sendRealtime(0x85)
+}
+
+function useJobRunningWithLinger(state: MachineState) {
+  const [running, setRunning] = useState(() => state === 'Run' || state === 'Hold')
+
+  useEffect(() => {
+    if (state === 'Run' || state === 'Hold') {
+      setRunning(true)
+      return
+    }
+
+    const timeoutId = window.setTimeout(() => setRunning(false), JOB_HIDE_DELAY_MS)
+    return () => window.clearTimeout(timeoutId)
+  }, [state])
+
+  return running
 }
 
 /** Always capture pointer to prevent drift issues on mobile */
@@ -593,7 +610,7 @@ export function JogPad() {
   const prevUnitsRef = useRef(units)
 
   const canJog = status.state === 'Idle' || status.state === 'Jog'
-  const jobRunning = status.state === 'Run' || status.state === 'Hold'
+  const jobRunning = useJobRunningWithLinger(status.state)
   const zSteps = linearBarSteps(units)
   const xyFeedMax = controllerSettings.maxRateX != null && controllerSettings.maxRateY != null
     ? Math.min(controllerSettings.maxRateX, controllerSettings.maxRateY)
@@ -1185,7 +1202,7 @@ export function TabletJogPad() {
   }, [zFeedMax])
 
   const canJog = status.state === 'Idle' || status.state === 'Jog'
-  const jobRunning = status.state === 'Run' || status.state === 'Hold'
+  const jobRunning = useJobRunningWithLinger(status.state)
 
   const { start: startYp, stop: stopYp } = useHoldJog('Y', 1, xyFeed, stepSize, continuous, !canJog)
   const { start: startYm, stop: stopYm } = useHoldJog('Y', -1, xyFeed, stepSize, continuous, !canJog)
@@ -1365,4 +1382,3 @@ export function TabletJogPad() {
     </>
   )
 }
-

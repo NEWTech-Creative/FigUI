@@ -9,7 +9,6 @@
 <body>
 
 <div class="header">
-  <span class="header-title">Heightmap</span>
   <div class="tab-group">
     <button class="tab active" id="tab-probe" onclick="switchTab('probe')">Probe</button>
     <button class="tab" id="tab-apply" onclick="switchTab('apply')">Apply</button>
@@ -137,9 +136,9 @@
           <span class="save-name-ext">.hmap</span>
         </div>
         <div class="save-bar-actions">
+          <button class="danger-btn" id="discard-btn" onclick="discardProbing()" style="display:none">Discard</button>
           <button class="secondary-btn" id="save-to-sd-btn" onclick="saveHeightmap()">Save to SD</button>
           <button class="primary-btn" onclick="useAndApply()">Use &amp; Apply →</button>
-          <button class="danger-btn" id="discard-btn" onclick="discardProbing()" style="display:none">Discard</button>
         </div>
       </div>
 
@@ -889,7 +888,9 @@ async function startProbing() {
     const nameInput = document.getElementById('save-name-input')
     if (nameInput && !nameInput.value) nameInput.value = defaultHmapStem()
     document.getElementById('discard-btn').style.display = ''
-    document.getElementById('save-bar').style.display = ''
+    const saveBar = document.getElementById('save-bar')
+    saveBar.style.display = ''
+    revealSaveActions(saveBar)
 
     toast('Probing complete', 'ok')
   }
@@ -931,6 +932,13 @@ function discardProbing() {
 function setProgress(done, total) {
   document.getElementById('progress-fill').style.width = `${(done / total * 100).toFixed(1)}%`
   document.getElementById('progress-label').textContent = `${done} / ${total}`
+}
+
+function revealSaveActions(saveBar) {
+  if (!saveBar) return
+  requestAnimationFrame(() => {
+    saveBar.scrollIntoView({ block: 'end', inline: 'nearest' })
+  })
 }
 
 function buildSessionHmap() {
