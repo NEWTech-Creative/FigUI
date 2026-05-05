@@ -8,6 +8,12 @@ Plugins are self-contained HTML files that run inside FigUI and can communicate 
 
 - [Plugin structure](#plugin-structure)
 - [plugin.json](#pluginjson)
+- [Layout modes](#layout-modes)
+  - [default (floating window)](#default-floating-window)
+  - [workspace](#workspace)
+  - [controls](#controls)
+  - [full](#full)
+  - [Responsive overrides](#responsive-overrides)
 - [Theme](#theme)
   - [Available variables](#available-variables)
 - [API](#api)
@@ -68,7 +74,9 @@ my-plugin/
 | `version` | No | Shown as a small badge (e.g. `v1.0.0`) |
 | `entry` | No | Entry HTML file. Defaults to `index.html` |
 | `icon` | No | Icon image filename. Recommended size: **48×48 px**. Must be `icon.png` for store submissions. |
-| `layout` | No | Controls how the plugin is embedded in the UI instead of opening as a floating window. `"workspace"` gives the plugin the center + right area (replacing the G-code viewer and file manager), keeping the DRO and jog controls visible on the left. `"controls"` gives the plugin the left column (replacing the DRO and jog controls), keeping the G-code viewer and file manager visible. `"full"` gives the plugin the entire content area below the header, hiding all other UI. Omit or use `"default"` for the standard floating window. |
+| `layout` | No | How the plugin is embedded in the UI. One of `"default"`, `"workspace"`, `"controls"`, `"full"`. Omit for the standard floating window. See [Layout modes](#layout-modes). |
+| `layoutTablet` | No | Layout override for tablet screens. See [Responsive overrides](#responsive-overrides). |
+| `layoutMobile` | No | Layout override for mobile screens. See [Responsive overrides](#responsive-overrides). |
 | `files` | No | List of files to download when installing from the store. If omitted, only `entry` and `icon` are fetched. **Required if you have additional assets** (e.g. `style.css`). |
 
 Example with a stylesheet:
@@ -81,6 +89,77 @@ Example with a stylesheet:
   "files": ["index.html", "style.css", "icon.png"]
 }
 ```
+
+---
+
+## Layout modes
+
+Set the `layout` field in `plugin.json` to control how your plugin is embedded in the UI. Omitting `layout` (or setting it to `"default"`) opens the plugin as a floating window.
+
+### default (floating window)
+
+The plugin opens as a draggable, resizable floating panel on top of the main UI. All standard UI elements remain visible and usable behind it. Best for tools that need to be referenced alongside the normal workflow — overlays, quick calculators, status displays.
+
+```json
+{ "layout": "default" }
+```
+
+
+---
+
+### workspace
+
+The plugin takes the **center and right area** of the layout, replacing the G-code viewer and file manager. The DRO, jog controls, and machine status remain visible on the left. Use this for tools that need a large canvas but still benefit from the DRO being accessible — heightmap probing, toolpath editors, camera views.
+
+```json
+{ "layout": "workspace" }
+```
+
+![Layout Workspace](../docs/screenshots/plugin-layouts/layout-workspace.png) 
+
+---
+
+### controls
+
+The plugin takes the **left column**, replacing the DRO and jog controls. The G-code viewer and file manager remain visible on the right. Use this for plugins that provide their own motion controls or machine-state UI and don't need the standard jog interface.
+
+```json
+{ "layout": "controls" }
+```
+
+![Layout Workspace](../docs/screenshots/plugin-layouts/layout-controls.png) 
+
+---
+
+### full
+
+The plugin takes the **entire content area** below the header, hiding all other UI elements. Use this for immersive tools that manage their own navigation — setup wizards, full-screen viewers, configuration editors.
+
+```json
+{ "layout": "full" }
+```
+
+![Layout Workspace](../docs/screenshots/plugin-layouts/layout-full.png) 
+
+---
+
+### Responsive overrides
+
+Use `layoutTablet` and `layoutMobile` to switch layout modes based on screen size. The base `layout` field is used for desktop and as the fallback for any size not explicitly overridden.
+
+```json
+{
+  "layout": "workspace",
+  "layoutTablet": "full",
+  "layoutMobile": "full"
+}
+```
+
+| Field | Applies when |
+|---|---|
+| `layout` | Desktop, and any size without a specific override |
+| `layoutTablet` | Tablet-sized screens |
+| `layoutMobile` | Mobile-sized screens |
 
 ---
 
@@ -364,7 +443,7 @@ Copy the plugin folder to `/plugins/` on internal storage or `/sd/plugins/` on S
 
 Once merged, your plugin appears in the store for all FigUI users.
 
-> **Store requirements:** PRs without a 48×48 `icon.png` will be rejected. Please ensure icons are your own work and not copyrighted.
+> **Store requirements:** Low-effort plugins that don't add much value or PRs without a 48×48 `icon.png` will be rejected. Please ensure icons are your own work and not copyrighted.
 
 ---
 
