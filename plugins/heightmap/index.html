@@ -289,6 +289,8 @@ const state = {
   sessionHmap: null,
   activeHmap: null,
   sourceGcodeFile: null,
+  loadingGcodeFile: false,
+  gcodeLoadToken: 0,
   savedHmapFile: null,
   applyFiles: new Set(),
   // Zoom and pan state
@@ -801,6 +803,11 @@ function setProbeInputsDisabled(disabled) {
 }
 
 async function startProbing() {
+  if (state.loadingGcodeFile) {
+    toast('Wait for the G-code file to finish loading', 'warn')
+    return
+  }
+
   syncParams()
   if (params.xMax <= params.xMin) { toast('X max must be greater than X min', 'err'); return }
   if (params.yMax <= params.yMin) { toast('Y max must be greater than Y min', 'err'); return }
@@ -1059,6 +1066,13 @@ async function onPickFile(id, name) {
 }
 
 async function loadGCodeFile(name) {
+  const loadToken = ++state.gcodeLoadToken
+  state.loadingGcodeFile = true
+  const startBtn = document.getElementById('start-btn')
+  if (startBtn) {
+    startBtn.disabled = true
+    startBtn.textContent = 'Loading File…'
+  }
   document.getElementById('gcode-name').className = 'no-name'
   document.getElementById('gcode-name').textContent = 'Loading…'
   document.getElementById('gcode-picker').style.display = 'none'
@@ -1082,6 +1096,14 @@ async function loadGCodeFile(name) {
     drawCanvas()
   } catch (err) {
     document.getElementById('gcode-name').textContent = 'Error: ' + err.message
+  } finally {
+    if (loadToken === state.gcodeLoadToken) {
+      state.loadingGcodeFile = false
+      if (startBtn) {
+        startBtn.disabled = false
+        startBtn.textContent = 'Start Probing'
+      }
+    }
   }
 }
 

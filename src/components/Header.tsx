@@ -79,7 +79,7 @@ export function Header({ onSettingsClick, onAboutClick, isTablet }: Props) {
               style={{ width: `${status.sdPercent}%` }}
             />
           </div>
-          <span className="font-mono">{status.sdPercent}%</span>
+          <span className="w-9 text-right font-mono tabular-nums">{status.sdPercent}%</span>
           <span className="text-text-dim truncate max-w-32">{status.sdFilename}</span>
         </div>
       )}

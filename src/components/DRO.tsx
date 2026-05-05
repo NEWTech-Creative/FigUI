@@ -39,7 +39,7 @@ type PendingAxisAction = {
 }
 
 const MOTION_STATES = new Set(['Jog', 'Hold', 'Home'])
-const E_STOP_HIDE_DELAY_MS = 1500
+const E_STOP_HIDE_DELAY_MS = 700
 
 function useIsPortrait() {
   const [portrait, setPortrait] = useState(() =>

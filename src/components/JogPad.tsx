@@ -20,7 +20,7 @@ const RADII = [22, 40, 56, 74, 94] as const
 const CONTINUOUS_DISTANCE = 10000
 const MM_FEED_PRESETS = [50, 100, 200, 500, 1000, 2000, 3000] as const
 const IN_FEED_PRESETS = [5, 10, 20, 50, 100, 200, 300] as const
-const JOB_HIDE_DELAY_MS = 1500
+const JOB_HIDE_DELAY_MS = 700
 
 const RING_OPACITY = [0.12, 0.22, 0.35, 0.50]
 
