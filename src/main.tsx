@@ -5,7 +5,10 @@ import { App } from './App'
 import './store/terminal'
 import './lib/jogWatchdog'
 import { installDemoMode } from './demo'
+import { disconnect as disconnectWs } from './lib/ws'
 installDemoMode()
+
+window.addEventListener('pagehide', () => { disconnectWs() })
 
 // Suppress expected connection errors
 function isExpectedTransportError(reason: unknown): boolean {

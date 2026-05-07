@@ -198,11 +198,6 @@ export function connect(host: string): Promise<void> {
       startLivenessWatchdog()
       startStatusPoll()
 
-      // Replay startup log on (re)connect — version, WiFi status, warnings.
-      sendRaw('$SS')
-      // Refresh controller settings used by jog and spindle controls.
-      sendSilentRaw('$$', SETTINGS_DUMP_SILENT_RESPONSE)
-
       resolve()
     }
 
@@ -465,6 +460,15 @@ export function sendSilentRaw(cmd: string, silentResponseMatcher: SilentResponse
 
 export function sendSilentAlarmQuery() {
   return sendSilentRaw('$A', ALARM_QUERY_SILENT_RESPONSE)
+}
+
+// Replays the startup log ($SS — version, WiFi, warnings) and refreshes the
+// controller settings used by jog and spindle controls ($$). Called by App.tsx
+// only after the WS has been stable for a couple of seconds. See ws.onopen for
+// why these can't be fired immediately on open.
+export function sendStartupQueries() {
+  sendRaw('$SS')
+  sendSilentRaw('$$', SETTINGS_DUMP_SILENT_RESPONSE)
 }
 
 export function sendRealtime(byte: number) {

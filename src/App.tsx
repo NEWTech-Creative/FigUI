@@ -2,7 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import { useMachineStore } from './store'
 import { useGCodeStore } from './store/gcode'
 import { useTerminalStore } from './store/terminal'
-import { connect, isSocketOpen, onLine } from './lib/ws'
+import { connect, isSocketOpen, onLine, sendStartupQueries } from './lib/ws'
 import { setBase, getDeviceInfo, getDeviceInfoFast, loadMacroCfg } from './lib/http'
 import { parseESP800 } from './lib/parser'
 import { CURRENT_VERSION, GITHUB_REPO, DISMISSED_VERSION_KEY, semverGt } from './lib/updateCheck'
@@ -218,10 +218,12 @@ export function App() {
         reconnectTimer.current = null
       }
       if (stableConnectTimer.current) clearTimeout(stableConnectTimer.current)
+      // Only send $SS and $$ startup queries after stable connection to prevent ESP32 from flooding TX queue.
       stableConnectTimer.current = setTimeout(() => {
         backoffMs.current = 0
         stableConnectTimer.current = null
-      }, 5000)
+        sendStartupQueries()
+      }, 2000)
     } else {
       if (stableConnectTimer.current) {
         clearTimeout(stableConnectTimer.current)
