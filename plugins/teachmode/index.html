@@ -1,0 +1,1231 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Teachmode</title>
+    <style>
+        :root {
+            --bg: var(--bg, #121212);
+            --sf: var(--surface, #1e1e1e);
+            --pr: var(--accent, #0d6efd);
+            --tx: var(--text-primary, #e0e0e0);
+            --bd: var(--border, #3a3a3a);
+            --fn: sans-serif
+        }
+
+        * { box-sizing: border-box }
+
+        body {
+            font-family: var(--fn);
+            margin: 0;
+            padding: 0.4rem;
+            display: flex;
+            flex-direction: column;
+            height: 100vh;
+            background: var(--bg);
+            color: var(--tx);
+            overflow: hidden;
+            gap: 0.3rem;
+        }
+
+        #wrap {
+            display: flex;
+            flex: 1;
+            gap: 0.4rem;
+            min-height: 0;
+        }
+
+        #left {
+            display: flex;
+            flex-direction: column;
+            flex: 1;
+            gap: 0.25rem;
+            min-height: 0;
+            overflow: hidden;
+        }
+
+        #right {
+            width: 155px;
+            flex-shrink: 0;
+            display: flex;
+            flex-direction: column;
+            gap: 0.4rem;
+            background: var(--sf);
+            border: 1px solid var(--bd);
+            border-radius: 8px;
+            padding: 0.5rem;
+            overflow-y: auto;
+        }
+
+        .jog-grid {
+            display: grid;
+            gap: 0.25rem;
+            width: 100%;
+        }
+
+        .jog-col {
+            display: flex;
+            flex-direction: column;
+            gap: 0.25rem;
+            min-width: 0;
+        }
+
+        .grid { display: grid; gap: 0.25rem; width: 100%; }
+        .g-4  { grid-template-columns: repeat(4, 1fr) }
+
+        button {
+            background: var(--sf);
+            border: 1px solid var(--bd);
+            color: var(--tx);
+            border-radius: 6px;
+            padding: 0.55rem 0.1rem;
+            font-size: 0.82rem;
+            font-weight: 600;
+            cursor: pointer;
+            width: 100%;
+            min-width: 0;
+            overflow: hidden;
+            white-space: nowrap;
+        }
+
+        button:active { transform: scale(0.96) }
+
+        .jg  { background: #263238 }
+        .dro {
+            background: var(--bg);
+            color: #8c8c8c;
+            font-family: monospace;
+            font-size: 0.75rem;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: clip;
+            padding: 0.45rem 0;
+        }
+
+        #play  { background: #28a745 }
+        #pause { background: #fd7e14 }
+        #abort { background: #dc3545 }
+        #cap   { background: var(--pr) }
+
+        .act, #pause.res { background: #28a745 !important }
+        #new.cf { background: #dc3545; color: #fff }
+
+        .bg-red  { background: #dc3545 !important; color: #fff }
+        .bg-blue { background: #0d6efd !important; color: #fff }
+        .bg-org  { background: #fd7e14 !important; color: #fff }
+        .bg-dark {
+            background: #343a40 !important;
+            color: #6c757d !important;
+            pointer-events: none;
+            border-color: #343a40 !important;
+        }
+
+        .lst {
+            flex: 1;
+            overflow-y: auto;
+            background: var(--sf);
+            border: 1px solid var(--bd);
+            border-radius: 8px;
+            padding: 0.25rem;
+            min-height: 0;
+        }
+
+        .it {
+            display: flex;
+            align-items: center;
+            padding: 0.35rem 0.4rem;
+            margin-bottom: 0.2rem;
+            background: var(--bg);
+            border: 1px solid var(--bd);
+            border-radius: 4px;
+        }
+        .it.ok { background: var(--pr); color: #fff }
+        .it.ed { background: #ffc107; color: #000 }
+
+        .ln { font-size: 0.78rem; min-width: 22px; color: #888; text-align: center }
+        .dt { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px }
+        .rw { font-size: 0.73rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis }
+        .tw { display: flex; gap: 2px }
+        .ti {
+            background: 0 0;
+            border: 1px solid var(--bd);
+            color: inherit;
+            text-align: center;
+            font-size: 0.73rem;
+            width: 30px;
+            border-radius: 3px;
+        }
+        .st-lbl {
+            font-size: 0.73rem;
+            color: #8c8c8c;
+            font-style: italic;
+            width: 100%;
+            text-align: center;
+            padding: 2px 0;
+        }
+
+        /* Right panel */
+        .rp-lbl  { font-size: 0.72rem; color: #8c8c8c; text-transform: uppercase; letter-spacing: 0.04em; margin-bottom: 1px }
+        .rp-input {
+            background: var(--bg);
+            border: 1px solid var(--bd);
+            color: var(--tx);
+            padding: 0.35rem 0.4rem;
+            font-size: 0.82rem;
+            border-radius: 4px;
+            width: 100%;
+        }
+        .rp-divider { border: none; border-top: 1px solid var(--bd); margin: 0.1rem 0 }
+        .rp-total-lbl { font-size: 0.72rem; color: #8c8c8c }
+        .rp-total-val { font-size: 0.82rem; font-family: monospace; color: var(--pr); font-weight: bold; word-break: break-all }
+        .rp-sets-ok   { font-size: 0.65rem; color: #28a745; margin-top: 2px }
+        .rp-sets-warn { font-size: 0.65rem; color: #fd7e14; margin-top: 2px }
+        #btn-help {
+            background: transparent;
+            border: 1px solid var(--bd);
+            color: #8c8c8c;
+            border-radius: 5px;
+            font-size: 0.75rem;
+            padding: 0.3rem 0;
+            cursor: pointer;
+            width: 100%;
+        }
+        #btn-help:hover { border-color: var(--pr); color: var(--pr) }
+
+        /* Modals */
+        .mod, .sd-mod {
+            position: fixed;
+            top: 0; left: 0;
+            width: 100%; height: 100%;
+            background: rgba(0,0,0,0.8);
+            display: none;
+            justify-content: center;
+            align-items: center;
+            z-index: 99;
+        }
+        .sd-mod { z-index: 100 }
+
+        .mb {
+            background: var(--sf);
+            padding: 1rem;
+            border-radius: 8px;
+            width: 90%;
+            max-width: 400px;
+            border: 1px solid var(--bd);
+        }
+
+        textarea {
+            width: 100%;
+            height: 150px;
+            background: var(--bg);
+            color: var(--tx);
+            margin-bottom: 0.5rem;
+            border: 1px solid var(--bd);
+            border-radius: 4px;
+            padding: 0.4rem;
+            font-family: monospace;
+            font-size: 0.82rem;
+            resize: vertical;
+        }
+
+        /* Help modal */
+        #help-mo {
+            position: fixed;
+            top: 0; left: 0;
+            width: 100%; height: 100%;
+            background: rgba(0,0,0,0.85);
+            display: none;
+            justify-content: center;
+            align-items: center;
+            z-index: 120;
+        }
+        .help-box {
+            background: var(--sf);
+            border: 1px solid var(--bd);
+            border-radius: 10px;
+            width: 92%;
+            max-width: 480px;
+            max-height: 88vh;
+            display: flex;
+            flex-direction: column;
+            overflow: hidden;
+        }
+        .help-hdr {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 0.75rem 1rem;
+            border-bottom: 1px solid var(--bd);
+            flex-shrink: 0;
+        }
+        .help-hdr h3 { margin: 0; font-size: 1rem; color: var(--pr) }
+        .help-body {
+            overflow-y: auto;
+            padding: 0.75rem 1rem;
+            font-size: 0.82rem;
+            line-height: 1.5;
+            color: var(--tx);
+        }
+        .help-body h4 { margin: 0.75rem 0 0.25rem; color: var(--pr); font-size: 0.82rem; text-transform: uppercase; letter-spacing: 0.05em }
+        .help-body p  { margin: 0 0 0.4rem }
+        .help-body ul { margin: 0 0 0.4rem; padding-left: 1.2rem }
+        .help-body li { margin-bottom: 0.2rem }
+        .help-tag {
+            display: inline-block;
+            background: var(--bg);
+            border: 1px solid var(--bd);
+            border-radius: 3px;
+            padding: 0 4px;
+            font-size: 0.75rem;
+            font-family: monospace;
+            color: #aaa;
+        }
+        .help-ftr { padding: 0.5rem 1rem; border-top: 1px solid var(--bd); flex-shrink: 0; display: flex; justify-content: flex-end }
+
+        /* SD browser */
+        .sd-mb {
+            background: var(--sf);
+            padding: 1rem;
+            border-radius: 8px;
+            width: 90%;
+            max-width: 450px;
+            height: 80vh;
+            display: flex;
+            flex-direction: column;
+            border: 1px solid var(--bd);
+        }
+        .sd-lst { flex: 1; overflow-y: auto; background: var(--bg); border: 1px solid var(--bd); border-radius: 4px; margin: 0.5rem 0 }
+        .sd-it  { padding: 0.6rem; border-bottom: 1px solid var(--bd); cursor: pointer; display: flex; align-items: center; gap: 8px; font-size: 0.9rem }
+        .sd-it:hover { background: var(--pr); color: #fff }
+        .sd-brd { display: flex; gap: 5px; font-size: 0.8rem; color: var(--pr); cursor: pointer; padding: 4px 0; border-bottom: 1px solid var(--bd) }
+        .sd-ft  { display: flex; gap: 0.5rem; justify-content: flex-end }
+    </style>
+</head>
+<body>
+
+    <div class="jog-grid" id="jc"></div>
+
+    <div id="wrap">
+
+        <div id="left">
+            <div class="grid g-4">
+                <button id="new">New</button>
+                <button id="save">Save</button>
+                <button id="load">Load</button>
+                <button id="edit">Edit</button>
+            </div>
+            <div class="grid g-4">
+                <button id="play">Play</button>
+                <button id="pause">Pause</button>
+                <button id="abort">Abort</button>
+                <button id="cap">Capture</button>
+            </div>
+            <div class="lst" id="ls"></div>
+        </div>
+
+        <div id="right">
+            <div>
+                <div class="rp-lbl">Feed Rate</div>
+                <input class="rp-input" type="number" id="fd" value="1000">
+            </div>
+            <div>
+                <div class="rp-lbl">G-Code</div>
+                <input class="rp-input" type="text" id="gc" placeholder="M62 P0">
+            </div>
+            <div>
+                <div class="rp-lbl">Playback</div>
+                <select class="rp-input" id="md">
+                    <option value="s">Single</option>
+                    <option value="r">Repeat</option>
+                    <option value="v">Reverse</option>
+                </select>
+            </div>
+            <hr class="rp-divider">
+            <div>
+                <div class="rp-total-lbl">Approx Total</div>
+                <div class="rp-total-val" id="tt">00:00:00:000</div>
+                <div id="sets-status" class="rp-sets-warn">No machine data</div>
+            </div>
+            <button id="btn-help">? Help / Info</button>
+        </div>
+
+    </div>
+
+    <!-- Help modal -->
+    <div id="help-mo">
+        <div class="help-box">
+            <div class="help-hdr">
+                <h3>Teachmode — Help &amp; Info</h3>
+                <button onclick="el('help-mo').style.display='none'" style="background:transparent;border:none;color:#888;font-size:1.1rem;cursor:pointer;padding:0">✕</button>
+            </div>
+            <div class="help-body">
+                <p><strong>Teachmode</strong> is a motion capture &amp; playback tool for CNC machines and camera sliders. Record a sequence of positions, set timing, then play back for smooth, repeatable camera moves.</p>
+
+                <h4>Jog Buttons</h4>
+                <ul>
+                    <li><strong>Tap</strong> an axis button (<span class="help-tag">X+</span> / DRO) — moves 0.1 mm one step.</li>
+                    <li><strong>Hold</strong> — starts a continuous 500 mm/min jog; releases on pointer-up.</li>
+                    <li>Feed Rate controls the jog speed.</li>
+                </ul>
+
+                <h4>Capturing Positions</h4>
+                <ul>
+                    <li>Jog to the desired position, then press <span class="help-tag">Capture</span>.</li>
+                    <li>The first capture is the <em>Start Position</em> — the machine moves here before playback begins.</li>
+                    <li>Each subsequent capture records the position and automatically estimates travel time from the previous point using machine acceleration &amp; max-rate data.</li>
+                    <li>In <strong>Edit</strong> mode, pressing <span class="help-tag">Capture</span> updates the selected point's position (shown as <span class="help-tag">Update</span>).</li>
+                </ul>
+
+                <h4>Manual Time Editing</h4>
+                <ul>
+                    <li>Each row shows a time field <span class="help-tag">HH:MM:SS:ms</span> — tap any segment to edit.</li>
+                    <li>Changing the time <em>automatically recalculates</em> the feedrate (F) for that segment, so the machine will actually travel at that pace.</li>
+                    <li>Use this to fine-tune shot timing independently of physical distance.</li>
+                </ul>
+
+                <h4>Edit Mode</h4>
+                <ul>
+                    <li><span class="help-tag">Delete</span> — removes the selected point.</li>
+                    <li><span class="help-tag">Up</span> / <span class="help-tag">Down</span> — reorder the selected point.</li>
+                    <li><span class="help-tag">Done</span> — exits edit mode.</li>
+                    <li><span class="help-tag">Cancel</span> — discards all edits since entering Edit mode.</li>
+                    <li><strong>Long-press</strong> any row (1 second) to instantly move the machine to that position.</li>
+                </ul>
+
+                <h4>Playback</h4>
+                <ul>
+                    <li><span class="help-tag">Play</span> — runs the sequence. Countdown starts once the machine reaches the first waypoint.</li>
+                    <li><span class="help-tag">Pause</span> — holds motion; press again to resume.</li>
+                    <li><span class="help-tag">Abort</span> — immediate stop and soft-reset.</li>
+                    <li><strong>Single</strong> — plays once. <strong>Repeat</strong> — loops continuously. <strong>Reverse</strong> — bounces forward then backward.</li>
+                </ul>
+
+                <h4>G-Code Field</h4>
+                <p>Optional command sent alongside each captured move (e.g. <span class="help-tag">M62 P0</span> to trigger a relay/camera shutter).</p>
+
+                <h4>Time Prediction</h4>
+                <p>Times are estimated using a <em>trapezoidal motion profile</em> — accounting for axis max-rate and acceleration from your FluidNC config file. Loaded automatically at startup. "No machine data" means defaults are in use; times will still show but may be less accurate.</p>
+
+                <h4>Camera Slider Use</h4>
+                <p>This plugin was designed for use with motorised camera sliders on FluidNC. Capture your start and end frames, set the total shot duration via the time fields, and let Teachmode drive the slider at a precisely timed, smooth speed — including ramp-up and ramp-down.</p>
+            </div>
+            <div class="help-ftr">
+                <button onclick="el('help-mo').style.display='none'" style="padding:0.35rem 1rem;background:var(--pr);color:#fff;border:none;border-radius:5px;cursor:pointer;font-size:0.82rem">Close</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- SD Card file browser modal -->
+    <div id="sd-mo" class="sd-mod">
+        <div class="sd-mb">
+            <h3 style="margin-top:0">SD Card Files</h3>
+            <div id="sd-brd" class="sd-brd"><span>/ SD Card</span></div>
+            <div id="sd-lst" class="sd-lst"></div>
+            <div class="sd-ft">
+                <button id="sd-cl" style="width:auto;background:#333">Close</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Load source modal -->
+    <div id="ld-mo" class="sd-mod">
+        <div class="sd-mb" style="height:auto;max-width:300px">
+            <h3 style="margin-top:0">Load Source</h3>
+            <div style="display:flex;flex-direction:column;gap:0.5rem">
+                <button id="ld-sd"    style="background:var(--pr)">SD Card</button>
+                <button id="ld-local" style="background:#28a745">Device (Local File)</button>
+                <button id="ld-cl"    style="background:#333">Cancel</button>
+            </div>
+        </div>
+    </div>
+
+    <input type="file" id="fi" accept=".nc,.gcode,.txt" style="display:none">
+
+    <!-- Save modal -->
+    <div id="mo" class="mod">
+        <div class="mb">
+            <h3>Save</h3>
+            <textarea id="ot" readonly></textarea>
+            <div style="display:flex;flex-direction:column;gap:0.5rem">
+                <button id="sd-sv" style="background:var(--pr)">Save to SD</button>
+                <button id="dl"    style="background:#28a745">Download</button>
+                <button id="cp">Copy</button>
+                <button id="cl"    style="background:#333">Close</button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // ── State ──
+        let l = [], selIdx = null, runIdx = null, ed = false, run = false, fc = 0;
+        let ax = ['x','y','z','a','b','c'];
+        let lst = "?", bf = 15, mPos = {}, dir = 1, backupL = [], isTyping = false;
+        let playStartTs = 0, runDurationMs = 0;  // playStartTs=0 means "waiting for start pos"
+
+        // Machine motion settings (loaded from YAML / $$ for accurate time prediction)
+        let mSets = {
+            maxRate: { x:Infinity, y:Infinity, z:Infinity, a:Infinity, b:Infinity, c:Infinity },
+            accel:   { x:Infinity, y:Infinity, z:Infinity, a:Infinity, b:Infinity, c:Infinity }
+        };
+        let settingsLoaded = false;
+        let settingsRaw = [], settingsTimer = null;
+
+        const el = (i) => document.getElementById(i);
+
+        // ── postMessage bridge ──
+        let msgId = 0;
+        const pending = {};
+
+        function call(method, params) {
+            return new Promise((resolve, reject) => {
+                const id = String(++msgId);
+                pending[id] = { resolve, reject };
+                window.parent.postMessage({ type: 'fluid-request', id, method, params: params ?? {} }, '*');
+            });
+        }
+
+        // Single unified message handler
+        window.addEventListener('message', (e) => {
+            if (e.data?.type === 'fluid-response') {
+                const p = pending[e.data.id];
+                if (!p) return;
+                delete pending[e.data.id];
+                e.data.error ? p.reject(new Error(e.data.error)) : p.resolve(e.data.result);
+                return;
+            }
+
+            if (e.data?.type !== 'fluid-event') return;
+
+            if (e.data.event === 'status') {
+                applyPluginStatus(e.data.data);
+                return;
+            }
+
+            if (e.data.event !== 'line') return;
+
+            const m = e.data.data;
+            if (typeof m !== 'string') return;
+
+            // Collect $$ settings response lines (e.g. "$110=5000.000")
+            if (/^\$\d+=/.test(m)) {
+                settingsRaw.push(m);
+                clearTimeout(settingsTimer);
+                settingsTimer = setTimeout(() => applyRawSettings(settingsRaw.splice(0)), 300);
+            }
+
+            if (m.startsWith('<')) {
+                const s = m.match(/<(\w+)/);
+                if (s) {
+                    lst = s[1];
+                    el('pause').textContent = (lst === 'Hold' ? 'Res' : 'Pause');
+                    el('pause').classList.toggle('res', lst === 'Hold');
+                    if (lst === 'Idle') bf = 15;
+                }
+                const b = m.match(/\|Bf:(\d+)/);
+                if (b) bf = parseInt(b[1]);
+
+                if (m.includes('|MPos:')) {
+                    const p = m.match(/\|MPos:([^\|>]+)/)[1].split(',');
+                    if (p.length !== ax.length) updAx(p.length);
+                    ax.forEach((a, i) => {
+                        const val = p[i];
+                        if (el(a + 'M')) el(a + 'M').textContent = val;
+                        mPos[a] = val;
+                    });
+                    if (run) seqTrack();
+                }
+            }
+        });
+
+        function asCommand(m) { return String(m ?? '').replace(/\r?\n$/, ''); }
+
+        function realtimeByte(m) {
+            const c = asCommand(m);
+            if (c === '?') return 0x3f;
+            if (c === '!') return 0x21;
+            if (c === '~') return 0x7e;
+            if (c === '' || c.charCodeAt(0) === 0x18) return 0x18;
+            if (c === '' || c === '??' || c.charCodeAt(0) === 0x85) return 0x85;
+            return null;
+        }
+
+        function msg(m) {
+            const c = asCommand(m);
+            const b = realtimeByte(c);
+            if (b !== null) return call('sendRealtime', { byte: b }).catch(console.error);
+            return call('sendCommand', { command: c }).catch(console.error);
+        }
+
+        function rt(m) {
+            const b = realtimeByte(m);
+            if (b !== null) return call('sendRealtime', { byte: b }).catch(console.error);
+            return msg(m);
+        }
+
+        function applyPluginStatus(s) {
+            if (!s) return;
+            lst = s.state || lst;
+            el('pause').textContent = (lst === 'Hold' ? 'Res' : 'Pause');
+            el('pause').classList.toggle('res', lst === 'Hold');
+            if (lst === 'Idle') bf = 15;
+            const pos = s.mpos || s.wpos || {};
+            const nextAxes = ['x','y','z','a','b','c'].filter(a => pos[a] !== undefined && pos[a] !== null);
+            if (nextAxes.length && nextAxes.length !== ax.length) updAx(nextAxes.length);
+            ax.forEach(a => {
+                const raw = pos[a];
+                if (raw === undefined || raw === null) return;
+                const val = Number(raw).toFixed(3);
+                if (el(a + 'M')) el(a + 'M').textContent = val;
+                mPos[a] = val;
+            });
+            if (run) seqTrack();
+        }
+
+        function updAx(n) {
+            n = Math.max(1, Math.min(6, n));
+            ax = ['x','y','z','a','b','c'].slice(0, n);
+            rJog();
+        }
+
+        function rJog() {
+            const c = el('jc');
+            c.innerHTML = '';
+            c.style.gridTemplateColumns = `repeat(${ax.length}, 1fr)`;
+            ax.forEach(a => {
+                const d  = document.createElement('div'); d.className = "jog-col";
+                const b1 = document.createElement('button');
+                const b2 = document.createElement('button');
+                b1.className = 'jg';  b1.textContent = a.toUpperCase() + '+'; wire(b1, a,  1);
+                b2.className = 'dro'; b2.id = a + 'M'; b2.textContent = mPos[a] || '0.000'; wire(b2, a, -1);
+                d.append(b1, b2); c.append(d);
+            });
+        }
+
+        function wire(b, a, d) {
+            let t;
+            b.onpointerdown = (e) => {
+                e.preventDefault();
+                try { b.setPointerCapture(e.pointerId) } catch (_) {}
+                msg(`$J=G91G21${a.toUpperCase()}${d * 0.1}F${el('fd').value}`);
+                t = setTimeout(() => msg(`$J=G91G21${a.toUpperCase()}${d * 500}F${el('fd').value}`), 250);
+            };
+            const stop = () => { clearTimeout(t); msg('\x85'); };
+            b.onpointerup = stop; b.onpointerleave = stop;
+        }
+
+        // ── Machine settings loading ──
+
+        // Simple state-machine parser for FluidNC config.yaml
+        function parseYamlMotion(yaml) {
+            const ax6 = ['x','y','z','a','b','c'];
+            const lines = yaml.split('\n');
+            let inAxes = false, curAxis = null;
+            for (const raw of lines) {
+                const noComment = raw.replace(/#.*$/, '');
+                const indent = noComment.length - noComment.trimStart().length;
+                const t = noComment.trimStart().trimEnd();
+                if (!t) continue;
+                if (t === 'axes:') { inAxes = true; curAxis = null; continue; }
+                if (inAxes && indent === 0 && t !== 'axes:') { inAxes = false; curAxis = null; continue; }
+                if (inAxes && indent === 2) {
+                    const name = t.replace(':', '').trim().toLowerCase();
+                    curAxis = ax6.includes(name) ? name : null; continue;
+                }
+                if (inAxes && curAxis && indent >= 4) {
+                    const rM = t.match(/^max_rate_mm_per_min:\s*([\d.]+)/);
+                    const aM = t.match(/^acceleration_mm_per_sec2:\s*([\d.]+)/);
+                    if (rM) mSets.maxRate[curAxis] = parseFloat(rM[1]);
+                    if (aM) mSets.accel[curAxis]   = parseFloat(aM[1]);
+                }
+            }
+        }
+
+        async function tryLoadYaml() {
+            for (const path of ['/config.yaml', '/spiffs/config.yaml', '/littlefs/config.yaml']) {
+                try {
+                    const text = await call('readFile', { path, fs: 'local' });
+                    if (typeof text !== 'string' || text.length < 10) continue;
+                    parseYamlMotion(text);
+                    return true;
+                } catch (_) {}
+            }
+            return false;
+        }
+
+        // Parse $$ response lines: $110-$115 = max rates, $120-$125 = accels
+        function applyRawSettings(lines) {
+            const ax6 = ['x','y','z','a','b','c'];
+            let gotSome = false;
+            lines.forEach(line => {
+                const mt = line.match(/^\$(\d+)=([\d.]+)/);
+                if (!mt) return;
+                const n = +mt[1], v = +mt[2];
+                if (n >= 110 && n <= 115) { mSets.maxRate[ax6[n-110]] = v; gotSome = true; }
+                if (n >= 120 && n <= 125) { mSets.accel[ax6[n-120]]   = v; gotSome = true; }
+            });
+            if (gotSome) onSettingsLoaded();
+        }
+
+        function onSettingsLoaded() {
+            const hasRate  = Object.values(mSets.maxRate).some(v => isFinite(v));
+            const hasAccel = Object.values(mSets.accel  ).some(v => isFinite(v));
+            settingsLoaded = hasRate || hasAccel;
+            const sEl = el('sets-status');
+            if (sEl) {
+                sEl.className = settingsLoaded ? 'rp-sets-ok' : 'rp-sets-warn';
+                sEl.textContent = settingsLoaded
+                    ? (hasAccel ? '✓ Accel+rate data' : '✓ Rate data')
+                    : 'No machine data';
+            }
+            recalcTimes();
+            ren(true);
+        }
+
+        // ── Time calculation — trapezoidal motion profile ──
+
+        // Returns predicted move time in milliseconds using per-axis limits
+        function calcTimeMs(p1, p2, f) {
+            const fVal = parseFloat(f) || 1000;
+            let dsq = 0;
+            const dv = {};
+            ax.forEach(a => {
+                const v = (parseFloat(p2[a]) || 0) - (parseFloat(p1[a]) || 0);
+                dv[a] = v; dsq += v * v;
+            });
+            const dist = Math.sqrt(dsq);
+            if (dist < 1e-6) return 0;
+
+            // Effective rate and acceleration along this direction vector
+            let effRate = fVal, effAccel = 0, hasAccel = false;
+            ax.forEach(a => {
+                const u = Math.abs(dv[a] / dist);
+                if (u < 1e-6) return;
+                const mr = mSets.maxRate[a], ac = mSets.accel[a];
+                if (isFinite(mr)) effRate  = Math.min(effRate,  mr / u);
+                if (isFinite(ac)) {
+                    const ea = ac / u;
+                    effAccel = hasAccel ? Math.min(effAccel, ea) : ea;
+                    hasAccel = true;
+                }
+            });
+
+            const fSec = effRate / 60;  // mm/sec
+
+            if (!hasAccel) {
+                // No acceleration data: pure distance/rate
+                return (dist / effRate) * 60000;
+            }
+
+            // Trapezoidal: distance to reach full speed
+            const da = (fSec * fSec) / (2 * effAccel);
+
+            if (2 * da >= dist) {
+                // Triangle profile — short move, never reaches full speed
+                return 2000 * Math.sqrt(dist / effAccel);
+            }
+            // Full trapezoidal
+            return (2 * (fSec / effAccel) + (dist - 2 * da) / fSec) * 1000;
+        }
+
+        function calcTimeStr(p1, p2, f) {
+            return msToTime(calcTimeMs(p1, p2, f));
+        }
+
+        // Recalculate all segment times after machine settings load
+        function recalcTimes() {
+            if (l.length < 2) return;
+            const fDef = parseFloat(el('fd').value) || 1000;
+            for (let i = 1; i < l.length; i++) {
+                l[i].t = calcTimeStr(l[i-1].p, l[i].p, parseFloat(l[i].f) || fDef);
+            }
+        }
+
+        // ── Math helpers ──
+
+        function msToTime(duration) {
+            if (duration < 0) duration = 0;
+            const ms = parseInt(duration % 1000);
+            const s  = Math.floor((duration / 1000) % 60);
+            const m  = Math.floor((duration / 60000) % 60);
+            const h  = Math.floor(duration / 3600000);
+            return `${String(h).padStart(2,'0')}:${String(m).padStart(2,'0')}:${String(s).padStart(2,'0')}:${String(ms).padStart(3,'0')}`;
+        }
+
+        function calcDist(p1, p2) {
+            let dsq = 0;
+            ax.forEach(a => { const v = (parseFloat(p2[a])||0)-(parseFloat(p1[a])||0); dsq += v*v; });
+            return Math.sqrt(dsq);
+        }
+
+        function calcFeed(i) {
+            if (i === 0) return;
+            const it = l[i], prev = l[i-1];
+            const d = calcDist(prev.p, it.p);
+            const t = it.t.split(':').map(Number);
+            if (t.length < 4) return;
+            const totalMin = (t[0]*60) + t[1] + (t[2]/60) + (t[3]/60000);
+            if (totalMin > 0 && d > 0) it.f = (d / totalMin).toFixed(2);
+        }
+
+        function getListDuration(listObj) {
+            return listObj.reduce((t, i) => {
+                const p = i.t.split(':').map(Number);
+                return t + (p.length === 4 ? (p[0]*3600+p[1]*60+p[2])*1000+p[3] : 0);
+            }, 0);
+        }
+
+        function updTotalDisplay() {
+            const tt = el('tt');
+            if (!run) {
+                tt.textContent = msToTime(getListDuration(l));
+            } else if (playStartTs === 0) {
+                tt.textContent = '→ start…';
+            } else {
+                tt.textContent = msToTime(Math.max(0, runDurationMs - (Date.now() - playStartTs)));
+            }
+        }
+
+        // ── Render ──
+
+        function ren(force = false, center = false) {
+            if (document.activeElement?.classList.contains('ti') && !force) return;
+            if (isTyping && !force) return;
+
+            const c    = el('ls');
+            const sTop = c.scrollTop;
+            c.innerHTML = "";
+            const hi = run ? runIdx : selIdx;
+
+            l.forEach((it, i) => {
+                const r = document.createElement('div');
+                r.className = `it ${i === hi ? (ed ? 'ed' : 'ok') : ''}`;
+
+                let tx = ax.map(a =>
+                    (it.p[a] !== undefined && it.p[a] !== null) ? `${a.toUpperCase()}${it.p[a]}` : ''
+                ).filter(Boolean).join(' ');
+                if (it.g) tx += ` ${it.g}`;
+                if (i > 0 && it.f) tx += ` F${it.f}`;
+
+                let tp = it.t.split(':');
+                if (tp.length < 4) tp = ['00','00','00','000'];
+
+                const tHtml = (i === 0)
+                    ? `<div class="st-lbl">Start Position</div>`
+                    : `<div class="tw">
+                        <input class="ti" value="${tp[0]}" d="0">
+                        <input class="ti" value="${tp[1]}" d="1">
+                        <input class="ti" value="${tp[2]}" d="2">
+                        <input class="ti" value="${tp[3]}" d="3" style="width:36px">
+                       </div>`;
+
+                r.innerHTML = `<div class="ln">${i+1}</div><div class="dt"><div class="rw">${tx}</div>${tHtml}</div>`;
+
+                r.querySelectorAll('input').forEach(ip => {
+                    ip.onfocus = () => { isTyping = true; };
+                    ip.onblur  = () => { isTyping = false; ren(true); };
+                    ip.onchange = (e) => {
+                        const idx = parseInt(e.target.getAttribute('d'));
+                        tp[idx] = e.target.value.padStart(idx === 3 ? 3 : 2, '0');
+                        it.t = tp.join(':');
+                        calcFeed(i); sav(); ren(true);
+                    };
+                });
+
+                let pt;
+                r.onpointerdown = (e) => { if (e.target.classList.contains('ti')) return; pt = setTimeout(() => mv(it), 1000); };
+                r.onpointerup    = () => clearTimeout(pt);
+                r.onpointerleave = () => clearTimeout(pt);
+                r.onclick = (e) => { if (e.target.classList.contains('ti')) return; if (!run) { selIdx = i; ren(true); } };
+
+                c.append(r);
+
+                if (i === hi && c.clientHeight > 0 && (run || center)) {
+                    requestAnimationFrame(() => {
+                        c.scrollTo({
+                            top: Math.max(0, r.offsetTop - c.offsetTop - c.clientHeight/2 + r.clientHeight/2),
+                            behavior: run ? 'auto' : 'smooth'
+                        });
+                    });
+                }
+            });
+
+            if (!run || !center) c.scrollTop = sTop;
+            if (!run) updTotalDisplay();
+            updBtn();
+        }
+
+        // Lightweight playback highlight — class swap + scroll only, no DOM rebuild
+        function hlUpdate(newIdx) {
+            // Start countdown the moment the machine departs the first waypoint
+            if (run && playStartTs === 0 && runIdx === 0 && newIdx === 1) {
+                runDurationMs = getListDuration(l);
+                playStartTs   = Date.now();
+            }
+
+            const c     = el('ls');
+            const items = c.querySelectorAll('.it');
+            if (runIdx !== null && items[runIdx]) items[runIdx].classList.remove('ok');
+            runIdx = newIdx;
+            if (runIdx !== null && items[runIdx]) {
+                items[runIdx].classList.add('ok');
+                requestAnimationFrame(() => {
+                    const r = c.querySelectorAll('.it')[runIdx];
+                    if (!r || !c.clientHeight) return;
+                    c.scrollTo({ top: Math.max(0, r.offsetTop - c.offsetTop - c.clientHeight/2 + r.clientHeight/2), behavior: 'auto' });
+                });
+            }
+        }
+
+        function mv(it) {
+            const c = ['G53 G1'];
+            ax.forEach(a => { if (it.p[a] !== undefined) c.push(`${a.toUpperCase()}${it.p[a]}`); });
+            c.push(`F${it.f || el('fd').value}`);
+            msg(c.join(' '));
+            if (it.g) msg(it.g);
+        }
+
+        function sav() {
+            call('saveSettings', { data: { positions: l } }).catch(console.error);
+            try { localStorage.setItem('cd', JSON.stringify(l)); } catch (_) {}
+        }
+
+        // ── Playback engine ──
+
+        function play() {
+            if (run || !l.length) return;
+            if (ed) { ed = false; updBtn(); }
+            run = true; dir = 1; runIdx = 0;
+            playStartTs = 0;  // Timer starts when machine departs l[0], not now
+            runDurationMs = getListDuration(l);
+            msg('$Report/Interval=50');
+            const q = [...l];
+            ren(true);
+            startFeedLoop(q);
+        }
+
+        function startFeedLoop(initialQueue) {
+            let q = initialQueue;
+
+            const feedLoop = setInterval(() => {
+                if (!run || lst.includes('Alarm')) {
+                    runIdx = null; run = false; clearInterval(feedLoop); updTotalDisplay(); return;
+                }
+                updTotalDisplay();
+
+                if (q.length > 0 && bf > 3) { mv(q.shift()); bf--; }
+
+                if (q.length === 0 && lst === 'Idle') {
+                    const mode = el('md').value;
+                    if (mode === 's') {
+                        run = false; clearInterval(feedLoop);
+                        runIdx = null; ren(true); updTotalDisplay();
+                    } else if (mode === 'r') {
+                        q = [...l]; dir = 1;
+                        runDurationMs = getListDuration(q);
+                        playStartTs   = 0;  // wait for machine to reach l[0] again
+                        hlUpdate(0);
+                    } else if (mode === 'v') {
+                        clearInterval(feedLoop);
+                        if (!run) return;
+                        dir = dir * -1;
+                        let nextQ = [];
+                        if (dir === 1) {
+                            nextQ = [...l]; runIdx = 0;
+                        } else {
+                            for (let i = l.length-1; i > 0; i--) {
+                                nextQ.push({ p: l[i-1].p, f: l[i].f, g: l[i-1].g, t: l[i].t });
+                            }
+                            runIdx = l.length - 1;
+                        }
+                        runDurationMs = getListDuration(nextQ);
+                        playStartTs   = Date.now();  // already at an endpoint, start timer immediately
+                        ren(true);
+                        setTimeout(() => { if (run) startFeedLoop(nextQ); }, 500);
+                    }
+                }
+            }, 50);
+        }
+
+        function seqTrack() {
+            if (!run || !l.length || runIdx === null) return;
+            if (dir === 1  && runIdx >= l.length - 1) return;
+            if (dir === -1 && runIdx <= 0) return;
+            const cur = l[runIdx];
+            let dCurSq = 0;
+            ax.forEach(a => {
+                const mp = parseFloat(mPos[a]) || 0;
+                const cp = parseFloat(cur.p[a]) || 0;
+                dCurSq += Math.pow(cp - mp, 2);
+            });
+            if (dCurSq > 0.04) hlUpdate(runIdx + dir);
+        }
+
+        // ── Button handlers ──
+
+        el('cap').onclick = () => {
+            const p = {};
+            ax.forEach(a => p[a] = el(a+'M')?.textContent || "0");
+            const fVal = parseFloat(el('fd').value) || 1000;
+
+            if (ed && selIdx !== null) {
+                l[selIdx].p = p;
+                if (selIdx > 0)
+                    l[selIdx].t = calcTimeStr(l[selIdx-1].p, p, l[selIdx].f || fVal);
+                if (selIdx < l.length - 1)
+                    l[selIdx+1].t = calcTimeStr(p, l[selIdx+1].p, l[selIdx+1].f || fVal);
+                ren(true); sav();
+            } else {
+                const tStr = l.length > 0 ? calcTimeStr(l[l.length-1].p, p, fVal) : "00:00:00:000";
+                l.push({ p, g: el('gc').value, t: tStr, f: fVal });
+                selIdx = l.length - 1;
+                ren(true, true); sav();
+            }
+        };
+
+        el('play').onclick  = () => { if (!run) { dir = 1; runIdx = 0; play(); } };
+        el('pause').onclick = () => { if (!ed) { if (lst.includes('Hold')) rt('~'); else rt('!'); } };
+
+        el('abort').onclick = () => {
+            if (ed) {
+                l = JSON.parse(JSON.stringify(backupL));
+                sav(); ed = false; ren(true);
+            } else {
+                run = false; bf = 15;
+                rt('!');
+                setTimeout(() => { rt('\x18'); msg('$X'); }, 50);
+                setTimeout(() => { runIdx = null; ren(true); }, 500);
+            }
+        };
+
+        el('edit').onclick = () => {
+            if (!ed) backupL = JSON.parse(JSON.stringify(l));
+            ed = !ed;
+            if (ed && selIdx === null && l.length) selIdx = 0;
+            ren(true);
+        };
+
+        function updBtn() {
+            const bN = el('new'), bS = el('save'), bL = el('load'), bE = el('edit');
+            const bP = el('play'), bPs = el('pause'), bA = el('abort'), bC = el('cap');
+            if (ed) {
+                bN.textContent = "Delete"; bN.className = "bg-red";
+                bS.textContent = "Up";     bS.className = "bg-blue";
+                bL.textContent = "Down";   bL.className = "bg-org";
+                bE.textContent = "Done";   bE.className = "act";
+                bP.className = "bg-dark";  bPs.className = "bg-dark";
+                bA.textContent = "Cancel"; bA.className = "bg-red";
+                bC.textContent = "Update"; bC.className = "bg-org";
+            } else {
+                bN.textContent = "New";     bN.className = "";
+                bS.textContent = "Save";    bS.className = "";
+                bL.textContent = "Load";    bL.className = "";
+                bE.textContent = "Edit";    bE.className = "";
+                bP.className = "";          bPs.className = "";
+                bA.textContent = "Abort";   bA.className = "";
+                bC.textContent = "Capture"; bC.className = "";
+            }
+        }
+
+        let nt;
+        el('new').onclick = () => {
+            if (ed) {
+                if (selIdx !== null && l.length) {
+                    l.splice(selIdx, 1);
+                    if (selIdx >= l.length) selIdx = l.length - 1;
+                    if (selIdx < 0) selIdx = null;
+                    sav(); ren(true);
+                }
+            } else {
+                const b = el('new');
+                if (b.classList.contains('cf')) {
+                    l = []; selIdx = null; sav(); ren(true);
+                    b.classList.remove('cf'); b.textContent = "New";
+                } else {
+                    b.classList.add('cf'); b.textContent = "Sure?";
+                    clearTimeout(nt);
+                    nt = setTimeout(() => { b.classList.remove('cf'); b.textContent = "New"; }, 2000);
+                }
+            }
+        };
+
+        el('save').onclick = () => {
+            if (ed) {
+                if (selIdx !== null && selIdx > 0) {
+                    [l[selIdx], l[selIdx-1]] = [l[selIdx-1], l[selIdx]];
+                    selIdx--; sav(); ren(true);
+                }
+            } else {
+                if (!l.length) return;
+                let t = "(Cap)\nG90 G21 G17 G53\n";
+                l.forEach(i => {
+                    const coords = ax.map(a =>
+                        (i.p[a] !== undefined && i.p[a] !== null) ? `${a.toUpperCase()}${i.p[a]}` : ''
+                    ).filter(Boolean).join(' ');
+                    t += `G53 G1 ${coords} F${i.f || el('fd').value}`;
+                    if (i.g) t += " " + i.g;
+                    t += "\n";
+                });
+                t += "M30\n";
+                el('ot').value = t; el('mo').style.display = 'flex';
+            }
+        };
+
+        el('load').onclick = () => {
+            if (ed) {
+                if (selIdx !== null && selIdx < l.length - 1) {
+                    [l[selIdx], l[selIdx+1]] = [l[selIdx+1], l[selIdx]];
+                    selIdx++; sav(); ren(true);
+                }
+            } else { el('ld-mo').style.display = 'flex'; }
+        };
+
+        el('ld-sd').onclick    = () => { el('ld-mo').style.display = 'none'; listSDFiles("/"); el('sd-mo').style.display = 'flex'; };
+        el('ld-local').onclick = () => { el('ld-mo').style.display = 'none'; el('fi').click(); };
+        el('ld-cl').onclick    = () =>  el('ld-mo').style.display = 'none';
+        el('btn-help').onclick = () =>  el('help-mo').style.display = 'flex';
+
+        // ── SD card browser ──
+
+        let currentSDPath = "/";
+
+        async function listSDFiles(path) {
+            currentSDPath = path || "/";
+            el('sd-lst').innerHTML = '<div style="padding:1rem;opacity:0.6">Loading…</div>';
+            try {
+                const sdPath = currentSDPath.startsWith('/sd') ? currentSDPath : '/sd' + (currentSDPath === '/' ? '' : currentSDPath);
+                const result = await call('listFiles', { path: sdPath || '/sd', fs: 'sd' });
+                renderSD((result.files || []).map(f => ({ name: f.name, size: f.isDir ? -1 : f.size })));
+            } catch (err) {
+                el('sd-lst').innerHTML = `<div style="padding:1rem;color:#ff6b6b">Error: ${err.message}</div>`;
+            }
+        }
+
+        function renderSD(files) {
+            const list = el('sd-lst'); list.innerHTML = "";
+            const bread = el('sd-brd'); bread.innerHTML = "";
+            const parts = currentSDPath.split('/').filter(x => x);
+            const bi = document.createElement('span'); bi.textContent = "/ SD"; bi.onclick = () => listSDFiles("/"); bread.append(bi);
+            let rp = "";
+            parts.forEach(p => {
+                rp += "/" + p;
+                const s = document.createElement('span'); s.textContent = " / " + p;
+                const tgt = rp; s.onclick = () => listSDFiles(tgt); bread.append(s);
+            });
+            if (parts.length > 0) {
+                const up = document.createElement('div'); up.className = "sd-it"; up.innerHTML = "📁 .. (Up)";
+                up.onclick = () => listSDFiles(currentSDPath.split('/').slice(0,-1).join('/') || "/");
+                list.append(up);
+            }
+            files.forEach(f => {
+                const item = document.createElement('div'); item.className = "sd-it";
+                const isDir = f.size === -1 || f.size === "-1";
+                item.innerHTML = (isDir ? "📁 " : "📄 ") + f.name + (!isDir ? ` <small style="opacity:0.5">(${f.size} B)</small>` : "");
+                const p = currentSDPath.endsWith('/') ? currentSDPath + f.name : currentSDPath + '/' + f.name;
+                item.onclick = () => isDir ? listSDFiles(p) : loadSDFile(p);
+                list.append(item);
+            });
+        }
+
+        async function loadSDFile(path) {
+            el('sd-lst').innerHTML = '<div style="padding:1rem;opacity:0.6">Downloading…</div>';
+            try {
+                const fullPath = path.startsWith('/sd/') ? path : '/sd' + path;
+                const text = await call('readFile', { path: fullPath, fs: 'sd' });
+                parseGCode(text); el('sd-mo').style.display = 'none';
+            } catch (err) {
+                el('sd-lst').innerHTML = `<div style="padding:1rem;color:#ff6b6b">Error: ${err.message}</div>`;
+            }
+        }
+
+        async function uploadSDFile(filename, content) {
+            if (!filename) return;
+            if (!filename.endsWith('.nc')) filename += '.nc';
+            try {
+                await call('writeFile', { path: '/sd/' + filename, content, fs: 'sd' });
+                alert("Saved: " + filename); el('mo').style.display = 'none';
+            } catch (err) { alert("Save failed: " + err.message); }
+        }
+
+        el('sd-sv').onclick = () => { const n = prompt("Filename:", `cap_${Date.now()}.nc`); if (n) uploadSDFile(n, el('ot').value); };
+        el('sd-cl').onclick = () => el('sd-mo').style.display = 'none';
+        el('cl').onclick    = () => el('mo').style.display = 'none';
+        el('cp').onclick    = () => { el('ot').select(); document.execCommand('copy'); };
+        el('dl').onclick    = () => {
+            const b = new Blob([el('ot').value], { type: 'text/plain' });
+            const a = document.createElement('a'); a.href = URL.createObjectURL(b);
+            a.download = `cap_${++fc}.nc`; document.body.append(a); a.click(); a.remove();
+            el('mo').style.display = 'none';
+        };
+
+        el('fi').onchange = (e) => { const r = new FileReader(); r.onload = v => parseGCode(v.target.result); r.readAsText(e.target.files[0]); };
+
+        function parseGCode(text) {
+            l = []; let lastP = {};
+            const fDef = parseFloat(el('fd').value) || 1000;
+            text.split('\n').forEach(x => {
+                x = x.trim().toUpperCase();
+                if (!x || x[0] === '(' || x[0] === '%') return;
+                const p = {}, extras = []; let mv = false;
+                const fm = x.match(/F([\d.]+)/);
+                const f = fm ? parseFloat(fm[1]) : fDef;
+                ['X','Y','Z','A','B','C'].forEach(a => {
+                    const m = x.match(new RegExp(a + "\\s*([\\-+]?[\\d.]+)"));
+                    if (m) { p[a.toLowerCase()] = m[1]; mv = true; }
+                });
+                const mm = x.match(/(M\d+(\s*P[\d.]+)?)/g);
+                if (mm) extras.push(...mm);
+                if (mv) {
+                    const t = l.length === 0 ? "00:00:00:000" : calcTimeStr(lastP, p, f);
+                    l.push({ p, g: extras.join(' '), t, f });
+                    lastP = p;
+                }
+            });
+            if (l.length > 0 && l[0].p) {
+                const keys = Object.keys(l[0].p).filter(k => ['x','y','z','a','b','c'].includes(k));
+                if (keys.length > 0) updAx(keys.length);
+            }
+            ren(true); sav();
+        }
+
+        // ── Init ──
+
+        function initFromData(data) {
+            if (data && data.length && data[0]?.p) {
+                l = data;
+                const keys = Object.keys(l[0].p).filter(k => ['x','y','z','a','b','c'].includes(k));
+                updAx(keys.length > 0 ? keys.length : 3);
+                ren(true);
+            } else {
+                updAx(3);
+            }
+        }
+
+        window.onload = async () => {
+            let loaded = false;
+            try {
+                const cd = localStorage.getItem('cd');
+                if (cd) { initFromData(JSON.parse(cd)); loaded = true; }
+            } catch (_) {}
+            if (!loaded) {
+                try {
+                    const s = await call('getSettings');
+                    if (s?.positions?.length) { initFromData(s.positions); loaded = true; }
+                } catch (_) {}
+            }
+            if (!loaded) updAx(3);
+
+            call('subscribe', { event: 'status' }).catch(console.error);
+            call('subscribe', { event: 'line'   }).catch(console.error);
+            call('getStatus').then(applyPluginStatus).catch(console.error);
+            msg('?');
+
+            // Load machine settings for accurate time prediction:
+            // 1. Try YAML config file (full axis detail)
+            tryLoadYaml().then(ok => { if (ok) onSettingsLoaded(); }).catch(() => {});
+            // 2. Also query $$ (comes through line handler → applyRawSettings)
+            call('sendCommand', { command: '$$' }).catch(console.error);
+        };
+    </script>
+</body>
+</html>
