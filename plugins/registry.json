@@ -16,6 +16,14 @@
       "version": "1.0.0",
       "author": "figamore",
       "base": "https://raw.githubusercontent.com/figamore/FigUI/main/plugins/heightmap/"
-    }
+    },
+    {
+    "id": "teachmode",
+    "name": "Teach Mode",
+    "description": "Capture, edit, play back, import, and export taught machine positions as G-code. Ideal for camera sliders and repeatable motion sequences.",
+    "version": "9.0.0",
+    "author": "newtechcreative",
+    "base": "https://raw.githubusercontent.com/figamore/FigUI/main/plugins/teachmode/"
+  }
   ]
 }
