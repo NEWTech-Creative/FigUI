@@ -483,7 +483,7 @@ export function App() {
             <div className="panel flex flex-col flex-1 min-h-0 overflow-hidden">
               {sidebarTabBar}
               <div className="flex-1 min-h-0 overflow-hidden">
-                {sidebarTab === 'files'   && <FileManager />}
+                {sidebarTab === 'files'   && <FileManager isTablet />}
                 {sidebarTab === 'macros'  && <Macros />}
                 {sidebarTab === 'plugins' && <PluginLauncher />}
               </div>

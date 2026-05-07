@@ -165,18 +165,29 @@ export function DRO({ isTablet = false }: { isTablet?: boolean }) {
       <div className="panel-header justify-between">
         <span className='text-lg font-bold'>Position</span>
         <div className="flex items-center gap-0.5 bg-elevated rounded-sm border border-border p-0.5">
-          {(['WPos', 'MPos', 'Both'] as const).map(m => (
-            <button
-              key={m}
-              onClick={() => setPositionMode(m)}
-              className={`px-2.5 py-0.5 text-base rounded-sm transition-colors ${positionMode === m
+          {(['WPos', 'MPos'] as const).map(m => {
+            const active = positionMode === m || positionMode === 'Both'
+            return (
+              <button
+                key={m}
+                onClick={() => {
+                  if (m === 'WPos') {
+                    if (positionMode === 'WPos') return
+                    setPositionMode(positionMode === 'Both' ? 'MPos' : 'Both')
+                  } else {
+                    if (positionMode === 'MPos') return
+                    setPositionMode(positionMode === 'Both' ? 'WPos' : 'Both')
+                  }
+                }}
+                className={`px-2.5 py-0.5 text-base rounded-sm transition-colors ${active
                   ? 'bg-surface border border-border text-text-primary shadow-sm'
                   : 'text-text-muted hover:text-text-primary'
                 }`}
-            >
-              {m}
-            </button>
-          ))}
+              >
+                {m}
+              </button>
+            )
+          })}
         </div>
       </div>
 

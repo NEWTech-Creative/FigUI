@@ -36,6 +36,7 @@ function FileRow({ entry, path, fs, canLoadGcode, onNavigate, onRefresh, onEdit,
   const [deleting, setDeleting] = useState(false)
   const [renaming, setRenaming] = useState(false)
   const [newName, setNewName]   = useState(entry.name)
+  const [showMenu, setShowMenu] = useState(false)
   const renameRef = useRef<HTMLInputElement>(null)
 
   const fullPath = path.endsWith('/') ? path : `${path}/`
@@ -79,102 +80,228 @@ function FileRow({ entry, path, fs, canLoadGcode, onNavigate, onRefresh, onEdit,
     document.body.removeChild(a)
   }
 
+  function handleTap() {
+    if (entry.isDir) {
+      onNavigate(`${fullPath}${entry.name}`)
+    } else {
+      setShowMenu(true)
+    }
+  }
+
+  function handleGcodeLoad() {
+    setShowMenu(false)
+    window.dispatchEvent(new CustomEvent('gcode:load', { detail: fullName }))
+  }
+
+  function handleMenuEdit() {
+    setShowMenu(false)
+    onEdit(fullPath, entry.name)
+  }
+
+  function handleMenuDownload() {
+    setShowMenu(false)
+    handleDownload()
+  }
+
+  function handleMenuRename() {
+    setShowMenu(false)
+    startRename()
+  }
+
+  async function handleMenuDelete() {
+    setShowMenu(false)
+    await handleDelete()
+  }
+
   return (
-    <div className={`flex items-center gap-2 px-3 ${isTablet ? 'py-3' : 'py-2'} hover:bg-elevated group transition-colors`}>
-      <div className="text-text-dim shrink-0">
-        {entry.isDir
-          ? <Folder size={isTablet ? 20 : 14} className="text-accent/70" />
-          : <File size={isTablet ? 20 : 14} />}
+    <>
+      <div className={`flex items-center gap-2 px-3 ${isTablet ? 'py-3' : 'py-2'} hover:bg-elevated group transition-colors`}>
+        <div className="text-text-dim shrink-0">
+          {entry.isDir
+            ? <Folder size={isTablet ? 20 : 14} className="text-accent/70" />
+            : <File size={isTablet ? 20 : 14} />}
+        </div>
+
+        {renaming ? (
+          <input
+            ref={renameRef}
+            className={`flex-1 input-field py-0.5 text-lg`}
+            value={newName}
+            onChange={e => setNewName(e.target.value)}
+            onKeyDown={e => {
+              if (e.key === 'Enter') commitRename()
+              if (e.key === 'Escape') setRenaming(false)
+            }}
+            onBlur={commitRename}
+            autoFocus
+          />
+        ) : isTablet ? (
+          <button
+            className={`flex-1 text-left text-2xl truncate ${
+              entry.isDir
+                ? 'text-text-primary'
+                : isGcode(entry.name)
+                  ? canLoadGcode ? 'text-text-primary' : 'text-text-dim'
+                  : 'text-text-primary'
+            }`}
+            onClick={handleTap}
+          >
+            {entry.name}
+          </button>
+        ) : entry.isDir ? (
+          <button
+            className={`flex-1 text-left text-xl text-text-primary hover:text-accent truncate`}
+            onClick={() => onNavigate(`${fullPath}${entry.name}`)}
+          >
+            {entry.name}
+          </button>
+        ) : isGcode(entry.name) ? (
+          <button
+            className={`flex-1 text-left text-xl truncate ${canLoadGcode ? 'text-text-primary hover:text-accent' : 'text-text-dim cursor-not-allowed'}`}
+            onClick={() => {
+              if (!canLoadGcode) return
+              window.dispatchEvent(new CustomEvent('gcode:load', { detail: fullName }))
+            }}
+            title={canLoadGcode ? 'Load in G-code viewer' : 'Cannot load another file while a job is running or held'}
+          >
+            {entry.name}
+          </button>
+        ) : (
+          <span className={`flex-1 text-xl text-text-primary truncate`}>{entry.name}</span>
+        )}
+
+        {!renaming && !isTablet && (
+          <div className="w-28 shrink-0 flex items-center justify-end">
+            {!entry.isDir && (
+              <span className="text-base text-text-dim font-mono text-right group-hover:hidden">{fmtSize(entry.size)}</span>
+            )}
+            <div className="hidden group-hover:flex items-center gap-1">
+              {!entry.isDir && isEditable(entry.name) && (
+                <button
+                  className="p-1.5 rounded text-info hover:bg-info/10 transition-colors"
+                  onClick={() => onEdit(fullPath, entry.name)}
+                  title="Edit file"
+                >
+                  <FileCode size={12} />
+                </button>
+              )}
+              {!entry.isDir && (
+                <button
+                  className="p-1.5 rounded text-info hover:bg-info/10 transition-colors"
+                  onClick={handleDownload}
+                  title="Download"
+                >
+                  <Download size={12} />
+                </button>
+              )}
+              <button
+                className="p-1.5 rounded text-text-muted hover:text-text-primary hover:bg-elevated transition-colors"
+                onClick={startRename}
+                title="Rename"
+              >
+                <Pencil size={12} />
+              </button>
+              <button
+                className="p-1.5 rounded text-danger hover:bg-danger/10 transition-colors"
+                onClick={handleDelete}
+                disabled={deleting}
+                title="Delete"
+              >
+                <Trash2 size={12} />
+              </button>
+            </div>
+          </div>
+        )}
+
+        {renaming && (
+          <button
+            className="p-1.5 rounded text-ok hover:bg-ok/10 transition-colors shrink-0"
+            onClick={commitRename}
+            title="Confirm rename"
+          >
+            <Check size={12} />
+          </button>
+        )}
       </div>
 
-      {renaming ? (
-        <input
-          ref={renameRef}
-          className={`flex-1 input-field py-0.5 text-lg`}
-          value={newName}
-          onChange={e => setNewName(e.target.value)}
-          onKeyDown={e => {
-            if (e.key === 'Enter') commitRename()
-            if (e.key === 'Escape') setRenaming(false)
-          }}
-          onBlur={commitRename}
-          autoFocus
-        />
-      ) : entry.isDir ? (
-        <button
-          className={`flex-1 text-left ${isTablet ? 'text-2xl' : 'text-xl'} text-text-primary hover:text-accent truncate`}
-          onClick={() => onNavigate(`${fullPath}${entry.name}`)}
+      {showMenu && (
+        <div
+          className="fixed inset-0 z-50 flex items-end"
+          onClick={() => setShowMenu(false)}
         >
-          {entry.name}
-        </button>
-      ) : isGcode(entry.name) ? (
-        <button
-          className={`flex-1 text-left ${isTablet ? 'text-2xl' : 'text-xl'} truncate ${canLoadGcode ? 'text-text-primary hover:text-accent' : 'text-text-dim cursor-not-allowed'}`}
-          onClick={() => {
-            if (!canLoadGcode) return
-            window.dispatchEvent(new CustomEvent('gcode:load', { detail: fullName }))
-          }}
-          title={canLoadGcode ? 'Load in G-code viewer' : 'Cannot load another file while a job is running or held'}
-        >
-          {entry.name}
-        </button>
-      ) : (
-        <span className={`flex-1 ${isTablet ? 'text-2xl' : 'text-xl'} text-text-primary truncate`}>{entry.name}</span>
-      )}
-
-      {!renaming && (
-        <div className={`${isTablet ? 'w-36' : 'w-28'} shrink-0 flex items-center justify-end`}>
-          {!entry.isDir && (
-            <span className={`${isTablet ? 'text-base' : 'text-base'} text-text-dim font-mono text-right group-hover:hidden`}>{fmtSize(entry.size)}</span>
-          )}
-          <div className="hidden group-hover:flex items-center gap-1">
-            {!entry.isDir && isEditable(entry.name) && (
+          <div
+            className="w-full bg-surface border-t border-border rounded-t-xl shadow-xl"
+            onClick={e => e.stopPropagation()}
+          >
+            <div className="flex items-center justify-between px-5 py-4 border-b border-border">
+              <div className="flex items-center gap-3 min-w-0">
+                {entry.isDir
+                  ? <Folder size={20} className="text-accent/70 shrink-0" />
+                  : <File size={20} className="text-text-dim shrink-0" />}
+                <span className="text-xl font-medium text-text-primary truncate">{entry.name}</span>
+              </div>
               <button
-                className={`${isTablet ? 'p-2.5' : 'p-1.5'} rounded text-info hover:bg-info/10 transition-colors`}
-                onClick={() => onEdit(fullPath, entry.name)}
-                title="Edit file"
+                className="p-2 rounded text-text-muted hover:text-text-primary shrink-0"
+                onClick={() => setShowMenu(false)}
               >
-                <FileCode size={isTablet ? 18 : 12} />
+                <X size={20} />
               </button>
-            )}
-            {!entry.isDir && (
+            </div>
+            <div className="px-3 py-3 flex flex-col gap-1">
+              {!entry.isDir && isGcode(entry.name) && (
+                <button
+                  className={`flex items-center gap-4 px-4 py-4 rounded-lg text-xl w-full text-left transition-colors ${
+                    canLoadGcode
+                      ? 'text-accent hover:bg-accent/10'
+                      : 'text-text-dim cursor-not-allowed'
+                  }`}
+                  onClick={canLoadGcode ? handleGcodeLoad : undefined}
+                  disabled={!canLoadGcode}
+                >
+                  <ChevronRight size={22} />
+                  <span>Load in Viewer</span>
+                  {!canLoadGcode && <span className="text-base text-text-dim ml-auto">Job running</span>}
+                </button>
+              )}
+              {!entry.isDir && isEditable(entry.name) && (
+                <button
+                  className="flex items-center gap-4 px-4 py-4 rounded-lg text-xl w-full text-left text-info hover:bg-info/10 transition-colors"
+                  onClick={handleMenuEdit}
+                >
+                  <FileCode size={22} />
+                  <span>Edit</span>
+                </button>
+              )}
+              {!entry.isDir && (
+                <button
+                  className="flex items-center gap-4 px-4 py-4 rounded-lg text-xl w-full text-left text-text-primary hover:bg-elevated transition-colors"
+                  onClick={handleMenuDownload}
+                >
+                  <Download size={22} />
+                  <span>Download</span>
+                </button>
+              )}
               <button
-                className={`${isTablet ? 'p-2.5' : 'p-1.5'} rounded text-info hover:bg-info/10 transition-colors`}
-                onClick={handleDownload}
-                title="Download"
+                className="flex items-center gap-4 px-4 py-4 rounded-lg text-xl w-full text-left text-text-primary hover:bg-elevated transition-colors"
+                onClick={handleMenuRename}
               >
-                <Download size={isTablet ? 18 : 12} />
+                <Pencil size={22} />
+                <span>Rename</span>
               </button>
-            )}
-            <button
-              className={`${isTablet ? 'p-2.5' : 'p-1.5'} rounded text-text-muted hover:text-text-primary hover:bg-elevated transition-colors`}
-              onClick={startRename}
-              title="Rename"
-            >
-              <Pencil size={isTablet ? 18 : 12} />
-            </button>
-            <button
-              className={`${isTablet ? 'p-2.5' : 'p-1.5'} rounded text-danger hover:bg-danger/10 transition-colors`}
-              onClick={handleDelete}
-              disabled={deleting}
-              title="Delete"
-            >
-              <Trash2 size={isTablet ? 18 : 12} />
-            </button>
+              <button
+                className="flex items-center gap-4 px-4 py-4 rounded-lg text-xl w-full text-left text-danger hover:bg-danger/10 transition-colors"
+                onClick={handleMenuDelete}
+                disabled={deleting}
+              >
+                <Trash2 size={22} />
+                <span>Delete</span>
+              </button>
+            </div>
+            <div className="h-safe-bottom pb-4" />
           </div>
         </div>
       )}
-
-      {renaming && (
-        <button
-          className="p-1.5 rounded text-ok hover:bg-ok/10 transition-colors shrink-0"
-          onClick={commitRename}
-          title="Confirm rename"
-        >
-          <Check size={12} />
-        </button>
-      )}
-    </div>
+    </>
   )
 }
 
