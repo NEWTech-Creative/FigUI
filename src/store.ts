@@ -110,6 +110,7 @@ const DEFAULT_WATCHDOG_STATE: WatchdogState = {
 interface Store {
   connected: boolean
   restarting: boolean
+  startupPending: boolean
   status: MachineStatus
   espInfo: ESPInfo | null
   controllerSettings: ControllerSettings
@@ -131,6 +132,7 @@ interface Store {
 
   setConnected: (v: boolean) => void
   setRestarting: (v: boolean) => void
+  setStartupPending: (v: boolean) => void
   updateStatus: (s: Partial<MachineStatus>) => void
   setEspInfo: (info: ESPInfo) => void
   updateControllerSettings: (settings: Partial<ControllerSettings>) => void
@@ -152,6 +154,7 @@ interface Store {
 export const useMachineStore = create<Store>((set) => ({
   connected: false,
   restarting: false,
+  startupPending: false,
   status: DEFAULT_STATUS,
   espInfo: null,
   controllerSettings: {},
@@ -172,6 +175,7 @@ export const useMachineStore = create<Store>((set) => ({
 
   setConnected: (connected) => set({ connected }),
   setRestarting: (restarting) => set({ restarting }),
+  setStartupPending: (startupPending) => set({ startupPending }),
 
   updateStatus: (s) =>
     set(state => {

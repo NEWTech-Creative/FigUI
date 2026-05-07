@@ -1,7 +1,8 @@
 import { useState, useEffect, useRef } from 'react'
-import { Trash2, ChevronsDown, Clipboard, ClipboardCheck } from 'lucide-react'
+import { Trash2, ChevronsDown, Clipboard, ClipboardCheck, Loader2 } from 'lucide-react'
 import { sendRaw } from '../lib/ws'
 import { useTerminalStore, type LineKind } from '../store/terminal'
+import { useMachineStore } from '../store'
 
 const KIND_CLASS: Record<LineKind, string> = {
   error: 'text-danger',
@@ -22,6 +23,7 @@ export function Terminal() {
   const pushHistory = useTerminalStore(s => s.pushHistory)
   const appendLine = useTerminalStore(s => s.appendLine)
   const clear = useTerminalStore(s => s.clear)
+  const startupPending = useMachineStore(s => s.startupPending)
 
   const [input, setInput] = useState('')
   const [histIdx, setHistIdx] = useState(-1)
@@ -136,6 +138,13 @@ export function Terminal() {
             {l.text}
           </div>
         ))}
+
+        {startupPending && (
+          <div className="terminal-line flex items-center gap-2 text-text-dim">
+            <Loader2 size={12} className="animate-spin" />
+            <span>Fetching status...</span>
+          </div>
+        )}
 
         {!autoScroll && (
           <button

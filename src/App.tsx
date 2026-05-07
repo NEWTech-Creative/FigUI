@@ -74,6 +74,7 @@ export function App() {
   const setMacros = useMachineStore(s => s.setMacros)
   const setPendingUpdateVersion = useMachineStore(s => s.setPendingUpdateVersion)
   const setStoreRestarting = useMachineStore(s => s.setRestarting)
+  const setStartupPending = useMachineStore(s => s.setStartupPending)
   const clearTerminal = useTerminalStore(s => s.clear)
   const machineState = useMachineStore(s => s.status.state)
   const activeLayout = useActiveLayout(layoutMode)
@@ -219,16 +220,19 @@ export function App() {
       }
       if (stableConnectTimer.current) clearTimeout(stableConnectTimer.current)
       // Only send $SS and $$ startup queries after stable connection to prevent ESP32 from flooding TX queue.
+      setStartupPending(true)
       stableConnectTimer.current = setTimeout(() => {
         backoffMs.current = 0
         stableConnectTimer.current = null
         sendStartupQueries()
+        setStartupPending(false)
       }, 2000)
     } else {
       if (stableConnectTimer.current) {
         clearTimeout(stableConnectTimer.current)
         stableConnectTimer.current = null
       }
+      setStartupPending(false)
       if (!reconnectTimer.current) {
         // Respect existing backoff so rapid connect/drop loops slow down.
         const delay = backoffMs.current > 0 ? Math.min(backoffMs.current, 30000) : 300
