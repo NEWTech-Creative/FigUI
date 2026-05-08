@@ -1708,7 +1708,7 @@ export function GCodeViewer({ className, isTablet }: Props) {
     }
     container.addEventListener('wheel', onWheel, { passive: false })
     return () => container.removeEventListener('wheel', onWheel)
-  }, [is3D])
+  }, [is3D, projectionMode])
 
   function onPointerDown(e: React.PointerEvent) {
     ;(e.target as HTMLElement).setPointerCapture(e.pointerId)
