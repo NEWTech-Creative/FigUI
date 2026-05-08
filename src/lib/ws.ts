@@ -1,5 +1,6 @@
 import { parseControllerSettingLine, parseGcStateLine, parseStatusReport } from './parser'
 import { useMachineStore } from '../store'
+import { sendCommand } from './http'
 
 let socket: WebSocket | null = null
 
@@ -14,12 +15,6 @@ interface SilentResponseMatcher {
   starts: (line: string) => boolean
   consume: (line: string) => boolean
   done: (line: string) => boolean
-}
-
-const SETTINGS_DUMP_SILENT_RESPONSE: SilentResponseMatcher = {
-  starts: (line) => /^\$\d+=/.test(line),
-  consume: (line) => /^\$\d+=/.test(line),
-  done: (line) => line === 'ok' || line === 'error',
 }
 
 const ALARM_QUERY_SILENT_RESPONSE: SilentResponseMatcher = {
@@ -395,6 +390,15 @@ function handleLine(line: string) {
     return
   }
 
+  if (line === 'ok' || line === 'error') {
+    for (const [ackKey, ackData] of pendingAcknowledgments.entries()) {
+      clearTimeout(ackData.timeoutId)
+      ackData.callback()
+      pendingAcknowledgments.delete(ackKey)
+      break
+    }
+  }
+
   if (isSilentLine) return
 
   const alarmMatch = line.match(/^Active alarm:\s*(\d+)\s*\(([^)]+)\)/)
@@ -419,15 +423,6 @@ function handleLine(line: string) {
   }
 
   if (line.startsWith('{"EEPROM":') || line.startsWith('{"cmd":"400"')) return
-
-  if (line === 'ok' || line === 'error') {
-    for (const [ackKey, ackData] of pendingAcknowledgments.entries()) {
-      clearTimeout(ackData.timeoutId)
-      ackData.callback()
-      pendingAcknowledgments.delete(ackKey)
-      break
-    }
-  }
 
   if (line === 'ok' && pendingPingOks > 0) { pendingPingOks--; return }
 
@@ -462,13 +457,27 @@ export function sendSilentAlarmQuery() {
   return sendSilentRaw('$A', ALARM_QUERY_SILENT_RESPONSE)
 }
 
-// Replays the startup log ($SS — version, WiFi, warnings) and refreshes the
-// controller settings used by jog and spindle controls ($$). Called by App.tsx
-// only after the WS has been stable for a couple of seconds. See ws.onopen for
-// why these can't be fired immediately on open.
-export function sendStartupQueries() {
-  sendRaw('$SS')
-  sendSilentRaw('$$', SETTINGS_DUMP_SILENT_RESPONSE)
+
+export async function sendStartupQueries() {
+  try {
+    const ssText = await sendCommand('$SS')
+    ssText.split('\n').forEach(raw => {
+      const line = raw.trim()
+      if (line) lineHandlers.forEach(fn => fn(line))
+    })
+  } catch { /* noop */ }
+
+  try {
+    const settingsText = await sendCommand('$$')
+    settingsText.split('\n').forEach(raw => {
+      const line = raw.trim()
+      if (!line) return
+      const settings = parseControllerSettingLine(line)
+      if (settings) {
+        useMachineStore.getState().updateControllerSettings(settings)
+      }
+    })
+  } catch { /* noop */ }
 }
 
 export function sendRealtime(byte: number) {
