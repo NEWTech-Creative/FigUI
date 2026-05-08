@@ -67,6 +67,10 @@ function treeSubcat(path: string): string {
 }
 
 const KEY_LABELS: Record<string, string> = {
+  PsMode:                          'Power Save Mode',
+  MinSecurity:                     'Minimum Security',
+  FastScan:                        'Fast Scan',
+  IPMode:                          'IP Mode',
   steps_per_mm:                    'Steps / mm',
   max_rate_mm_per_min:             'Max Rate',
   acceleration_mm_per_sec2:        'Acceleration',
@@ -119,6 +123,10 @@ const KEY_LABELS: Record<string, string> = {
 }
 
 const GROUP_LABELS: Record<string, string> = {
+  WiFi:          'General',
+  Sta:           'Station (STA)',
+  AP:            'Access Point (AP)',
+  Hostname:      'Hostname',
   uart1:         'UART 1',
   uart2:         'UART 2',
   uart_channel1: 'UART Channel 1',
@@ -154,15 +162,9 @@ function searchBreadcrumb(s: Setting): string {
 }
 
 function displayLabel(s: Setting): string {
-  if (s.F === 'tree') {
-    const parts = s.P.split('/').filter(Boolean)
-    const last = parts[parts.length - 1] ?? s.P
-    return humanizeKey(last)
-  }
-  const parts = s.P.split('/')
-  if (parts.length <= 1) return parts[0]
-  if (parts.length === 2) return parts[1]
-  return parts.slice(1).join(' / ')
+  const parts = s.P.split('/').filter(Boolean)
+  const last = parts[parts.length - 1] ?? s.P
+  return humanizeKey(last)
 }
 
 function inferUnit(path: string): string {
@@ -249,7 +251,7 @@ function buildGroupedItems(settings: Setting[], subKey: string): ListItem[] {
 
   const items: ListItem[] = []
   for (const [seg, subs] of groups) {
-    if (subs.length > 1) items.push({ type: 'header', label: groupLabel(seg), level: 'section' })
+    items.push({ type: 'header', label: groupLabel(seg), level: 'section' })
     for (const s of subs) items.push({ type: 'setting', setting: s })
   }
   return items
@@ -618,7 +620,7 @@ export function SettingsPanel({ onClose }: SettingsPanelProps) {
   }, [settings, filter, category, subKey])
 
   const groupedItems = useMemo((): ListItem[] => {
-    if (category !== 'config' || filter.trim()) {
+    if ((category !== 'config' && category !== 'wifi') || filter.trim()) {
       return visibleSettings.map(s => ({ type: 'setting', setting: s }))
     }
     return buildGroupedItems(visibleSettings, subKey)
