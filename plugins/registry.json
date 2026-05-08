@@ -13,7 +13,7 @@
       "id": "heightmap",
       "name": "Heightmap",
       "description": "Probe a surface heightmap and apply Z-correction to G-code files for PCB milling, engraving, and other precision work.",
-      "version": "1.0.0",
+      "version": "1.0.1",
       "author": "figamore",
       "base": "https://raw.githubusercontent.com/figamore/FigUI/main/plugins/heightmap/"
     }

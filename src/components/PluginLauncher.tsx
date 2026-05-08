@@ -9,6 +9,8 @@ import { semverGt } from '../lib/updateCheck'
 type Tab = 'installed' | 'store'
 type FsDest = 'local' | 'sd'
 
+let pluginsCache: Plugin[] | null = null
+
 interface ProgressState {
   current: number
   total: number
@@ -69,8 +71,8 @@ function FsBadge({ fs }: { fs: 'sd' | 'local' }) {
 
 export function PluginLauncher({ isTablet, onLaunchPanel, activeLayout }: { isTablet?: boolean; onLaunchPanel?: (plugin: Plugin) => void; activeLayout?: ActiveLayout }) {
   const [tab, setTab] = useState<Tab>('installed')
-  const [plugins, setPlugins] = useState<Plugin[]>([])
-  const [scanning, setScanning] = useState(true)
+  const [plugins, setPlugins] = useState<Plugin[]>(pluginsCache ?? [])
+  const [scanning, setScanning] = useState(pluginsCache === null)
   const [activePlugin, setActivePlugin] = useState<Plugin | null>(null)
 
   const [destFs, setDestFs] = useState<FsDest>('local')
@@ -94,13 +96,15 @@ export function PluginLauncher({ isTablet, onLaunchPanel, activeLayout }: { isTa
   const [justInstalled, setJustInstalled] = useState<string | null>(null)
   const [updatingId, setUpdatingId] = useState<string | null>(null)
 
-  const scan = useCallback(async () => {
-    setScanning(true)
-    setPlugins(await discoverPlugins())
+  const scan = useCallback(async (silent = false) => {
+    if (!silent) setScanning(true)
+    const found = await discoverPlugins()
+    pluginsCache = found
+    setPlugins(found)
     setScanning(false)
   }, [])
 
-  useEffect(() => { scan() }, [scan])
+  useEffect(() => { scan(pluginsCache !== null) }, [scan])
 
   const loadStore = useCallback(async () => {
     if (storeEntries !== null) return
@@ -214,7 +218,7 @@ export function PluginLauncher({ isTablet, onLaunchPanel, activeLayout }: { isTa
             Add
           </button>
           <button
-            onClick={scan}
+            onClick={() => scan()}
             disabled={scanning}
             className="text-text-muted hover:text-accent transition-colors disabled:opacity-40 shrink-0"
             aria-label="Refresh"
