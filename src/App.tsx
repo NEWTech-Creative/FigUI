@@ -226,7 +226,7 @@ export function App() {
         stableConnectTimer.current = null
         sendStartupQueries()
         setStartupPending(false)
-      }, 3000)
+      }, 2000)
     } else {
       if (stableConnectTimer.current) {
         clearTimeout(stableConnectTimer.current)
@@ -235,7 +235,7 @@ export function App() {
       setStartupPending(false)
       if (!reconnectTimer.current) {
         // Respect existing backoff so rapid connect/drop loops slow down.
-        const delay = backoffMs.current > 0 ? Math.min(backoffMs.current, 30000) : 2000
+        const delay = backoffMs.current > 0 ? Math.min(backoffMs.current, 30000) : 300
         reconnectTimer.current = setTimeout(async () => {
           reconnectTimer.current = null
           if (isSocketOpen()) return

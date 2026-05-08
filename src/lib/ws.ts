@@ -146,6 +146,7 @@ export function onLine(fn: LineHandler): () => void {
   return () => { lineHandlers.delete(fn) }
 }
 
+const PING_INTERVAL_MS = 5000
 const LIVENESS_CHECK_MS = 2000
 const LIVENESS_TIMEOUT_MS = 12000
 const OPEN_TIMEOUT_MS = 6000
@@ -193,6 +194,7 @@ export function connect(host: string): Promise<void> {
 
       useMachineStore.getState().setConnected(true)
       startCommandProcessor()
+      startPing()
       startLivenessWatchdog()
       startStatusPoll()
 
@@ -256,18 +258,30 @@ function handleDisconnect() {
 function closeCurrentSocket() {
   const stale = socket
   if (!stale) return
+  // Detach all handlers so the close event can't double-fire downstream.
   stale.onopen = null
   stale.onclose = null
   stale.onerror = null
   stale.onmessage = null
   socket = null
-  stopPing()
-  stopLivenessWatchdog()
-  stopStatusPoll()
-  stopCommandProcessor()
   try { stale.close() } catch { /* noop */ }
+  // No need to call handleDisconnect() — generation bump prevents stale
+  // events, and the caller (connect or disconnect) owns post-close cleanup.
 }
 
+function startPing() {
+  stopPing()
+  pingTimer = setInterval(() => {
+    if (socket?.readyState !== WebSocket.OPEN) return
+    if (pendingAcknowledgments.size === 0) pendingPingOks++
+    connectionHealth.lastPingTime = Date.now()
+    try {
+      socket.send(`PING:${pageId}\n`)
+    } catch {
+      // Send failed — let the liveness watchdog catch it.
+    }
+  }, PING_INTERVAL_MS)
+}
 
 function stopPing() {
   if (pingTimer) { clearInterval(pingTimer); pingTimer = null }
@@ -286,7 +300,6 @@ function startStatusPoll() {
     }
   }, STATUS_POLL_INTERVAL_MS)
 }
-
 
 function stopStatusPoll() {
   if (statusPollTimer) { clearInterval(statusPollTimer); statusPollTimer = null }
@@ -454,7 +467,6 @@ export function sendSilentAlarmQuery() {
 // only after the WS has been stable for a couple of seconds. See ws.onopen for
 // why these can't be fired immediately on open.
 export function sendStartupQueries() {
-  sendRaw('$Report/Interval=500')
   sendRaw('$SS')
   sendSilentRaw('$$', SETTINGS_DUMP_SILENT_RESPONSE)
 }
