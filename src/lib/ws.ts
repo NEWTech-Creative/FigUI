@@ -196,7 +196,9 @@ export function connect(host: string): Promise<void> {
       startCommandProcessor()
       startPing()
       startLivenessWatchdog()
-      startStatusPoll()
+      setTimeout(() => {
+        if (myGen === generation) startStatusPoll()
+      }, 2000)
 
       resolve()
     }
@@ -258,15 +260,16 @@ function handleDisconnect() {
 function closeCurrentSocket() {
   const stale = socket
   if (!stale) return
-  // Detach all handlers so the close event can't double-fire downstream.
   stale.onopen = null
   stale.onclose = null
   stale.onerror = null
   stale.onmessage = null
   socket = null
+  stopPing()
+  stopLivenessWatchdog()
+  stopStatusPoll()
+  stopCommandProcessor()
   try { stale.close() } catch { /* noop */ }
-  // No need to call handleDisconnect() — generation bump prevents stale
-  // events, and the caller (connect or disconnect) owns post-close cleanup.
 }
 
 function startPing() {
