@@ -1,10 +1,18 @@
 import { Play, Pause, Square, RotateCcw, DoorOpen } from 'lucide-react'
 import { useMachineStore } from '../store'
+import { useGCodeStore } from '../store/gcode'
+import { formatRuntime, useJobRuntimeEstimate } from '../lib/jobRuntime'
 import { sendRealtime, sendRaw } from '../lib/ws'
 
 export function JobControl() {
   const status = useMachineStore(s => s.status)
-  const { state, sdFilename, sdPercent } = status
+  const controllerSettings = useMachineStore(s => s.controllerSettings)
+  const model = useGCodeStore(s => s.model)
+  const loadedPath = useGCodeStore(s => s.loadedPath)
+  const fileName = useGCodeStore(s => s.fileName)
+  const { state, sdFilename } = status
+  const runtime = useJobRuntimeEstimate(status, model, controllerSettings, loadedPath, fileName)
+  const progressPercent = runtime.progressPercent
 
   const isRunning = state === 'Run'
   const isHold    = state === 'Hold'
@@ -27,16 +35,22 @@ export function JobControl() {
         {/* SD progress */}
         {hasSd && (
           <div className="space-y-1.5">
-            <div className="flex justify-between text-sm">
-              <span className="text-text-muted font-mono truncate max-w-[70%]">{sdFilename}</span>
-              <span className="text-text-primary font-mono">{sdPercent ?? 0}%</span>
-            </div>
-            <div className="w-full h-1.5 bg-elevated rounded-full overflow-hidden">
-              <div
-                className="h-full bg-info transition-all duration-500 rounded-full"
-                style={{ width: `${sdPercent ?? 0}%` }}
-              />
-            </div>
+            <div className="text-sm text-text-muted font-mono truncate">{sdFilename}</div>
+            {progressPercent != null && (
+              <div className="w-full h-1.5 bg-elevated rounded-full overflow-hidden">
+                <div
+                  className="h-full bg-info transition-all duration-500 rounded-full"
+                  style={{ width: `${progressPercent}%` }}
+                />
+              </div>
+            )}
+            {runtime.source === 'estimated' && (
+              <div className="flex justify-between text-xs font-mono text-text-muted tabular-nums">
+                <span>Elapsed {formatRuntime(runtime.elapsedSeconds)}</span>
+                <span>Remain {formatRuntime(runtime.remainingSeconds)}</span>
+                <span>Total {formatRuntime(runtime.totalSeconds)}</span>
+              </div>
+            )}
           </div>
         )}
 

@@ -71,16 +71,9 @@ export function Header({ onSettingsClick, onAboutClick, isTablet }: Props) {
         </div>
       )}
 
-      {status.sdFilename && status.sdPercent !== undefined && (
-        <div className="hidden lg:flex items-center gap-2 text-sm text-text-muted">
-          <div className="w-24 h-1 bg-elevated rounded-full overflow-hidden">
-            <div
-              className="h-full bg-info transition-all"
-              style={{ width: `${status.sdPercent}%` }}
-            />
-          </div>
-          <span className="w-9 text-right font-mono tabular-nums">{status.sdPercent}%</span>
-          <span className="text-text-dim truncate max-w-32">{status.sdFilename}</span>
+      {status.sdFilename && (
+        <div className="hidden lg:flex items-center text-sm text-text-dim truncate max-w-32">
+          {status.sdFilename}
         </div>
       )}
 

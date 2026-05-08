@@ -6,6 +6,7 @@ import { useGCodeStore } from '../store/gcode'
 import { sendRaw, sendRealtime } from '../lib/ws'
 import type { Units } from '../types'
 import { displayToMm, mmToDisplay } from '../lib/units'
+import { formatRuntime, useJobRuntimeEstimate } from '../lib/jobRuntime'
 import { createRenderer, renderLines, setStaticLineData, type WebGLRenderer, type Camera, type Vector3 } from '../lib/webgl'
 import { addSegmentToPath, clamp01, getArcGeometry, normalizeAngle } from '../lib/gcodeBuild'
 
@@ -1293,8 +1294,11 @@ export function GCodeViewer({ className, isTablet }: Props) {
   }
 
   const status = useMachineStore(s => s.status)
+  const controllerSettings = useMachineStore(s => s.controllerSettings)
   const units = useMachineStore(s => s.units)
-  const sdPercent = status.sdPercent ?? 0
+  const runtime = useJobRuntimeEstimate(status, model, controllerSettings, loadedPath, fileName)
+  const progressPercent = runtime.progressPercent
+  const showEstimatedTiming = runtime.source === 'estimated'
   const isRunning = status.state === 'Run' || status.state === 'Hold'
   const isJobRunning = status.state === 'Run'
   const isJobHeld = status.state === 'Hold'
@@ -2134,13 +2138,21 @@ export function GCodeViewer({ className, isTablet }: Props) {
       <div className="shrink-0 border-t border-border bg-surface px-4 pt-2.5 pb-3 flex flex-col gap-2">
         {/* Progress bar — only while a job is active */}
         {(isJobRunning || isJobHeld) && (
-          <div className="flex items-center gap-2.5">
-            <div className="flex-1 h-1.5 bg-elevated rounded-full overflow-hidden">
-              <div className="h-full bg-ok transition-all duration-500 rounded-full" style={{ width: `${sdPercent}%` }} />
-            </div>
-            <span className="text-sm font-mono text-text-muted tabular-nums w-9 text-right">
-              {sdPercent}%
-            </span>
+          <div className="flex flex-col gap-1.5">
+            {progressPercent != null && (
+              <div className="flex items-center gap-2.5">
+                <div className="flex-1 h-1.5 bg-elevated rounded-full overflow-hidden">
+                  <div className="h-full bg-ok transition-all duration-500 rounded-full" style={{ width: `${progressPercent}%` }} />
+                </div>
+              </div>
+            )}
+            {showEstimatedTiming && (
+              <div className="flex items-center justify-between gap-3 text-[11px] font-mono text-text-muted tabular-nums">
+                <span>Elapsed {formatRuntime(runtime.elapsedSeconds)}</span>
+                <span>Remain {formatRuntime(runtime.remainingSeconds)}</span>
+                <span>Total {formatRuntime(runtime.totalSeconds)}</span>
+              </div>
+            )}
           </div>
         )}
 

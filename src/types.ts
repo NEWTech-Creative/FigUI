@@ -57,12 +57,16 @@ export interface ESPInfo {
 }
 
 export interface ControllerSettings {
+  junctionDeviation?: number
   homingDirInvert?: number
   spindleMin?: number
   spindleMax?: number
   maxRateX?: number
   maxRateY?: number
   maxRateZ?: number
+  accelX?: number
+  accelY?: number
+  accelZ?: number
   maxTravelX?: number
   maxTravelY?: number
   maxTravelZ?: number

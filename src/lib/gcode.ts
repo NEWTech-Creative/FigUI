@@ -9,6 +9,7 @@ export interface Segment {
    * G1/G2/G3 while spindle is off on a spindle machine = 'traverse'
    */
   moveType: 'rapid' | 'feed' | 'traverse'
+  feedMmPerMin?: number
   /** For arcs: center offsets (relative to start). undefined for lines. */
   i?: number; j?: number; k?: number
   /** true = clockwise arc (G2) */
@@ -36,6 +37,7 @@ export function parseGCode(text: string): GCodeModel {
   let incremental = false
   let spindleOn = false        // Track spindle state
   let spindleEverOn = false    // Whether spindle was ever activated (false = no spindle machine e.g. pen plotter)
+  let feedMmPerMin = 0
   const bounds = { minX: Infinity, minY: Infinity, minZ: Infinity, maxX: -Infinity, maxY: -Infinity, maxZ: -Infinity }
 
   function getMoveType(): 'rapid' | 'feed' | 'traverse' {
@@ -93,6 +95,10 @@ export function parseGCode(text: string): GCodeModel {
       else if (g === 3) { rapid = false; arcMode = 3 }
     }
 
+    if (Number.isFinite(words.F) && words.F > 0) {
+      feedMmPerMin = words.F
+    }
+
     // G92 – set coordinate offset
     if (gCodes.includes(92)) {
       offX = x - (words.X ?? x)
@@ -139,6 +145,9 @@ export function parseGCode(text: string): GCodeModel {
       expandBounds(x0, y0, z0)
       expandBounds(x, y, z)
 
+      const moveType = getMoveType()
+      const feedData = moveType === 'rapid' || feedMmPerMin <= 0 ? {} : { feedMmPerMin }
+
       if (isArc) {
         const cw = gCodes.includes(2) || (!gCodes.includes(3) && arcMode === 2)
         let i: number, j: number, k: number = 0
@@ -168,13 +177,13 @@ export function parseGCode(text: string): GCodeModel {
           const cx = x0 + i, cy = y0 + j, cz = z0 + k
           expandBounds(cx - r, cy - r, cz - r)
           expandBounds(cx + r, cy + r, cz + r)
-          segments.push({ x0, y0, z0, x1: x, y1: y, z1: z, moveType: getMoveType(), i, j, k, cw })
+          segments.push({ x0, y0, z0, x1: x, y1: y, z1: z, moveType, i, j, k, cw, ...feedData })
         } else {
           // Treat degenerate arc as a line
-          segments.push({ x0, y0, z0, x1: x, y1: y, z1: z, moveType: getMoveType() })
+          segments.push({ x0, y0, z0, x1: x, y1: y, z1: z, moveType, ...feedData })
         }
       } else {
-        segments.push({ x0, y0, z0, x1: x, y1: y, z1: z, moveType: getMoveType() })
+        segments.push({ x0, y0, z0, x1: x, y1: y, z1: z, moveType, ...feedData })
       }
     }
   }
