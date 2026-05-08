@@ -1299,7 +1299,7 @@ function applyHmap(gcode, hmap) {
   }
 
   function correctedZ(x, y, z) {
-    return z + interp(x, y) - meanZ
+    return z + interp(x, y)
   }
 
   function replaceOrAppendZ(line, z) {
