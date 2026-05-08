@@ -33,7 +33,7 @@
           <div id="gcode-picker-list"></div>
         </div>
         <div class="selected-file-row">
-          <span id="gcode-name" class="no-name">Load G-code file to auto-set probe area, or set manually below</span>
+          <span id="gcode-name" class="no-name">Load a G-code file to enable probing</span>
         </div>
       </div>
 
@@ -109,7 +109,7 @@
       </div>
 
       <div class="action-bar">
-        <button class="primary-btn" id="start-btn" onclick="startProbing()">Start Probing</button>
+        <button class="primary-btn" id="start-btn" onclick="startProbing()" disabled>Start Probing</button>
         <button class="danger-btn" id="abort-btn" onclick="abortProbing()" style="display:none">Abort</button>
         <div class="progress-wrap" id="progress-wrap" style="display:none">
           <div class="progress-track"><div class="progress-fill" id="progress-fill"></div></div>
@@ -809,6 +809,10 @@ async function startProbing() {
     toast('Wait for the G-code file to finish loading', 'warn')
     return
   }
+  if (!state.sourceGcodeFile) {
+    toast('Load a G-code file before probing', 'err')
+    return
+  }
 
   syncParams()
   if (params.xMax <= params.xMin) { toast('X max must be greater than X min', 'err'); return }
@@ -1106,7 +1110,7 @@ async function loadGCodeFile(name) {
     if (loadToken === state.gcodeLoadToken) {
       state.loadingGcodeFile = false
       if (startBtn) {
-        startBtn.disabled = false
+        startBtn.disabled = !state.sourceGcodeFile
         startBtn.textContent = 'Start Probing'
       }
     }
