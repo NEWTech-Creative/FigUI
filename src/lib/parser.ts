@@ -99,6 +99,9 @@ const CONTROLLER_SETTING_MAP: Record<string, keyof ControllerSettings> = {
   '23': 'homingDirInvert',
   '30': 'spindleMax',
   '31': 'spindleMin',
+  '100': 'stepsPerMmX',
+  '101': 'stepsPerMmY',
+  '102': 'stepsPerMmZ',
   '110': 'maxRateX',
   '111': 'maxRateY',
   '112': 'maxRateZ',
@@ -111,7 +114,7 @@ const CONTROLLER_SETTING_MAP: Record<string, keyof ControllerSettings> = {
 }
 
 export function parseControllerSettingLine(line: string): Partial<ControllerSettings> | null {
-  const match = line.match(/^\$(11|23|30|31|110|111|112|120|121|122|130|131|132)=(-?\d+(?:\.\d+)?)(?:\s|$)/)
+  const match = line.match(/^\$(11|23|30|31|100|101|102|110|111|112|120|121|122|130|131|132)=(-?\d+(?:\.\d+)?)(?:\s|$)/)
   if (!match) return null
 
   const value = Number.parseFloat(match[2])

@@ -61,6 +61,9 @@ export interface ControllerSettings {
   homingDirInvert?: number
   spindleMin?: number
   spindleMax?: number
+  stepsPerMmX?: number
+  stepsPerMmY?: number
+  stepsPerMmZ?: number
   maxRateX?: number
   maxRateY?: number
   maxRateZ?: number

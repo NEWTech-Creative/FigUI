@@ -8,7 +8,7 @@
 * { box-sizing: border-box; margin: 0; padding: 0 }
 body {
   font-family: system-ui, -apple-system, sans-serif;
-  font-size: 13px;
+  font-size: 17px;
   background: var(--bg);
   color: var(--text-primary);
   height: 100vh;
@@ -24,15 +24,15 @@ body {
   flex-shrink: 0;
   gap: 10px;
 }
-.header h1 { font-size: 14px; font-weight: 600 }
+.header h1 { font-size: 19px; font-weight: 600 }
 .split {
   display: flex;
   flex: 1;
   overflow: hidden;
 }
 .panel-left {
-  width: 250px;
-  min-width: 200px;
+  width: 300px;
+  min-width: 240px;
   border-right: 1px solid var(--border);
   overflow-y: auto;
   padding: 12px;
@@ -50,7 +50,7 @@ body {
   gap: 12px;
 }
 .section-label {
-  font-size: 11px;
+  font-size: 14px;
   font-weight: 600;
   text-transform: uppercase;
   letter-spacing: 0.05em;
@@ -65,24 +65,28 @@ body {
   margin-bottom: 6px;
 }
 .param-row label {
-  width: 80px;
+  width: 90px;
   flex-shrink: 0;
   color: var(--text-muted);
-  font-size: 12px;
+  font-size: 16px;
 }
 input[type=number], input[type=text] {
   background: var(--surface);
   border: 1px solid var(--border);
   color: var(--text-primary);
   border-radius: 4px;
-  padding: 4px 6px;
-  font-size: 12px;
-  width: 64px;
+  padding: 7px 10px;
+  font-size: 16px;
+  width: 80px;
   -moz-appearance: textfield;
 }
 input[type=number]::-webkit-inner-spin-button { opacity: 0.5 }
+input[type=number][readonly] {
+  opacity: 0.65;
+  cursor: default;
+}
 input[type=text] { width: 100% }
-.unit { color: var(--text-dim); font-size: 11px; flex-shrink: 0 }
+.unit { color: var(--text-dim); font-size: 15px; flex-shrink: 0 }
 .check-row {
   display: flex;
   align-items: center;
@@ -91,16 +95,16 @@ input[type=text] { width: 100% }
   cursor: pointer;
   user-select: none;
 }
-.check-row span { font-size: 12px; color: var(--text-muted) }
+.check-row span { font-size: 16px; color: var(--text-muted) }
 .btn {
   display: inline-flex;
   align-items: center;
   justify-content: center;
   gap: 6px;
-  padding: 7px 14px;
+  padding: 9px 18px;
   border-radius: 6px;
   border: none;
-  font-size: 13px;
+  font-size: 17px;
   font-weight: 500;
   cursor: pointer;
   transition: background 0.12s, opacity 0.12s;
@@ -124,7 +128,7 @@ input[type=text] { width: 100% }
   cursor: pointer;
   transition: border-color 0.15s, background 0.15s;
   color: var(--text-muted);
-  font-size: 12px;
+  font-size: 15px;
   line-height: 1.5;
 }
 .upload-zone:hover, .upload-zone.drag-over {
@@ -140,7 +144,7 @@ input[type=text] { width: 100% }
 .status-bar {
   padding: 8px 12px;
   border-radius: 6px;
-  font-size: 12px;
+  font-size: 16px;
   background: var(--surface);
   border: 1px solid var(--border);
   color: var(--text-muted);
@@ -149,20 +153,6 @@ input[type=text] { width: 100% }
 .status-bar.ok { border-color: var(--ok); color: var(--ok) }
 .status-bar.error { border-color: var(--danger); color: var(--danger) }
 .status-bar.info { border-color: var(--accent); color: var(--accent) }
-.output-preview {
-  font-family: 'Courier New', monospace;
-  font-size: 11px;
-  background: var(--surface);
-  border: 1px solid var(--border);
-  border-radius: 6px;
-  padding: 10px;
-  overflow-y: auto;
-  white-space: pre;
-  color: var(--text-muted);
-  flex: 1;
-  min-height: 180px;
-  max-height: 320px;
-}
 .save-row {
   display: flex;
   gap: 6px;
@@ -170,16 +160,38 @@ input[type=text] { width: 100% }
 }
 .save-row input[type=text] { flex: 1; width: auto }
 .actions { display: flex; gap: 8px; align-items: center; flex-wrap: wrap }
-.settings-row { display: flex; gap: 6px }
-.settings-row .btn { flex: 1; font-size: 12px; padding: 6px 8px }
+.save-success {
+  padding: 12px 16px;
+  border-radius: 8px;
+  background: rgba(0, 200, 120, 0.1);
+  border: 1.5px solid var(--ok);
+  color: var(--ok);
+  font-size: 17px;
+  font-weight: 500;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+.save-success strong { color: var(--text-primary); font-weight: 600 }
+.open-link {
+  background: var(--ok);
+  color: #fff;
+  border: none;
+  border-radius: 5px;
+  padding: 9px 20px;
+  font-size: 16px;
+  font-weight: 600;
+  cursor: pointer;
+  text-decoration: none;
+  white-space: nowrap;
+  display: inline-block;
+}
+.open-link:hover { opacity: 0.82 }
 </style>
 </head>
 <body>
-
-<div class="header">
-  <h1>MIDI to G-code Music</h1>
-</div>
-
 <div class="split">
   <div class="panel-left">
 
@@ -187,17 +199,17 @@ input[type=text] { width: 100% }
       <span class="section-label">Steps per mm</span>
       <div class="param-row">
         <label>X</label>
-        <input type="number" id="stepsX" value="320" min="1" step="any">
+        <input type="number" id="stepsX" value="—" min="1" step="any" readonly>
         <span class="unit">st/mm</span>
       </div>
       <div class="param-row">
         <label>Y</label>
-        <input type="number" id="stepsY" value="400" min="1" step="any">
+        <input type="number" id="stepsY" value="—" min="1" step="any" readonly>
         <span class="unit">st/mm</span>
       </div>
       <div class="param-row">
         <label>Z</label>
-        <input type="number" id="stepsZ" value="320" min="1" step="any">
+        <input type="number" id="stepsZ" value="—" min="1" step="any" readonly>
         <span class="unit">st/mm</span>
       </div>
     </div>
@@ -206,17 +218,17 @@ input[type=text] { width: 100% }
       <span class="section-label">Travel limits</span>
       <div class="param-row">
         <label>X</label>
-        <input type="number" id="travelX" value="318" min="1" step="any">
+        <input type="number" id="travelX" value="—" min="1" step="any">
         <span class="unit">mm</span>
       </div>
       <div class="param-row">
         <label>Y</label>
-        <input type="number" id="travelY" value="380" min="1" step="any">
+        <input type="number" id="travelY" value="—" min="1" step="any">
         <span class="unit">mm</span>
       </div>
       <div class="param-row">
         <label>Z</label>
-        <input type="number" id="travelZ" value="55" min="1" step="any">
+        <input type="number" id="travelZ" value="—" min="1" step="any">
         <span class="unit">mm</span>
       </div>
     </div>
@@ -228,32 +240,18 @@ input[type=text] { width: 100% }
         <input type="number" id="safetyMM" value="5" min="0" step="0.5">
         <span class="unit">mm</span>
       </div>
-      <div class="param-row">
-        <label>Max feed</label>
-        <input type="number" id="maxFeed" value="15000" min="100" step="100" style="width:72px">
-        <span class="unit">mm/min</span>
-      </div>
     </div>
 
     <div>
       <span class="section-label">Options</span>
       <label class="check-row">
-        <input type="checkbox" id="autoTranspose" checked>
-        <span>Auto-transpose down octaves</span>
-      </label>
-      <label class="check-row">
         <input type="checkbox" id="ignorePerc" checked>
         <span>Ignore percussion (ch 10)</span>
       </label>
       <label class="check-row">
-        <input type="checkbox" id="useZ">
+        <input type="checkbox" id="useZ" checked>
         <span>Use Z axis (limited travel)</span>
       </label>
-    </div>
-
-    <div class="settings-row">
-      <button class="btn btn-secondary" onclick="loadSettings()">Load settings</button>
-      <button class="btn btn-secondary" onclick="saveSettingsToDevice()">Save settings</button>
     </div>
 
   </div>
@@ -274,21 +272,22 @@ input[type=text] { width: 100% }
 
     <div class="actions">
       <button class="btn btn-primary" id="convertBtn" onclick="convert()" disabled>Convert to G-code</button>
+      <button class="btn btn-secondary" onclick="loadDemo()">Load Demo</button>
     </div>
 
     <div id="statusBar" class="status-bar">Ready — choose a MIDI file to begin.</div>
 
-    <div style="display:flex;flex-direction:column;flex:1;gap:6px">
-      <span class="section-label" style="margin-bottom:0">Preview (first 200 lines)</span>
-      <div class="output-preview" id="outputPreview">No output yet.</div>
+    <div id="saveSuccess" class="save-success" style="display:none">
+      <span>File saved to <strong id="savedPath"></strong></span>
+      <a id="openLink" class="open-link" style="display:none" onclick="openSaved()">Open in viewer</a>
     </div>
 
-    <div>
+    <div id="saveSection" style="display:none">
       <span class="section-label">Save G-code to device</span>
       <div class="save-row">
         <input type="text" id="saveName" value="music.nc" placeholder="filename.nc">
-        <button class="btn btn-secondary" id="saveIntBtn" onclick="saveToDevice('local')" disabled>Internal</button>
-        <button class="btn btn-secondary" id="saveSDBtn" onclick="saveToDevice('sd')" disabled>SD Card</button>
+        <button class="btn btn-secondary" id="saveIntBtn" onclick="saveToDevice('local')">Internal</button>
+        <button class="btn btn-secondary" id="saveSDBtn" onclick="saveToDevice('sd')">SD Card</button>
       </div>
     </div>
 
@@ -320,6 +319,19 @@ window.addEventListener('message', e => {
       document.documentElement.style.setProperty(k, v)
   }
 })
+
+async function loadMachineSettings() {
+  try {
+    const s = await call('getMachineSettings', {})
+    if (!s) return
+    if (s.stepsPerMmX != null) document.getElementById('stepsX').value = s.stepsPerMmX
+    if (s.stepsPerMmY != null) document.getElementById('stepsY').value = s.stepsPerMmY
+    if (s.stepsPerMmZ != null) document.getElementById('stepsZ').value = s.stepsPerMmZ
+    if (s.maxTravelX != null) document.getElementById('travelX').value = s.maxTravelX
+    if (s.maxTravelY != null) document.getElementById('travelY').value = s.maxTravelY
+    if (s.maxTravelZ != null) document.getElementById('travelZ').value = s.maxTravelZ
+  } catch {}
+}
 
 // ---- MIDI parser ----
 
@@ -414,49 +426,22 @@ function generateGcode(merged, ticksPerBeat, p) {
   const noteHz = n => 440.0 * Math.pow(2, (n - 69) / 12.0)
   const axisFeed = (ax, n) => 60.0 * noteHz(n) / steps[ax]
 
-  function transposeToFit(nxyz) {
-    if (!p.autoTranspose) return nxyz
-    const out = { ...nxyz }
-    let changed = true
-    while (changed) {
-      changed = false
-      for (const ax of AXES) {
-        let n = out[ax]
-        if (n === null) continue
-        while (n >= 12 && axisFeed(ax, n) > p.maxFeed) { n -= 12; changed = true }
-        out[ax] = n
-      }
-    }
-    return out
-  }
-
   function emitSpan(dtSec) {
     if (dtSec <= 0) return
 
     const sorted = [...active].sort((a, b) => b - a)
-    let nxyz = {}
+    const nxyz = {}
     AXES.forEach(ax => { nxyz[ax] = null })
     sorted.slice(0, AXES.length).forEach((n, i) => { nxyz[AXES[i]] = n })
-    nxyz = transposeToFit(nxyz)
 
     const moving = AXES.filter(ax => nxyz[ax] !== null)
     if (!moving.length) { lines.push(`G4 P${dtSec.toFixed(4)}`); return }
 
     const feed = {}
-    for (const ax of moving) {
-      let f = axisFeed(ax, nxyz[ax])
-      if (f > p.maxFeed) f = p.maxFeed
-      feed[ax] = f
-    }
+    for (const ax of moving) feed[ax] = axisFeed(ax, nxyz[ax])
 
-    // Combined feedrate for simultaneous multi-axis move.
-    // sqrt(sum of squares) preserves each axis's individual step rate.
-    let combinedFeed = Math.sqrt(moving.reduce((s, ax) => s + feed[ax] ** 2, 0))
-    if (combinedFeed > p.maxFeed) {
-      const scale = p.maxFeed / combinedFeed
-      for (const ax of moving) feed[ax] *= scale
-      combinedFeed = p.maxFeed
-    }
+    // sqrt(sum of squares) preserves each axis's individual step rate
+    const combinedFeed = Math.sqrt(moving.reduce((s, ax) => s + feed[ax] ** 2, 0))
 
     let remaining = dtSec
 
@@ -490,7 +475,7 @@ function generateGcode(merged, ticksPerBeat, p) {
   lines.push('; MIDI to FluidNC G-code music')
   lines.push(`; Steps/mm X=${p.stepsX} Y=${p.stepsY} Z=${p.stepsZ}`)
   lines.push(`; Travel mm X=${p.travelX} Y=${p.travelY} Z=${p.travelZ}`)
-  lines.push(`; Safety ${p.safetyMM}mm  MaxFeed ${p.maxFeed}mm/min`)
+  lines.push(`; Safety ${p.safetyMM}mm`)
   lines.push('G21')
   lines.push('G90')
   lines.push('G94')
@@ -520,6 +505,7 @@ function generateGcode(merged, ticksPerBeat, p) {
 
 let midiFile = null
 let gcodeOutput = null
+let lastSavedPath = null
 
 function getParams() {
   return {
@@ -530,8 +516,6 @@ function getParams() {
     travelY: +document.getElementById('travelY').value,
     travelZ: +document.getElementById('travelZ').value,
     safetyMM: +document.getElementById('safetyMM').value,
-    maxFeed: +document.getElementById('maxFeed').value,
-    autoTranspose: document.getElementById('autoTranspose').checked,
     ignorePerc: document.getElementById('ignorePerc').checked,
     useZ: document.getElementById('useZ').checked,
   }
@@ -561,15 +545,23 @@ function onFileSelected(e) {
   if (f) loadFile(f)
 }
 
+function loadDemo() {
+  const b64 = 'TVRoZAAAAAYAAQAEPABNVHJrAAAAFQD/WAQEAhgIAP9RAwZQYarUAP8vAE1UcmsAAAAdAP8DBU1peGVyAP8EBU1peGVyAP8hAQKq1AD/LwBNVHJrAAAAmAD/AxVNSURJIEZpbGUgVHJhY2sgMiBDaDEA/wQGTk4xOSAxAP8hAQcAwACDAJBBbYHtAIBBAIHwAJBAZIHwAIBAAIHwAJA+ZIHwAIA+AIHwAJAyE4HwAIAyAIHzAJBBbYHtAIBBAIHwAJBDZIHwAIBDAPgAkEBk+ACAQAAAkD5kgfAAgD4AgfAAkDITgfAAgDIAjsQA/y8ATVRyawAAAb8A/wMGTk4xOSAxAP8EC05OMTkgMSBDb3B5AP8hAQkAkEpkvACASgAAkExkvACATAAAkE1kvACATQCBtACQSmS8AIBKAACQTGS8AIBMAACQTWS8AIBNALwAkExkvACATAAAkEpkvACASgAAkExkvACATAAAkE1kvACATQAAkE9kvACATwC8AJBKZLwAgEoAAJBMZLwAgEwAAJBNZLwAgE0AgbQAkEpkvACASgAAkExkvACATAAAkE1kvACATQC8AJBMZLwAgEwAAJBKZLwAgEoAAJBMZLwAgEwAAJBNZLwAgE0AAJBPZLwAgE8AvACQSmS8AIBKAACQTGS8AIBMAACQTWS8AIBNAIG0AJBKZLwAgEoAAJBMZLwAgEwAAJBNZLwAgE0AvACQTGS8AIBMAACQSmS8AIBKAACQTGS8AIBMAACQTWS8AIBNAACQT2S8AIBPALwAkEpkvACASgAAkExkvACATAAAkE1kvACATQCBtACQSmS8AIBKAACQTGS8AIBMAACQTWS8AIBNALwAkExkvACATAAAkEpkvACASgAAkExkvACATAAAkE1kvACATQAAkE9kvACATwCNkAD/LwA='
+  const bin = atob(b64)
+  const bytes = new Uint8Array(bin.length)
+  for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i)
+  const file = new File([bytes], 'demo.mid', { type: 'audio/midi' })
+  loadFile(file)
+}
+
 function loadFile(f) {
   midiFile = f
   gcodeOutput = null
   document.getElementById('uploadLabel').textContent = `${f.name}  (${(f.size / 1024).toFixed(1)} KB)`
   document.getElementById('uploadZone').classList.add('has-file')
   document.getElementById('convertBtn').disabled = false
-  document.getElementById('saveIntBtn').disabled = true
-  document.getElementById('saveSDBtn').disabled = true
-  document.getElementById('outputPreview').textContent = 'No output yet.'
+  document.getElementById('saveSection').style.display = 'none'
+  document.getElementById('saveSuccess').style.display = 'none'
   document.getElementById('saveName').value = f.name.replace(/\.(mid|midi)$/i, '') + '.nc'
   setStatus(`Loaded ${f.name} — click Convert to generate G-code.`, 'info')
 }
@@ -591,11 +583,7 @@ async function convert() {
     gcodeOutput = gcode
 
     const lines = gcode.split('\n')
-    document.getElementById('outputPreview').textContent =
-      lines.slice(0, 200).join('\n') + (lines.length > 200 ? `\n\n... (${lines.length - 200} more lines)` : '')
-
-    document.getElementById('saveIntBtn').disabled = false
-    document.getElementById('saveSDBtn').disabled = false
+    document.getElementById('saveSection').style.display = ''
     setStatus(`Done — ${lines.length.toLocaleString()} lines, ${(gcodeOutput.length / 1024).toFixed(1)} KB`, 'ok')
   } catch (err) {
     setStatus('Error: ' + err.message, 'error')
@@ -609,36 +597,31 @@ async function saveToDevice(fs) {
   const name = document.getElementById('saveName').value.trim() || 'music.nc'
   const path = (fs === 'sd' ? '/sd/' : '/') + name
   setStatus(`Saving to ${path}…`, 'info')
+  document.getElementById('saveSuccess').style.display = 'none'
   try {
     await call('writeFile', { path, content: gcodeOutput, fs })
-    setStatus(`Saved → ${path}`, 'ok')
+    lastSavedPath = path
+    document.getElementById('savedPath').textContent = path
+    const openLink = document.getElementById('openLink')
+    openLink.style.display = fs === 'sd' ? 'inline-block' : 'none'
+    document.getElementById('saveSuccess').style.display = 'flex'
+    setStatus('Ready — choose a MIDI file to begin.')
   } catch (err) {
     setStatus('Save failed: ' + err.message, 'error')
   }
 }
 
-async function saveSettingsToDevice() {
+async function openSaved() {
+  if (!lastSavedPath) return
   try {
-    await call('saveSettings', { data: getParams() })
-    setStatus('Settings saved.', 'ok')
+    await call('openFile', { path: lastSavedPath })
+    call('close')
   } catch (err) {
-    setStatus('Could not save settings: ' + err.message, 'error')
+    setStatus('Could not open file: ' + err.message, 'error')
   }
 }
 
-async function loadSettings() {
-  try {
-    const data = await call('getSettings', {})
-    if (!data || !Object.keys(data).length) return
-    const nums = ['stepsX','stepsY','stepsZ','travelX','travelY','travelZ','safetyMM','maxFeed']
-    nums.forEach(k => { if (data[k] !== undefined) document.getElementById(k).value = data[k] })
-    if (data.autoTranspose !== undefined) document.getElementById('autoTranspose').checked = data.autoTranspose
-    if (data.ignorePerc !== undefined) document.getElementById('ignorePerc').checked = data.ignorePerc
-    if (data.useZ !== undefined) document.getElementById('useZ').checked = data.useZ
-  } catch {}
-}
-
-loadSettings()
+loadMachineSettings()
 </script>
 </body>
 </html>

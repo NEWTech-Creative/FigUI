@@ -25,6 +25,7 @@ Plugins are self-contained HTML files that run inside FigUI and can communicate 
   - [writeFile](#writefile)
   - [listFiles](#listfiles)
   - [getDeviceInfo](#getdeviceinfo)
+  - [getMachineSettings](#getmachinesettings)
   - [getSettings / saveSettings](#getsettings--savesettings)
 - [Minimal example](#minimal-example)
 - [Installing a plugin](#installing-a-plugin)
@@ -349,6 +350,22 @@ const info = await call('getDeviceInfo')
 // info.wsPort     → WebSocket port
 // info.primarySd  → primary SD path
 ```
+
+#### `getMachineSettings`
+Returns the controller settings collected from `$$` at startup.
+
+```js
+const s = await call('getMachineSettings')
+// s.stepsPerMmX / stepsPerMmY / stepsPerMmZ  → steps per mm ($100–$102)
+// s.maxRateX    / maxRateY    / maxRateZ      → max feed rate mm/min ($110–$112)
+// s.accelX      / accelY      / accelZ        → acceleration mm/s² ($120–$122)
+// s.maxTravelX  / maxTravelY  / maxTravelZ    → travel limits mm ($130–$132)
+// s.spindleMax  / spindleMin                  → spindle RPM range ($30–$31)
+// s.junctionDeviation                         → junction deviation ($11)
+// s.homingDirInvert                           → homing direction invert mask ($23)
+```
+
+Fields are `undefined` if the controller has not yet reported that setting.
 
 #### `openFile`
 Open a G-code file in the main viewer. The file must exist on the SD card.

@@ -155,6 +155,8 @@ export function PluginFrame({ plugin, onClose, inline }: { plugin: Plugin; onClo
           break
         case 'getDeviceInfo':
           reply(useMachineStore.getState().espInfo); break
+        case 'getMachineSettings':
+          reply(useMachineStore.getState().controllerSettings); break
         case 'getSettings': {
           const fs = plugin.fs
           fetchFileContent(`/plugins/${plugin.id}/settings.json`, fs)

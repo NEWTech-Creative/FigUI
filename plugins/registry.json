@@ -16,6 +16,14 @@
       "version": "1.0.1",
       "author": "figamore",
       "base": "https://raw.githubusercontent.com/figamore/FigUI/main/plugins/heightmap/"
+    },
+    {
+      "id": "midi2gcode",
+      "name": "MIDI to G-code",
+      "description": "Convert a MIDI file to stepper-motor music G-code using micro-oscillation moves on X/Y/Z axes.",
+      "version": "1.0.0",
+      "author": "figamore",
+      "base": "https://raw.githubusercontent.com/figamore/FigUI/main/plugins/midi2gcode/"
     }
   ]
 }
