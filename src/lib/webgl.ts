@@ -269,6 +269,7 @@ export function renderLines(
 ) {
   const { gl } = renderer
 
+  gl.viewport(0, 0, gl.drawingBufferWidth, gl.drawingBufferHeight)
   gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT)
   gl.useProgram(renderer.program)
 

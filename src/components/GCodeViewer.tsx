@@ -38,6 +38,7 @@ interface OrbitState {
   theta: number
   phi: number
   radius: number
+  orthoSize: number
   target: Vector3
 }
 
@@ -84,6 +85,9 @@ const LARGE_PROGRESS_OVERLAY_SEGMENT_LIMIT = 100_000
 const EMPTY_FLOAT32 = new Float32Array(0)
 const WHEEL_ZOOM_SENSITIVITY = 0.0012
 const VIEW_FIT_PADDING = 1.15
+const CAMERA_CLIP_NEAR_MIN = 0.001
+const CAMERA_CLIP_PADDING_RATIO = 0.05
+const CAMERA_CLIP_PADDING_MIN = 0.5
 const ENTRY_EXIT_CONE_HEIGHT = 1.6
 const ENTRY_EXIT_CONE_RADIUS = 0.65
 const TOOLHEAD_CONE_HEIGHT = 5
@@ -447,6 +451,47 @@ function getOrbitCameraBasis(orbit: OrbitState, up: Vector3) {
   const right = normalizeVector(...Object.values(crossProduct(forward, up)) as [number, number, number])
   const screenUp = normalizeVector(...Object.values(crossProduct(right, forward)) as [number, number, number])
   return { forward, right, screenUp }
+}
+
+function getBoundsCorners(bounds: GCodeModel['bounds']) {
+  return [
+    { x: bounds.minX, y: bounds.minY, z: bounds.minZ },
+    { x: bounds.minX, y: bounds.minY, z: bounds.maxZ },
+    { x: bounds.minX, y: bounds.maxY, z: bounds.minZ },
+    { x: bounds.minX, y: bounds.maxY, z: bounds.maxZ },
+    { x: bounds.maxX, y: bounds.minY, z: bounds.minZ },
+    { x: bounds.maxX, y: bounds.minY, z: bounds.maxZ },
+    { x: bounds.maxX, y: bounds.maxY, z: bounds.minZ },
+    { x: bounds.maxX, y: bounds.maxY, z: bounds.maxZ },
+  ]
+}
+
+function getClipBounds(modelBounds: GCodeModel['bounds']) {
+  const store = useMachineStore.getState()
+  const { maxTravelX, maxTravelY, homingDirInvert = 0 } = store.controllerSettings
+
+  let minX = modelBounds.minX
+  let minY = modelBounds.minY
+  let minZ = modelBounds.minZ
+  let maxX = modelBounds.maxX
+  let maxY = modelBounds.maxY
+  let maxZ = modelBounds.maxZ
+
+  if (maxTravelX != null && maxTravelY != null) {
+    const bedOx = -store.status.wco.x - ((homingDirInvert & 1) ? 0 : maxTravelX)
+    const bedOy = -store.status.wco.y - ((homingDirInvert & 2) ? 0 : maxTravelY)
+    const bedMaxX = bedOx + maxTravelX
+    const bedMaxY = bedOy + maxTravelY
+
+    minX = Math.min(minX, bedOx, bedMaxX)
+    minY = Math.min(minY, bedOy, bedMaxY)
+    minZ = Math.min(minZ, 0)
+    maxX = Math.max(maxX, bedOx, bedMaxX)
+    maxY = Math.max(maxY, bedOy, bedMaxY)
+    maxZ = Math.max(maxZ, 0)
+  }
+
+  return { minX, minY, minZ, maxX, maxY, maxZ }
 }
 
 
@@ -854,6 +899,7 @@ export function GCodeViewer({ className, isTablet }: Props) {
     theta: Math.PI / 4,
     phi: Math.PI / 4,
     radius: 100,
+    orthoSize: Math.tan(Math.PI / 8) * 100,
     target: { x: 0, y: 0, z: 0 },
   })
   const orbitDragRef = useRef<{ sx: number; sy: number; theta: number; phi: number } | null>(null)
@@ -919,7 +965,51 @@ export function GCodeViewer({ className, isTablet }: Props) {
     camera.position.y = orbit.target.y + orbit.radius * Math.sin(orbit.phi) * Math.sin(orbit.theta)
     camera.position.z = orbit.target.z + orbit.radius * Math.cos(orbit.phi)
     camera.projection = projectionMode
-    camera.orthoSize = Math.max(Math.tan(camera.fov / 2) * orbit.radius, 1e-3)
+    camera.orthoSize = Math.max(orbit.orthoSize, 1e-3)
+    updateCameraClipping(orbit)
+  }
+
+  function updateCameraClipping(orbit = orbitState, mdl = modelRef.current ?? model) {
+    const camera = cameraRef.current
+
+    if (!mdl) {
+      camera.near = 0.1
+      camera.far = 1000
+      return
+    }
+
+    const clipBounds = getClipBounds(mdl.bounds)
+    const position = getOrbitCameraPosition(orbit)
+    const { forward } = getOrbitCameraBasis(orbit, camera.up)
+    const corners = getBoundsCorners(clipBounds)
+    const diagonal = Math.hypot(
+      clipBounds.maxX - clipBounds.minX,
+      clipBounds.maxY - clipBounds.minY,
+      clipBounds.maxZ - clipBounds.minZ,
+    )
+    const padding = Math.max(
+      CAMERA_CLIP_PADDING_MIN,
+      diagonal * CAMERA_CLIP_PADDING_RATIO,
+      orbit.radius * CAMERA_CLIP_PADDING_RATIO,
+    )
+
+    let minDepth = Number.POSITIVE_INFINITY
+    let maxDepth = Number.NEGATIVE_INFINITY
+
+    for (const corner of corners) {
+      const depth = dotProduct(subtractVectors(corner, position), forward)
+      minDepth = Math.min(minDepth, depth)
+      maxDepth = Math.max(maxDepth, depth)
+    }
+
+    if (!Number.isFinite(minDepth) || !Number.isFinite(maxDepth)) {
+      camera.near = 0.1
+      camera.far = 1000
+      return
+    }
+
+    camera.near = Math.max(CAMERA_CLIP_NEAR_MIN, minDepth - padding)
+    camera.far = Math.max(camera.near + padding * 2, maxDepth + padding)
   }
 
   function getScreenAnchor(clientX: number, clientY: number): ScreenAnchor | null {
@@ -939,9 +1029,15 @@ export function GCodeViewer({ className, isTablet }: Props) {
   }
 
   function zoomOrbitTowardAnchor(prev: OrbitState, zoomFactor: number, anchor: ScreenAnchor | null): OrbitState {
-    const nextRadius = Math.max(1, prev.radius * zoomFactor)
-    if (!anchor || Math.abs(nextRadius - prev.radius) < 1e-9) {
-      return { ...prev, radius: nextRadius }
+    const nextRadius = projectionMode === 'orthographic'
+      ? prev.radius
+      : Math.max(1, prev.radius * zoomFactor)
+    const nextOrthoSize = projectionMode === 'orthographic'
+      ? Math.max(1e-3, prev.orthoSize * zoomFactor)
+      : prev.orthoSize
+
+    if (!anchor || (Math.abs(nextRadius - prev.radius) < 1e-9 && Math.abs(nextOrthoSize - prev.orthoSize) < 1e-9)) {
+      return { ...prev, radius: nextRadius, orthoSize: nextOrthoSize }
     }
 
     const camera = cameraRef.current
@@ -985,6 +1081,7 @@ export function GCodeViewer({ className, isTablet }: Props) {
         return {
           ...prev,
           radius: nextRadius,
+          orthoSize: nextOrthoSize,
           target: {
             x: target.x + delta.x,
             y: target.y + delta.y,
@@ -994,9 +1091,13 @@ export function GCodeViewer({ className, isTablet }: Props) {
       }
     }
 
-    const oldHalfHeight = Math.tan(camera.fov / 2) * prev.radius
+    const oldHalfHeight = projectionMode === 'orthographic'
+      ? prev.orthoSize
+      : Math.tan(camera.fov / 2) * prev.radius
     const oldHalfWidth = oldHalfHeight * anchor.aspect
-    const newHalfHeight = Math.tan(camera.fov / 2) * nextRadius
+    const newHalfHeight = projectionMode === 'orthographic'
+      ? nextOrthoSize
+      : Math.tan(camera.fov / 2) * nextRadius
     const newHalfWidth = newHalfHeight * anchor.aspect
 
     const oldOffset = addVectors(
@@ -1011,6 +1112,7 @@ export function GCodeViewer({ className, isTablet }: Props) {
     return {
       ...prev,
       radius: nextRadius,
+      orthoSize: nextOrthoSize,
       target: {
         x: target.x + oldOffset.x - newOffset.x,
         y: target.y + oldOffset.y - newOffset.y,
@@ -1252,40 +1354,44 @@ export function GCodeViewer({ className, isTablet }: Props) {
 
     if (is3D) {
       const { w, h } = canvasLogicalSize()
-      const { bounds } = mdl
-      const centerX = (bounds.minX + bounds.maxX) / 2
-      const centerY = (bounds.minY + bounds.maxY) / 2
-      const centerZ = (bounds.minZ + bounds.maxZ) / 2
+      const clipBounds = getClipBounds(mdl.bounds)
+      const centerX = (clipBounds.minX + clipBounds.maxX) / 2
+      const centerY = (clipBounds.minY + clipBounds.maxY) / 2
+      const centerZ = (clipBounds.minZ + clipBounds.maxZ) / 2
       const camera = cameraRef.current
       const aspect = Math.max(w / Math.max(h, 1), 1e-6)
       const tanHalfFov = Math.max(Math.tan(camera.fov / 2), 1e-6)
       const target = { x: centerX, y: centerY, z: centerZ }
       const fitOrbit = { ...orbitState, target }
       const { forward, right, screenUp } = getOrbitCameraBasis(fitOrbit, camera.up)
-      const corners = [
-        { x: bounds.minX, y: bounds.minY, z: bounds.minZ },
-        { x: bounds.minX, y: bounds.minY, z: bounds.maxZ },
-        { x: bounds.minX, y: bounds.maxY, z: bounds.minZ },
-        { x: bounds.minX, y: bounds.maxY, z: bounds.maxZ },
-        { x: bounds.maxX, y: bounds.minY, z: bounds.minZ },
-        { x: bounds.maxX, y: bounds.minY, z: bounds.maxZ },
-        { x: bounds.maxX, y: bounds.maxY, z: bounds.minZ },
-        { x: bounds.maxX, y: bounds.maxY, z: bounds.maxZ },
-      ]
+      const corners = getBoundsCorners(clipBounds)
       let nextRadius = 1
+      let nextOrthoSize = orbitState.orthoSize
 
       if (projectionMode === 'orthographic') {
         let maxRight = 0
         let maxUp = 0
+        let maxTargetDistance = 0
+        const diagonal = Math.hypot(
+          clipBounds.maxX - clipBounds.minX,
+          clipBounds.maxY - clipBounds.minY,
+          clipBounds.maxZ - clipBounds.minZ,
+        )
+        const depthPadding = Math.max(CAMERA_CLIP_PADDING_MIN, diagonal * CAMERA_CLIP_PADDING_RATIO)
 
         for (const corner of corners) {
           const relative = subtractVectors(corner, target)
           maxRight = Math.max(maxRight, Math.abs(dotProduct(relative, right)))
           maxUp = Math.max(maxUp, Math.abs(dotProduct(relative, screenUp)))
+          maxTargetDistance = Math.max(
+            maxTargetDistance,
+            Math.hypot(relative.x, relative.y, relative.z),
+          )
         }
 
         const requiredHalfHeight = Math.max(maxUp, maxRight / aspect)
-        nextRadius = Math.max(1, requiredHalfHeight * VIEW_FIT_PADDING / tanHalfFov)
+        nextOrthoSize = Math.max(1e-3, requiredHalfHeight * VIEW_FIT_PADDING)
+        nextRadius = Math.max(1, maxTargetDistance + depthPadding)
       } else {
         for (const corner of corners) {
           const relative = subtractVectors(corner, target)
@@ -1301,6 +1407,7 @@ export function GCodeViewer({ className, isTablet }: Props) {
       const nextOrbit = {
         ...orbitState,
         radius: nextRadius,
+        orthoSize: nextOrthoSize,
         target,
       }
 
