@@ -1,0 +1,10 @@
+{
+  "name": "MIDI to G-code",
+  "description": "Convert a MIDI file to stepper-motor music G-code using micro-oscillation moves on X/Y/Z axes.",
+  "version": "1.0.0",
+  "entry": "index.html",
+  "layout": "workspace",
+  "layoutTablet": "full",
+  "layoutMobile": "full",
+  "files": ["index.html", "plugin.json"]
+}
