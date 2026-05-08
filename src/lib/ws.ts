@@ -149,6 +149,9 @@ export function onLine(fn: LineHandler): () => void {
 const LIVENESS_CHECK_MS = 2000
 const LIVENESS_TIMEOUT_MS = 12000
 const OPEN_TIMEOUT_MS = 6000
+const STATUS_POLL_INTERVAL_MS = 500
+// 0x3F = '?' — FluidNC's real-time status request byte.
+const STATUS_REPORT_BYTE = 0x3F
 
 export function connect(host: string): Promise<void> {
   return new Promise((resolve, reject) => {
@@ -191,6 +194,7 @@ export function connect(host: string): Promise<void> {
       useMachineStore.getState().setConnected(true)
       startCommandProcessor()
       startLivenessWatchdog()
+      startStatusPoll()
 
       resolve()
     }
@@ -267,6 +271,20 @@ function closeCurrentSocket() {
 
 function stopPing() {
   if (pingTimer) { clearInterval(pingTimer); pingTimer = null }
+}
+
+function startStatusPoll() {
+  stopStatusPoll()
+  statusPollTimer = setInterval(() => {
+    if (socket?.readyState !== WebSocket.OPEN) return
+    try {
+      const buf = new Uint8Array(1)
+      buf[0] = STATUS_REPORT_BYTE
+      socket.send(buf)
+    } catch {
+      // Liveness watchdog will catch a dead socket.
+    }
+  }, STATUS_POLL_INTERVAL_MS)
 }
 
 

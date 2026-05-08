@@ -226,7 +226,7 @@ export function App() {
         stableConnectTimer.current = null
         sendStartupQueries()
         setStartupPending(false)
-      }, 2000)
+      }, 3000)
     } else {
       if (stableConnectTimer.current) {
         clearTimeout(stableConnectTimer.current)
