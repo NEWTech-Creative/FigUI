@@ -97,7 +97,6 @@ export function App() {
   }, [activeLayout])
 
   const reconnectTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
-  const stableConnectTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
   const inFlightPromise = useRef<Promise<boolean> | null>(null)
   const backoffMs = useRef(0)
   const cachedWsHost = useRef<string | null>(null)
@@ -218,20 +217,10 @@ export function App() {
         clearTimeout(reconnectTimer.current)
         reconnectTimer.current = null
       }
-      if (stableConnectTimer.current) clearTimeout(stableConnectTimer.current)
-      // Only send $SS and $$ startup queries after stable connection to prevent ESP32 from flooding TX queue.
+      backoffMs.current = 0
       setStartupPending(true)
-      stableConnectTimer.current = setTimeout(() => {
-        backoffMs.current = 0
-        stableConnectTimer.current = null
-        sendStartupQueries()
-        setStartupPending(false)
-      }, 2000)
+      sendStartupQueries().finally(() => setStartupPending(false))
     } else {
-      if (stableConnectTimer.current) {
-        clearTimeout(stableConnectTimer.current)
-        stableConnectTimer.current = null
-      }
       setStartupPending(false)
       if (!reconnectTimer.current) {
         // Respect existing backoff so rapid connect/drop loops slow down.

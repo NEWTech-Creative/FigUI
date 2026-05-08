@@ -5,6 +5,13 @@ let base = ''
 export const setBase = (url: string) => { base = url.replace(/\/$/, '') }
 export const getBase = () => base
 
+let httpChain: Promise<unknown> = Promise.resolve()
+function serialize<T>(fn: () => Promise<T>): Promise<T> {
+  const next = httpChain.then(fn, fn)
+  httpChain = next.catch(() => {})
+  return next
+}
+
 function fsEndpoint(fs: 'sd' | 'local') {
   return fs === 'sd' ? '/upload' : '/files'
 }
@@ -38,20 +45,22 @@ function parseSize(val: unknown): number {
   return Math.round(n * (mul[unit] ?? 1))
 }
 
-async function get(path: string, params: Record<string, string>, timeoutMs?: number): Promise<string> {
-  const q = new URLSearchParams({ ...params, PAGEID: getPageId() })
-  const ctl = timeoutMs ? new AbortController() : null
-  const timer = ctl ? setTimeout(() => ctl.abort(), timeoutMs) : null
-  try {
-    const res = await fetch(`${base}${path}?${q}`, ctl ? { signal: ctl.signal } : undefined)
-    if (!res.ok) throw new Error(`HTTP ${res.status}`)
-    return await res.text()
-  } catch (e) {
-    if (ctl?.signal.aborted) throw new Error('HTTP timeout')
-    throw e
-  } finally {
-    if (timer) clearTimeout(timer)
-  }
+function get(path: string, params: Record<string, string>, timeoutMs?: number): Promise<string> {
+  return serialize(async () => {
+    const q = new URLSearchParams({ ...params, PAGEID: getPageId() })
+    const ctl = timeoutMs ? new AbortController() : null
+    const timer = ctl ? setTimeout(() => ctl.abort(), timeoutMs) : null
+    try {
+      const res = await fetch(`${base}${path}?${q}`, ctl ? { signal: ctl.signal } : undefined)
+      if (!res.ok) throw new Error(`HTTP ${res.status}`)
+      return await res.text()
+    } catch (e) {
+      if (ctl?.signal.aborted) throw new Error('HTTP timeout')
+      throw e
+    } finally {
+      if (timer) clearTimeout(timer)
+    }
+  })
 }
 
 export const sendCommand = (cmd: string) =>
@@ -63,22 +72,24 @@ export const sendSilent = (cmd: string) =>
 export const getDeviceInfoFast = () =>
   get('/command', { plain: '[ESP800]' }, 4000)
 
-export async function listFiles(path: string, fs: 'sd' | 'local' = 'sd'): Promise<FileListResult> {
-  const apiPath = fs === 'sd' ? sdRelPath(path) : path
-  const res = await fetch(`${base}${fsEndpoint(fs)}?${new URLSearchParams({ path: apiPath })}`)
-  if (!res.ok) throw new Error(`HTTP ${res.status}`)
-  const raw = await res.json()
-  return {
-    files: (raw.files ?? []).map((f: { name: string; size: string }) => ({
-      name:  f.name,
-      size:  Math.max(0, Number(f.size) || 0),
-      isDir: f.size === '-1',
-    })),
-    path:       raw.path  ?? apiPath,
-    total:      parseSize(raw.total),
-    used:       parseSize(raw.used),
-    occupation: Number(raw.occupation) || 0,
-  }
+export function listFiles(path: string, fs: 'sd' | 'local' = 'sd'): Promise<FileListResult> {
+  return serialize(async () => {
+    const apiPath = fs === 'sd' ? sdRelPath(path) : path
+    const res = await fetch(`${base}${fsEndpoint(fs)}?${new URLSearchParams({ path: apiPath })}`)
+    if (!res.ok) throw new Error(`HTTP ${res.status}`)
+    const raw = await res.json()
+    return {
+      files: (raw.files ?? []).map((f: { name: string; size: string }) => ({
+        name:  f.name,
+        size:  Math.max(0, Number(f.size) || 0),
+        isDir: f.size === '-1',
+      })),
+      path:       raw.path  ?? apiPath,
+      total:      parseSize(raw.total),
+      used:       parseSize(raw.used),
+      occupation: Number(raw.occupation) || 0,
+    }
+  })
 }
 
 export async function deleteFile(path: string, filename: string, fs: 'sd' | 'local' = 'sd'): Promise<void> {
@@ -163,13 +174,15 @@ export async function uploadFile(
   })
 }
 
-export async function fetchFileContent(fullPath: string, fs: 'sd' | 'local' = 'sd'): Promise<string> {
-  const url = fs === 'sd'
-    ? `${base}${fullPath}`
-    : `${base}${fullPath}`
-  const res = await fetch(url)
-  if (!res.ok) throw new Error(`HTTP ${res.status}`)
-  return res.text()
+export function fetchFileContent(fullPath: string, fs: 'sd' | 'local' = 'sd'): Promise<string> {
+  return serialize(async () => {
+    const url = fs === 'sd'
+      ? `${base}${fullPath}`
+      : `${base}${fullPath}`
+    const res = await fetch(url)
+    if (!res.ok) throw new Error(`HTTP ${res.status}`)
+    return res.text()
+  })
 }
 
 export async function saveFileContent(
