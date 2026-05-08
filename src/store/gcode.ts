@@ -89,7 +89,6 @@ export const useGCodeStore = create<GCodeStore>((set, get) => ({
   loadFile: async (path: string) => {
     if (isLoadBlockedByMachineState()) return
     if (activeLoadPath === path) return
-    if (get().loadedPath === path && get().model) return
 
     abortInFlight()
     activeLoadPath = path
