@@ -7,5 +7,5 @@
   "layout": "workspace",
   "layoutTablet": "full",
   "layoutMobile": "full",
-  "files": ["index.html", "plugin.json", "icon.png"]
+  "files": ["index.html", "icon.png"]
 }
