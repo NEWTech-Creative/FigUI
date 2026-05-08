@@ -1,6 +1,8 @@
 import { Sun, Moon, Wifi, WifiOff, Settings, Maximize, Minimize, HelpCircle, Play, Square, RotateCcw, Zap, Power, Home, Target, Crosshair, ArrowLeft, ArrowUp, ArrowRight, ArrowDown, Lightbulb, type LucideIcon } from 'lucide-react'
 import fluidncLogo from '../assets/fluidnc-logo.svg'
 import { useMachineStore, stateColor, stateBg } from '../store'
+import { useGCodeStore } from '../store/gcode'
+import { useJobRuntimeEstimate } from '../lib/jobRuntime'
 import { sendRealtime, sendRaw } from '../lib/ws'
 import { runMacro, MACRO_BTN_CLASS } from '../lib/macros'
 import { useState, useEffect, useMemo } from 'react'
@@ -20,10 +22,17 @@ interface Props {
 export function Header({ onSettingsClick, onAboutClick, isTablet }: Props) {
   const connected = useMachineStore(s => s.connected)
   const status = useMachineStore(s => s.status)
+  const controllerSettings = useMachineStore(s => s.controllerSettings)
   const theme = useMachineStore(s => s.theme)
   const toggleTheme = useMachineStore(s => s.toggleTheme)
   const pendingUpdateVersion = useMachineStore(s => s.pendingUpdateVersion)
   const macros = useMachineStore(s => s.macros)
+  const model = useGCodeStore(s => s.model)
+  const loadedPath = useGCodeStore(s => s.loadedPath)
+  const fileName = useGCodeStore(s => s.fileName)
+  const runtime = useJobRuntimeEstimate(status, model, controllerSettings, loadedPath, fileName)
+  const showHeaderProgress = status.sdFilename && runtime.source === 'estimated' && runtime.progressPercent != null
+  const headerProgressPercent = runtime.progressPercent ?? 0
   const pinnedMacros = useMemo(() => macros.filter(m => m.pinned), [macros])
   const [isFullscreen, setIsFullscreen] = useState(false)
 
@@ -72,8 +81,21 @@ export function Header({ onSettingsClick, onAboutClick, isTablet }: Props) {
       )}
 
       {status.sdFilename && (
-        <div className="hidden lg:flex items-center text-sm text-text-dim truncate max-w-32">
-          {status.sdFilename}
+        <div className="hidden lg:flex items-center gap-2 text-sm text-text-muted min-w-0">
+          {showHeaderProgress && (
+            <>
+              <div className="w-24 h-1 bg-elevated rounded-full overflow-hidden shrink-0">
+                <div
+                  className="h-full bg-info transition-all"
+                  style={{ width: `${headerProgressPercent}%` }}
+                />
+              </div>
+              <span className="w-9 text-right font-mono tabular-nums shrink-0">
+                {Math.round(headerProgressPercent)}%
+              </span>
+            </>
+          )}
+          <span className="text-text-dim truncate max-w-32">{status.sdFilename}</span>
         </div>
       )}
 
