@@ -57,11 +57,15 @@ export interface ESPInfo {
 }
 
 export interface ControllerSettings {
+  homingDirInvert?: number
   spindleMin?: number
   spindleMax?: number
   maxRateX?: number
   maxRateY?: number
   maxRateZ?: number
+  maxTravelX?: number
+  maxTravelY?: number
+  maxTravelZ?: number
 }
 
 export interface Macro {

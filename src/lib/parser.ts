@@ -95,15 +95,19 @@ export function parseGcStateLine(line: string): Partial<MachineStatus> | null {
 }
 
 const CONTROLLER_SETTING_MAP: Record<string, keyof ControllerSettings> = {
+  '23': 'homingDirInvert',
   '30': 'spindleMax',
   '31': 'spindleMin',
   '110': 'maxRateX',
   '111': 'maxRateY',
   '112': 'maxRateZ',
+  '130': 'maxTravelX',
+  '131': 'maxTravelY',
+  '132': 'maxTravelZ',
 }
 
 export function parseControllerSettingLine(line: string): Partial<ControllerSettings> | null {
-  const match = line.match(/^\$(30|31|110|111|112)=(-?\d+(?:\.\d+)?)(?:\s|$)/)
+  const match = line.match(/^\$(23|30|31|110|111|112|130|131|132)=(-?\d+(?:\.\d+)?)(?:\s|$)/)
   if (!match) return null
 
   const value = Number.parseFloat(match[2])

@@ -21,6 +21,7 @@ const TOOL_GLOW     = 'rgba(239,68,68,0.25)'
 const AXIS_X_COLOR  = '#ef4444'
 const AXIS_Y_COLOR  = '#22c55e'
 const AXIS_Z_COLOR  = '#60a5fa'
+const BED_COLOR     = 'rgba(100,180,255,0.35)'
 
 interface Transform {
   ox: number
@@ -271,6 +272,21 @@ function mergeFloat32Arrays(...arrays: Float32Array[]) {
   return merged
 }
 
+
+function buildBedLineGeometry(bedW: number, bedH: number, ox: number, oy: number): { vertices: Float32Array, colors: Float32Array } {
+  const x0 = ox, y0 = oy, x1 = ox + bedW, y1 = oy + bedH
+  const corners = [
+    [x0, y0, 0], [x1, y0, 0],
+    [x1, y0, 0], [x1, y1, 0],
+    [x1, y1, 0], [x0, y1, 0],
+    [x0, y1, 0], [x0, y0, 0],
+  ]
+  const vertices = new Float32Array(corners.flat())
+  const c = [0.27, 0.60, 1.0, 0.85]
+  const colorData: number[] = []
+  for (let i = 0; i < corners.length; i++) colorData.push(...c)
+  return { vertices, colors: new Float32Array(colorData) }
+}
 
 function drawSegment(
   ctx: CanvasRenderingContext2D,
@@ -726,6 +742,18 @@ function drawOrigin(ctx: CanvasRenderingContext2D, t: Transform) {
   ctx.beginPath()
   ctx.arc(t.ox, t.oy, 3, 0, Math.PI * 2)
   ctx.fill()
+}
+
+function drawBedBoundary(ctx: CanvasRenderingContext2D, t: Transform, bedW: number, bedH: number, originX: number, originY: number) {
+  const sx0 = t.ox + originX * t.scale
+  const sy0 = t.oy - originY * t.scale
+  const sx1 = t.ox + (originX + bedW) * t.scale
+  const sy1 = t.oy - (originY + bedH) * t.scale
+  ctx.strokeStyle = BED_COLOR
+  ctx.lineWidth = 1.5
+  ctx.setLineDash([6, 4])
+  ctx.strokeRect(sx0, sy1, sx1 - sx0, sy0 - sy1)
+  ctx.setLineDash([])
 }
 
 function drawToolPosition(
@@ -1335,6 +1363,11 @@ export function GCodeViewer({ className, isTablet }: Props) {
       const use3DProgressOverlay = progress3d !== null && mdl.segments.length <= LARGE_PROGRESS_OVERLAY_SEGMENT_LIMIT
       const wpos3d = showToolRef.current ? store.status.wpos : null
       const markerGeometry = ensureEntryExitMarkerGeometry(mdl)
+      const { maxTravelX: btx, maxTravelY: bty, homingDirInvert: hdi3d = 0 } = store.controllerSettings
+      const wco3d = store.status.wco
+      const bedOx3d = -wco3d.x - ((hdi3d & 1) ? 0 : btx ?? 0)
+      const bedOy3d = -wco3d.y - ((hdi3d & 2) ? 0 : bty ?? 0)
+      const bedGeometry = btx != null && bty != null ? buildBedLineGeometry(btx, bty, bedOx3d, bedOy3d) : null
 
       if (!use3DProgressOverlay) {
         const staticGeometry = ensureStaticPathGeometry(mdl)
@@ -1342,23 +1375,26 @@ export function GCodeViewer({ className, isTablet }: Props) {
         const toolGeometry = wpos3d
           ? createVertexData([], null, wpos3d)
           : { vertices: EMPTY_FLOAT32, colors: EMPTY_FLOAT32, triangleVertices: EMPTY_FLOAT32, triangleColors: EMPTY_FLOAT32, toolVertexStart: 0 }
-        const mergedVertices = mergeFloat32Arrays(markerGeometry.vertices, toolGeometry.vertices)
-        const mergedColors = mergeFloat32Arrays(markerGeometry.colors, toolGeometry.colors)
+        const mergedVertices = mergeFloat32Arrays(bedGeometry?.vertices ?? EMPTY_FLOAT32, markerGeometry.vertices, toolGeometry.vertices)
+        const mergedColors = mergeFloat32Arrays(bedGeometry?.colors ?? EMPTY_FLOAT32, markerGeometry.colors, toolGeometry.colors)
         const mergedTriangleVertices = mergeFloat32Arrays(markerGeometry.triangleVertices, toolGeometry.triangleVertices)
         const mergedTriangleColors = mergeFloat32Arrays(markerGeometry.triangleColors, toolGeometry.triangleColors)
+        const bedVertexCount = bedGeometry ? bedGeometry.vertices.length / 3 : 0
         const markerVertexCount = markerGeometry.vertices.length / 3
-        const toolVertexStart = toolGeometry.vertices.length > 0 ? markerVertexCount : mergedVertices.length / 3
+        const toolVertexStart = toolGeometry.vertices.length > 0 ? bedVertexCount + markerVertexCount : mergedVertices.length / 3
         renderLines(rendererRef.current, cameraRef.current, mergedVertices, mergedColors, toolVertexStart, 3, mergedTriangleVertices, mergedTriangleColors)
       } else {
         clearStaticPathGeometryUpload()
         const { vertices, colors, triangleVertices, triangleColors, toolVertexStart } = createVertexData(mdl.segments, progress3d, wpos3d)
         const toolStartOffset = toolVertexStart * 3
         const mergedVertices = mergeFloat32Arrays(
+          bedGeometry?.vertices ?? EMPTY_FLOAT32,
           vertices.subarray(0, toolStartOffset),
           markerGeometry.vertices,
           vertices.subarray(toolStartOffset),
         )
         const mergedColors = mergeFloat32Arrays(
+          bedGeometry?.colors ?? EMPTY_FLOAT32,
           colors.subarray(0, toolStartOffset * 4 / 3),
           markerGeometry.colors,
           colors.subarray(toolStartOffset * 4 / 3),
@@ -1370,7 +1406,7 @@ export function GCodeViewer({ className, isTablet }: Props) {
           cameraRef.current,
           mergedVertices,
           mergedColors,
-          toolVertexStart + markerGeometry.vertices.length / 3,
+          toolVertexStart + (bedGeometry ? bedGeometry.vertices.length / 3 : 0) + markerGeometry.vertices.length / 3,
           3,
           mergedTriangleVertices,
           mergedTriangleColors,
@@ -1395,6 +1431,16 @@ export function GCodeViewer({ className, isTablet }: Props) {
       drawGrid(ctx, w, h, t, units)
 
       drawOrigin(ctx, t)
+
+      const store2d = useMachineStore.getState()
+      const bedSettings = store2d.controllerSettings
+      if (bedSettings.maxTravelX != null && bedSettings.maxTravelY != null) {
+        const wco2d = store2d.status.wco
+        const hdi2d = bedSettings.homingDirInvert ?? 0
+        const bedOx2d = -wco2d.x - ((hdi2d & 1) ? 0 : bedSettings.maxTravelX)
+        const bedOy2d = -wco2d.y - ((hdi2d & 2) ? 0 : bedSettings.maxTravelY)
+        drawBedBoundary(ctx, t, bedSettings.maxTravelX, bedSettings.maxTravelY, bedOx2d, bedOy2d)
+      }
 
       const mdl = modelRef.current
       if (!mdl) return
