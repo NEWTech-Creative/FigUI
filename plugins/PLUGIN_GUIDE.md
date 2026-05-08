@@ -350,6 +350,24 @@ const info = await call('getDeviceInfo')
 // info.primarySd  → primary SD path
 ```
 
+#### `openFile`
+Open a G-code file in the main viewer. The file must exist on the SD card.
+
+```js
+await call('openFile', { path: '/sd/myfile.nc' })
+```
+
+| Param | Description |
+|---|---|
+| `path` | Full SD path to the G-code file (must start with `/sd/`) |
+
+#### `close`
+Closes the plugin window programmatically.
+
+```js
+await call('close')
+```
+
 #### `getSettings` / `saveSettings`
 Per-plugin persistent settings, stored on the device. Each plugin gets its own namespace — data is never shared between plugins.
 

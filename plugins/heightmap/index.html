@@ -1277,11 +1277,16 @@ function renderApplyResults(results) {
       <div class="result-body">
         <div class="result-files">${r.file}</div>
         ${r.ok
-          ? `<div class="result-out">→ ${r.out}</div>`
+          ? `<div class="result-out">→ <span class="result-out-link" onclick="openInViewer('${esc(r.out)}')">${r.out}</span></div>`
           : `<div class="result-err-msg">${r.err}</div>`}
       </div>
     </div>
   `).join('')
+}
+
+async function openInViewer(filename) {
+  await call('openFile', { path: '/sd/' + filename })
+  call('close')
 }
 
 function applyHmap(gcode, hmap) {

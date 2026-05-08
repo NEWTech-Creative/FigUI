@@ -633,6 +633,8 @@ body {
 .result-body { flex: 1; min-width: 0; }
 .result-files { font-size: 14px; color: var(--text-primary, #e2e6f4); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .result-out { font-size: 13px; color: var(--ok, #22c55e); margin-top: 1px; font-family: ui-monospace, monospace; }
+.result-out-link { cursor: pointer; text-decoration: underline; text-underline-offset: 2px; }
+.result-out-link:hover { color: var(--text-primary, #e2e6f4); }
 .result-err-msg { font-size: 13px; color: var(--danger, #ef4444); margin-top: 1px; }
 
 

@@ -143,6 +143,16 @@ export function PluginFrame({ plugin, onClose, inline }: { plugin: Plugin; onClo
           listDeviceFiles(path, fs).then(result => reply(result)).catch(err => reply(null, String(err)))
           break
         }
+        case 'openFile': {
+          const path = String(msg.params?.path ?? '')
+          window.dispatchEvent(new CustomEvent('gcode:load', { detail: path }))
+          reply(null)
+          break
+        }
+        case 'close':
+          reply(null)
+          onClose()
+          break
         case 'getDeviceInfo':
           reply(useMachineStore.getState().espInfo); break
         case 'getSettings': {
