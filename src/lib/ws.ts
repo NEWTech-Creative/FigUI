@@ -146,7 +146,6 @@ export function onLine(fn: LineHandler): () => void {
   return () => { lineHandlers.delete(fn) }
 }
 
-const PING_INTERVAL_MS = 5000
 const LIVENESS_CHECK_MS = 2000
 const LIVENESS_TIMEOUT_MS = 12000
 const OPEN_TIMEOUT_MS = 6000
@@ -191,7 +190,6 @@ export function connect(host: string): Promise<void> {
 
       useMachineStore.getState().setConnected(true)
       startCommandProcessor()
-      startPing()
       startLivenessWatchdog()
 
       resolve()
@@ -266,19 +264,6 @@ function closeCurrentSocket() {
   try { stale.close() } catch { /* noop */ }
 }
 
-function startPing() {
-  stopPing()
-  pingTimer = setInterval(() => {
-    if (socket?.readyState !== WebSocket.OPEN) return
-    if (pendingAcknowledgments.size === 0) pendingPingOks++
-    connectionHealth.lastPingTime = Date.now()
-    try {
-      socket.send(`PING:${pageId}\n`)
-    } catch {
-      // Send failed — let the liveness watchdog catch it.
-    }
-  }, PING_INTERVAL_MS)
-}
 
 function stopPing() {
   if (pingTimer) { clearInterval(pingTimer); pingTimer = null }
