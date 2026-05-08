@@ -150,9 +150,6 @@ const PING_INTERVAL_MS = 5000
 const LIVENESS_CHECK_MS = 2000
 const LIVENESS_TIMEOUT_MS = 12000
 const OPEN_TIMEOUT_MS = 6000
-const STATUS_POLL_INTERVAL_MS = 500
-// 0x3F = '?' — FluidNC's real-time status request byte.
-const STATUS_REPORT_BYTE = 0x3F
 
 export function connect(host: string): Promise<void> {
   return new Promise((resolve, reject) => {
@@ -196,9 +193,6 @@ export function connect(host: string): Promise<void> {
       startCommandProcessor()
       startPing()
       startLivenessWatchdog()
-      setTimeout(() => {
-        if (myGen === generation) startStatusPoll()
-      }, 2000)
 
       resolve()
     }
@@ -290,19 +284,6 @@ function stopPing() {
   if (pingTimer) { clearInterval(pingTimer); pingTimer = null }
 }
 
-function startStatusPoll() {
-  stopStatusPoll()
-  statusPollTimer = setInterval(() => {
-    if (socket?.readyState !== WebSocket.OPEN) return
-    try {
-      const buf = new Uint8Array(1)
-      buf[0] = STATUS_REPORT_BYTE
-      socket.send(buf)
-    } catch {
-      // Liveness watchdog will catch a dead socket.
-    }
-  }, STATUS_POLL_INTERVAL_MS)
-}
 
 function stopStatusPoll() {
   if (statusPollTimer) { clearInterval(statusPollTimer); statusPollTimer = null }
@@ -470,6 +451,7 @@ export function sendSilentAlarmQuery() {
 // only after the WS has been stable for a couple of seconds. See ws.onopen for
 // why these can't be fired immediately on open.
 export function sendStartupQueries() {
+  sendRaw('$Report/Interval=500')
   sendRaw('$SS')
   sendSilentRaw('$$', SETTINGS_DUMP_SILENT_RESPONSE)
 }
