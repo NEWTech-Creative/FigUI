@@ -11,6 +11,24 @@ export interface Position {
   c?: number
 }
 
+export interface GCodeModes {
+  motion?: string
+  wcs?: string
+  plane?: string
+  units?: string
+  distance?: string
+  arcDistance?: string
+  feedRateMode?: string
+  cutterComp?: string
+  toolLength?: string
+  programState?: string
+  spindle?: string
+  coolant?: string
+  tool?: number
+  feed?: number
+  spindleSpeed?: number
+}
+
 export interface MachineStatus {
   state: MachineState
   alarmCode?: number
@@ -27,6 +45,7 @@ export interface MachineStatus {
   pinState: string
   sdFilename?: string
   sdPercent?: number
+  gcodeModes?: GCodeModes
 }
 
 export interface FileEntry {

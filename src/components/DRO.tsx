@@ -376,6 +376,66 @@ export function DRO({ isTablet = false }: { isTablet?: boolean }) {
           <span className={`text-text-dim ${isTablet ? 'text-base' : 'text-sm'}`}>rpm</span>
         </div>
       </div>
+
+      <GCodeModesRow isTablet={isTablet} />
+    </div>
+  )
+}
+
+const MODE_TOOLTIPS: Record<string, string> = {
+  G0: 'Rapid move', G1: 'Linear feed move', G2: 'Arc CW', G3: 'Arc CCW',
+  'G38.2': 'Probe toward, error on fail', 'G38.3': 'Probe toward',
+  'G38.4': 'Probe away, error on fail', 'G38.5': 'Probe away', G80: 'Motion cancel',
+  G54: 'Work coord 1', G55: 'Work coord 2', G56: 'Work coord 3',
+  G57: 'Work coord 4', G58: 'Work coord 5', G59: 'Work coord 6',
+  'G59.1': 'Work coord 7', 'G59.2': 'Work coord 8', 'G59.3': 'Work coord 9',
+  G17: 'XY plane', G18: 'XZ plane', G19: 'YZ plane',
+  G20: 'Inches', G21: 'Millimeters',
+  G90: 'Absolute distance', G91: 'Incremental distance',
+  'G90.1': 'Absolute arc IJK', 'G91.1': 'Incremental arc IJK',
+  G93: 'Inverse time feed', G94: 'Units per minute', G95: 'Units per revolution',
+  G40: 'Cutter comp off', G41: 'Cutter comp left', G42: 'Cutter comp right',
+  'G43.1': 'Tool length applied', G49: 'Tool length cancel',
+  M0: 'Program pause', M1: 'Optional pause', M2: 'Program end', M30: 'Program end + rewind',
+  M3: 'Spindle CW', M4: 'Spindle CCW', M5: 'Spindle off',
+  M7: 'Mist coolant', M8: 'Flood coolant', M9: 'Coolant off',
+}
+
+function GCodeModesRow({ isTablet }: { isTablet: boolean }) {
+  const modes = useMachineStore(s => s.status.gcodeModes)
+  if (!modes) return null
+
+  const order: Array<keyof typeof modes> = [
+    'motion', 'wcs', 'units', 'distance', 'feedRateMode', 'plane',
+    'arcDistance', 'cutterComp', 'toolLength', 'spindle', 'programState',
+  ]
+  const items = order
+    .map(k => modes[k])
+    .filter((v): v is string => typeof v === 'string' && v.length > 0)
+
+  if (items.length === 0) return null
+
+  const textSize = isTablet ? 'text-xl' : 'text-base'
+
+  return (
+    <div className={`border-t border-border px-3 py-2 flex flex-wrap gap-1 font-mono select-none cursor-default ${textSize}`}>
+      {items.map(word => (
+        <span
+          key={word}
+          title={MODE_TOOLTIPS[word] ?? word}
+          className="px-1.5 py-0.5 rounded-sm bg-elevated border border-border text-text-primary"
+        >
+          {word}
+        </span>
+      ))}
+      {modes.tool != null && (
+        <span
+          title="Active tool"
+          className="px-1.5 py-0.5 rounded-sm bg-elevated border border-border text-text-muted"
+        >
+          T{modes.tool}
+        </span>
+      )}
     </div>
   )
 }

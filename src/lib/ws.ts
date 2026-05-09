@@ -9,6 +9,7 @@ let generation = 0
 let pingTimer: ReturnType<typeof setInterval> | null = null
 let livenessTimer: ReturnType<typeof setInterval> | null = null
 let statusPollTimer: ReturnType<typeof setInterval> | null = null
+let gcStatePollTimer: ReturnType<typeof setInterval> | null = null
 let pendingPingOks = 0
 
 interface SilentResponseMatcher {
@@ -20,6 +21,12 @@ interface SilentResponseMatcher {
 const ALARM_QUERY_SILENT_RESPONSE: SilentResponseMatcher = {
   starts: (line) => /^\d+:\s/.test(line) || /^Active alarm:\s*\d+\s*\([^)]+\)/.test(line),
   consume: (line) => /^\d+:\s/.test(line) || /^Active alarm:\s*\d+\s*\([^)]+\)/.test(line),
+  done: (line) => line === 'ok' || line === 'error',
+}
+
+const GCODE_STATE_QUERY_SILENT_RESPONSE: SilentResponseMatcher = {
+  starts: (line) => line.startsWith('[GC:') && line.endsWith(']'),
+  consume: (line) => line.startsWith('[GC:') && line.endsWith(']'),
   done: (line) => line === 'ok' || line === 'error',
 }
 
@@ -146,6 +153,7 @@ const LIVENESS_CHECK_MS = 2000
 const LIVENESS_TIMEOUT_MS = 12000
 const OPEN_TIMEOUT_MS = 6000
 const STATUS_POLL_INTERVAL_MS = 500
+const GC_STATE_POLL_INTERVAL_MS = 2000
 // 0x3F = '?' — FluidNC's real-time status request byte.
 const STATUS_REPORT_BYTE = 0x3F
 
@@ -192,6 +200,7 @@ export function connect(host: string): Promise<void> {
       startPing()
       startLivenessWatchdog()
       startStatusPoll()
+      startGcStatePoll()
 
       resolve()
     }
@@ -235,6 +244,7 @@ function handleDisconnect() {
   stopPing()
   stopLivenessWatchdog()
   stopStatusPoll()
+  stopGcStatePoll()
   stopCommandProcessor()
   // Drop pending acks — they'll never resolve now.
   pendingAcknowledgments.forEach(({ timeoutId }) => clearTimeout(timeoutId))
@@ -298,6 +308,20 @@ function startStatusPoll() {
 
 function stopStatusPoll() {
   if (statusPollTimer) { clearInterval(statusPollTimer); statusPollTimer = null }
+}
+
+function startGcStatePoll() {
+  stopGcStatePoll()
+  const tick = () => {
+    if (socket?.readyState !== WebSocket.OPEN) return
+    sendSilentRaw('$G', GCODE_STATE_QUERY_SILENT_RESPONSE)
+  }
+  tick()
+  gcStatePollTimer = setInterval(tick, GC_STATE_POLL_INTERVAL_MS)
+}
+
+function stopGcStatePoll() {
+  if (gcStatePollTimer) { clearInterval(gcStatePollTimer); gcStatePollTimer = null }
 }
 
 function startLivenessWatchdog() {
@@ -554,6 +578,7 @@ export function disconnect() {
   stopPing()
   stopLivenessWatchdog()
   stopStatusPoll()
+  stopGcStatePoll()
   stopCommandProcessor()
   pendingSilentResponses.length = 0
   activeSilentResponse = null
