@@ -189,6 +189,16 @@ input[type=text] { width: 100% }
   display: inline-block;
 }
 .open-link:hover { opacity: 0.82 }
+.notice {
+  font-size: 14px;
+  color: var(--text-muted);
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 10px 12px;
+  line-height: 1.5;
+}
+.notice strong { color: var(--text-primary) }
 </style>
 </head>
 <body>
@@ -252,6 +262,10 @@ input[type=text] { width: 100% }
         <input type="checkbox" id="useZ" checked>
         <span>Use Z axis (limited travel)</span>
       </label>
+    </div>
+
+    <div class="notice">
+      <strong>Driver compatibility:</strong> Volume depends on stepper motor vibration. Smooth drivers (Trinamic, DM556, etc.) may produce very quiet or inaudible results. Best results are obtained by disabling smoothing, stealthChop, or similar features.
     </div>
 
   </div>
