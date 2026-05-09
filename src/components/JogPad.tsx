@@ -817,27 +817,29 @@ export function JogPad() {
               localStorage.setItem('jog.desktopStyle', 'rose')
             }} />
           : <div className="panel flex flex-col">
-              <div className="panel-header text-lg font-bold">Jog</div>
-              <div className="flex flex-col p-3 gap-3">
-
-                <div className="flex items-center justify-center gap-2">
-                  <div className="inline-flex rounded border border-border overflow-hidden">
-                    <button className={`px-3 py-1 text-base font-bold transition-all ${
+              <div className="panel-header flex items-center justify-between text-lg font-bold">
+                <span>Jog</span>
+                <div className="inline-flex rounded border border-border overflow-hidden">
+                    <button className={`px-2 py-0.5 text-base font-bold transition-all ${
                       !continuous ? 'bg-accent/15 text-accent' : 'bg-transparent text-text-muted hover:text-text-primary'
                     }`} onClick={() => setContinuous(false)}>Step</button>
-                    <button className={`px-3 py-1 text-base font-bold border-l border-border transition-all ${
+                    <button className={`px-2 py-0.5 text-base font-bold border-l border-border transition-all ${
                       continuous ? 'bg-accent/15 text-accent' : 'bg-transparent text-text-muted hover:text-text-primary'
                     }`} onClick={() => setContinuous(true)}>Continuous</button>
-                    <button className="px-3 py-1 text-base font-bold border-l border-border transition-all bg-transparent text-text-muted hover:text-text-primary" onClick={() => {
+                    <button className="px-2 py-0.5 text-base font-bold border-l border-border transition-all bg-transparent text-text-muted hover:text-text-primary" onClick={() => {
                       setCompact(true)
                       localStorage.setItem('jog.desktopStyle', 'compact')
                     }}>Compact</button>
                   </div>
+              </div>
+              <div className="flex flex-col p-3 gap-3">
+
+                <div className="relative flex items-center justify-center gap-3 shrink-0">
                   {continuous && (
                     <button
                       title={keyboardJog ? 'Keyboard jog ON — Arrows: X/Y · −/+: Z' : 'Enable keyboard jogging'}
                       onClick={() => setKeyboardJog(k => !k)}
-                      className={`flex items-center justify-center w-7 h-7 rounded border transition-all ${
+                      className={`absolute top-0 left-0 flex items-center justify-center w-7 h-7 rounded border transition-all ${
                         keyboardJog
                           ? 'bg-accent/15 border-accent/50 text-accent'
                           : 'border-border text-text-muted hover:text-text-primary'
@@ -854,9 +856,6 @@ export function JogPad() {
                       </svg>
                     </button>
                   )}
-                </div>
-
-                <div className="flex items-center justify-center gap-3 shrink-0">
                   <JogRose xyFeed={xyFeed} continuous={continuous} disabled={!canJog}
                     isJogging={status.state === 'Jog'}
                     activeKeys={activeKeys} units={units} />
@@ -883,7 +882,7 @@ export function JogPad() {
                   {continuous
                     ? keyboardJog
                       ? 'Arrows: X/Y · −/+: Z · Hold to jog'
-                      : 'Hold to jog · enable keyboard'
+                      : <>Hold to jog · <button className="underline hover:text-text-primary transition-colors" onClick={() => setKeyboardJog(true)}>enable keyboard</button></>
                     : ''
                   }
                 </div>
