@@ -319,14 +319,17 @@ export function FileManager({ isTablet }: { isTablet?: boolean }) {
   const [result, setResult]     = useState<FileListResult | null>(_fmCache.get(_fmLastFs)?.result ?? null)
   const [loading, setLoading]   = useState(false)
   const [error, setError]       = useState('')
-  const [uploading, setUploading]   = useState(false)
-  const [uploadPct, setUploadPct]   = useState(0)
+  const [uploading, setUploading]       = useState(false)
+  const [uploadPct, setUploadPct]       = useState(0)
+  const [uploadIdx, setUploadIdx]       = useState(0)
+  const [uploadTotal, setUploadTotal]   = useState(0)
   const [newDirName, setNewDirName] = useState('')
   const [showNewDir, setShowNewDir] = useState(false)
   const [newFileName, setNewFileName] = useState('')
   const [showNewFile, setShowNewFile] = useState(false)
   const [editing, setEditing]       = useState<{ path: string; filename: string; content: string } | null>(null)
   const [editLoading, setEditLoading] = useState(false)
+  const [dragOver, setDragOver] = useState(false)
   const fileInput = useRef<HTMLInputElement>(null)
 
   const sdRoot    = primarySd
@@ -384,10 +387,13 @@ export function FileManager({ isTablet }: { isTablet?: boolean }) {
   async function handleUpload(files: FileList | null) {
     if (!files || !files.length) return
     setUploading(true)
+    setUploadTotal(files.length)
     setUploadPct(0)
     try {
-      for (const file of files) {
-        await uploadFile(path, file, fs, p => setUploadPct(p))
+      for (let i = 0; i < files.length; i++) {
+        setUploadIdx(i + 1)
+        setUploadPct(0)
+        await uploadFile(path, files[i], fs, p => setUploadPct(p))
       }
       load(path, fs)
     } catch (e) {
@@ -558,7 +564,7 @@ export function FileManager({ isTablet }: { isTablet?: boolean }) {
       {uploading && (
         <div className="px-3 py-2 bg-info/5 border-b border-info/20">
           <div className="flex justify-between text-base text-info mb-1">
-            <span>Uploading…</span>
+            <span>Uploading{uploadTotal > 1 ? ` (${uploadIdx} of ${uploadTotal})` : ''}…</span>
             <span>{uploadPct}%</span>
           </div>
           <div className="w-full h-1 bg-elevated rounded-full overflow-hidden">
@@ -567,7 +573,21 @@ export function FileManager({ isTablet }: { isTablet?: boolean }) {
         </div>
       )}
 
-      <div className="flex-1 overflow-y-auto min-h-0">
+      <div
+        className="flex-1 overflow-y-auto min-h-0 relative"
+        onDragOver={e => { e.preventDefault(); setDragOver(true) }}
+        onDragEnter={e => { e.preventDefault(); setDragOver(true) }}
+        onDragLeave={e => { if (!e.currentTarget.contains(e.relatedTarget as Node)) setDragOver(false) }}
+        onDrop={e => { e.preventDefault(); setDragOver(false); handleUpload(e.dataTransfer.files) }}
+      >
+        {dragOver && (
+          <div className="absolute inset-0 z-10 flex items-center justify-center bg-accent/10 border-2 border-dashed border-accent rounded-sm pointer-events-none">
+            <div className="flex flex-col items-center gap-2 text-accent">
+              <Upload size={isTablet ? 40 : 28} />
+              <span className={isTablet ? 'text-xl' : 'text-base'}>Drop files to upload</span>
+            </div>
+          </div>
+        )}
         {error && (
           <div className="m-3 p-3 rounded-sm bg-danger/10 border border-danger/30 text-danger text-base">
             {error}
