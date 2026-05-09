@@ -24,6 +24,14 @@
       "version": "1.0.0",
       "author": "figamore",
       "base": "https://raw.githubusercontent.com/figamore/FigUI/main/plugins/midi2gcode/"
+    },
+    {
+      "id": "teachmode",
+      "name": "Teachmode",
+      "description": "Capture, edit, play back, import, and export taught machine positions as G-code.",
+      "version": "9.3.0",
+      "author": "Myles (NEWTech Creative)",
+      "base": "/plugins/teachmode/"
     }
   ]
 }
