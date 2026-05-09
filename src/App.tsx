@@ -9,7 +9,7 @@ import { CURRENT_VERSION, GITHUB_REPO, DISMISSED_VERSION_KEY, semverGt } from '.
 import { startWatchdog, stopWatchdog } from './lib/jogWatchdog'
 import { Header } from './components/Header'
 import { DRO } from './components/DRO'
-import { JogPad, TabletJogPad } from './components/JogPad'
+import { TabletJogPad } from './components/JogPad'
 import { ProbePanel } from './components/ProbePanel'
 import { TabletAccordion } from './components/TabletAccordion'
 
@@ -459,7 +459,7 @@ export function App() {
           <div className="flex flex-col gap-3 p-3 pb-20">
             <DRO />
             <JobControl />
-            <JogPad />
+            <TabletJogPad />
             <ProbePanel />
           </div>
         )}

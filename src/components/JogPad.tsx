@@ -1221,21 +1221,21 @@ export function TabletJogPad() {
 
   return (
     <>
-    <div className="panel flex flex-col flex-1 min-h-0 portrait:flex-none portrait:h-[440px]">
+    <div className="panel flex flex-col flex-1 min-h-0 portrait:flex-none portrait:h-[440px] max-sm:portrait:h-auto">
       <div className="panel-header flex flex-row items-stretch justify-between shrink-0 !p-0 border-b border-border overflow-hidden">
         <div className="flex items-center justify-center w-16 py-3 font-bold text-lg tracking-wider border-r border-border shrink-0">JOG</div>
         <div className="flex flex-1 items-stretch divide-x divide-border bg-surface">
           {steps.map(s => (
             <button
               key={s}
-              className={`flex-1 px-2 sm:px-4 portrait:px-4 portrait:py-4 font-bold text-base sm:text-lg portrait:text-xl transition-colors ${!continuous && stepSize === s ? 'bg-accent text-white shadow-inner' : 'bg-transparent text-text-primary hover:bg-elevated'}`}
+              className={`flex-1 px-2 sm:px-4 portrait:px-4 portrait:py-4 max-sm:portrait:py-2 font-bold text-base sm:text-lg portrait:text-xl max-sm:portrait:text-base transition-colors ${!continuous && stepSize === s ? 'bg-accent text-white shadow-inner' : 'bg-transparent text-text-primary hover:bg-elevated'}`}
               onClick={() => { setContinuous(false); setStepSize(s); }}
             >
               {s}
             </button>
           ))}
           <button
-            className={`flex-1 px-2 sm:px-4 portrait:px-4 portrait:py-4 font-bold text-base sm:text-lg portrait:text-xl transition-colors ${continuous ? 'bg-accent text-white shadow-inner' : 'bg-transparent text-text-primary hover:bg-elevated'}`}
+            className={`flex-1 px-2 sm:px-4 portrait:px-4 portrait:py-4 max-sm:portrait:py-2 font-bold text-base sm:text-lg portrait:text-xl max-sm:portrait:text-base transition-colors ${continuous ? 'bg-accent text-white shadow-inner' : 'bg-transparent text-text-primary hover:bg-elevated'}`}
             onClick={() => setContinuous(true)}
           >
             Cont
@@ -1244,7 +1244,7 @@ export function TabletJogPad() {
       </div>
       <div className="flex flex-row flex-1 min-h-0 overflow-hidden">
 
-        <div className="flex flex-col w-16 border-r border-border py-2 shrink-0">
+        <div className="flex flex-col w-16 max-sm:w-12 border-r border-border py-2 shrink-0">
           <button
             onClick={() => setFeedModal('xy')}
             className="flex flex-col items-center justify-center gap-3 flex-1 rounded-lg hover:bg-accent/5 transition-all group mx-1"
@@ -1285,9 +1285,9 @@ export function TabletJogPad() {
         </div>
 
         {/* Jog controls */}
-        <div className="p-2 sm:p-4 portrait:p-5 landscape:p-6 flex-1 min-h-0 flex justify-center items-center overflow-hidden">
-          <div className="flex flex-row items-stretch justify-center portrait:h-[320px] portrait:gap-6 landscape:gap-5 landscape:w-full landscape:aspect-[7/5] landscape:max-h-full">
-          <div className="grid grid-cols-3 grid-rows-3 gap-2 sm:gap-4 portrait:gap-4 landscape:shrink-0 aspect-square">
+        <div className="p-2 sm:p-4 portrait:p-5 landscape:p-6 max-sm:portrait:p-2 flex-1 min-h-0 flex justify-center items-center overflow-hidden">
+          <div className="flex flex-row items-stretch justify-center portrait:h-[320px] portrait:gap-6 landscape:gap-5 landscape:w-full landscape:aspect-[7/5] landscape:max-h-full max-sm:portrait:w-full max-sm:portrait:aspect-[7/5] max-sm:portrait:gap-2 select-none [-webkit-touch-callout:none]">
+          <div className="grid grid-cols-3 grid-rows-3 gap-2 sm:gap-4 portrait:gap-4 max-sm:portrait:gap-2 landscape:shrink-0 aspect-square">
             <div />
             <button
               onPointerDown={e => { alwaysCapturePointer(e); startYp(); }}
@@ -1319,7 +1319,7 @@ export function TabletJogPad() {
             >Y-</button>
             <div />
           </div>
-          <div className="flex flex-col gap-2 sm:gap-4 portrait:gap-4 landscape:shrink-0 justify-between aspect-[1/3]">
+          <div className="flex flex-col gap-2 sm:gap-4 portrait:gap-4 max-sm:portrait:gap-2 landscape:shrink-0 justify-between aspect-[1/3]">
             <button
               onPointerDown={e => { alwaysCapturePointer(e); startZp(); }}
               onPointerUp={stopZp} onPointerCancel={stopZp} onPointerLeave={stopZp}
