@@ -1,4 +1,4 @@
-import { Sun, Moon, Wifi, WifiOff, Settings, Maximize, Minimize, HelpCircle, Play, Square, RotateCcw, Zap, Power, Home, Target, Crosshair, ArrowLeft, ArrowUp, ArrowRight, ArrowDown, Lightbulb, type LucideIcon } from 'lucide-react'
+import { Sun, Moon, Wifi, WifiOff, Settings, Maximize, Minimize, HelpCircle, Play, Square, RotateCcw, Zap, Power, Home, Target, Crosshair, ArrowLeft, ArrowUp, ArrowRight, ArrowDown, Lightbulb, LayoutDashboard, type LucideIcon } from 'lucide-react'
 import fluidncLogo from '../assets/fluidnc-logo.svg'
 import { useMachineStore, stateColor, stateBg } from '../store'
 import { useGCodeStore } from '../store/gcode'
@@ -158,6 +158,16 @@ export function Header({ onSettingsClick, onAboutClick, isTablet }: Props) {
         >
           {isFullscreen ? <Minimize size={18} /> : <Maximize size={18} />}
         </button>
+
+        {!isTablet && (
+          <button
+            className="btn-ghost px-2 py-1.5"
+            onClick={() => window.dispatchEvent(new CustomEvent('reset-layout'))}
+            title="Reset layout to default"
+          >
+            <LayoutDashboard size={18} />
+          </button>
+        )}
 
         <button
           className={`btn-ghost relative ${isTablet ? 'px-3 py-2' : 'px-2 py-1.5'}`}

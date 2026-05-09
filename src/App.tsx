@@ -25,6 +25,7 @@ import { WifiOff, RefreshCw, Crosshair, Monitor, FolderOpen, TerminalSquare, Ale
 import type { Plugin, SidebarTab, ActiveLayout } from './types'
 import { getEffectiveLayout } from './types'
 import { PluginFrame } from './components/PluginFrame'
+import { DesktopLayout } from './components/DesktopLayout'
 
 const SIDEBAR_TABS: { id: SidebarTab; label: string }[] = [
   { id: 'files',   label: 'Files'   },
@@ -542,78 +543,16 @@ export function App() {
         </div>
       )}
 
-{!fullPlugin && activeLayout === 'desktop' && !workspacePlugin && !controlsPlugin && <div className="flex-1 min-h-0 grid grid-cols-[380px_1fr_340px] gap-3 p-3 overflow-hidden">
-
-        {/* Left: DRO + jog controls */}
-        <div className="flex flex-col gap-3 min-h-0 overflow-y-auto">
-          <DRO />
-          <JogPad />
-        </div>
-
-        {/* Center: G-code viewer + probe */}
-        <div className="min-h-0 flex flex-col gap-3 overflow-y-auto">
-          <GCodeViewer className="flex-1 min-h-[300px]" />
-          <ProbePanel />
-        </div>
-
-        {/* Right: tabbed panel + terminal */}
-        <div className="flex flex-col min-h-0 gap-3 overflow-hidden">
-          <div className="panel flex flex-col min-h-0 flex-1 overflow-hidden">
-            {sidebarTabBar}
-            <div className="flex-1 min-h-0 overflow-hidden">
-              {sidebarTab === 'files'   && <FileManager />}
-              {sidebarTab === 'macros'  && <Macros />}
-              {sidebarTab === 'plugins' && <PluginLauncher onLaunchPanel={handleLaunchPanel} activeLayout={activeLayout} />}
-            </div>
-          </div>
-
-          <div className="panel flex flex-col min-h-[200px] flex-1 overflow-hidden">
-            <Terminal />
-          </div>
-        </div>
-
-      </div>}
-
-      {/* workspace layout: plugin takes center + right, DRO/JogPad stays on left */}
-      {!fullPlugin && activeLayout === 'desktop' && workspacePlugin && <div className="flex-1 min-h-0 grid grid-cols-[380px_1fr] gap-3 p-3 overflow-hidden">
-
-        <div className="flex flex-col gap-3 min-h-0 overflow-y-auto">
-          <DRO />
-          <JogPad />
-        </div>
-
-        <div className="panel flex flex-col min-h-0 overflow-hidden">
-          <PluginFrame plugin={workspacePlugin} onClose={() => setWorkspacePlugin(null)} inline />
-        </div>
-
-      </div>}
-
-      {!fullPlugin && activeLayout === 'desktop' && controlsPlugin && <div className="flex-1 min-h-0 grid grid-cols-[380px_1fr_340px] gap-3 p-3 overflow-hidden">
-
-        <div className="panel flex flex-col min-h-0 overflow-hidden">
-          <PluginFrame plugin={controlsPlugin} onClose={() => setControlsPlugin(null)} inline />
-        </div>
-
-        <div className="min-h-0 flex flex-col gap-3 overflow-y-auto">
-          <GCodeViewer className="flex-1 min-h-[300px]" />
-          <ProbePanel />
-        </div>
-
-        <div className="flex flex-col min-h-0 gap-3 overflow-hidden">
-          <div className="panel flex flex-col min-h-0 flex-1 overflow-hidden">
-            {sidebarTabBar}
-            <div className="flex-1 min-h-0 overflow-hidden">
-              {sidebarTab === 'files'   && <FileManager />}
-              {sidebarTab === 'macros'  && <Macros />}
-              {sidebarTab === 'plugins' && <PluginLauncher onLaunchPanel={handleLaunchPanel} activeLayout={activeLayout} />}
-            </div>
-          </div>
-          <div className="panel flex flex-col min-h-[200px] flex-1 overflow-hidden">
-            <Terminal />
-          </div>
-        </div>
-
-      </div>}
+      {!fullPlugin && activeLayout === 'desktop' && (
+        <DesktopLayout
+          workspacePlugin={workspacePlugin}
+          controlsPlugin={controlsPlugin}
+          onCloseWorkspacePlugin={() => setWorkspacePlugin(null)}
+          onCloseControlsPlugin={() => setControlsPlugin(null)}
+          onLaunchPanel={handleLaunchPanel}
+          activeLayout={activeLayout}
+        />
+      )}
 
 
       {settingsOpen && (

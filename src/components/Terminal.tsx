@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from 'react'
-import { Trash2, ChevronsDown, Clipboard, ClipboardCheck, Loader2 } from 'lucide-react'
+import { Trash2, ChevronsDown, Clipboard, ClipboardCheck, Loader2, PanelBottom, PanelRight } from 'lucide-react'
 import { sendRaw } from '../lib/ws'
 import { useTerminalStore, type LineKind } from '../store/terminal'
 import { useMachineStore } from '../store'
@@ -13,7 +13,12 @@ const KIND_CLASS: Record<LineKind, string> = {
   normal: 'text-text-primary',
 }
 
-export function Terminal() {
+interface TerminalProps {
+  onExpandToggle?: () => void
+  expanded?: boolean
+}
+
+export function Terminal({ onExpandToggle, expanded = false }: TerminalProps = {}) {
   const lines = useTerminalStore(s => s.lines)
   const history = useTerminalStore(s => s.history)
   const verbose = useTerminalStore(s => s.verbose)
@@ -125,6 +130,15 @@ export function Terminal() {
           >
             <Trash2 size={12} />
           </button>
+          {onExpandToggle && (
+            <button
+              className="p-1 rounded hover:bg-elevated text-text-muted hover:text-accent transition-colors"
+              onClick={onExpandToggle}
+              title={expanded ? 'Restore terminal to panel' : 'Expand terminal across bottom'}
+            >
+              {expanded ? <PanelRight size={12} /> : <PanelBottom size={12} />}
+            </button>
+          )}
         </div>
       </div>
 
