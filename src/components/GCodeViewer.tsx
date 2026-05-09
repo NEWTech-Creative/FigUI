@@ -467,16 +467,16 @@ function getBoundsCorners(bounds: GCodeModel['bounds']) {
   ]
 }
 
-function getClipBounds(modelBounds: GCodeModel['bounds']) {
+function getClipBounds(modelBounds: GCodeModel['bounds'] | null) {
   const store = useMachineStore.getState()
   const { maxTravelX, maxTravelY, homingDirInvert = 0 } = store.controllerSettings
 
-  let minX = modelBounds.minX
-  let minY = modelBounds.minY
-  let minZ = modelBounds.minZ
-  let maxX = modelBounds.maxX
-  let maxY = modelBounds.maxY
-  let maxZ = modelBounds.maxZ
+  let minX = modelBounds ? modelBounds.minX : Infinity
+  let minY = modelBounds ? modelBounds.minY : Infinity
+  let minZ = modelBounds ? modelBounds.minZ : Infinity
+  let maxX = modelBounds ? modelBounds.maxX : -Infinity
+  let maxY = modelBounds ? modelBounds.maxY : -Infinity
+  let maxZ = modelBounds ? modelBounds.maxZ : -Infinity
 
   if (maxTravelX != null && maxTravelY != null) {
     const bedOx = -store.status.wco.x - ((homingDirInvert & 1) ? 0 : maxTravelX)
@@ -490,6 +490,10 @@ function getClipBounds(modelBounds: GCodeModel['bounds']) {
     maxX = Math.max(maxX, bedOx, bedMaxX)
     maxY = Math.max(maxY, bedOy, bedMaxY)
     maxZ = Math.max(maxZ, 0)
+  }
+
+  if (!isFinite(minX) || !isFinite(maxX) || !isFinite(minY) || !isFinite(maxY) || !isFinite(minZ) || !isFinite(maxZ)) {
+    return { minX: -100, minY: -100, minZ: 0, maxX: 100, maxY: 100, maxZ: 0 }
   }
 
   return { minX, minY, minZ, maxX, maxY, maxZ }
@@ -877,7 +881,7 @@ export function GCodeViewer({ className, isTablet }: Props) {
   const lastPinchDistRef = useRef<number | null>(null)
   const animRef = useRef(0)
   const renderRef = useRef<() => void>(() => {})
-  const needsFitRef = useRef(false)
+  const needsFitRef = useRef(true)
   const progressRef = useRef<ToolpathProgress | null>(null)
   const prevIsRunningRef = useRef(false)
   const prevModelRef = useRef<GCodeModel | null>(null)
@@ -973,13 +977,7 @@ export function GCodeViewer({ className, isTablet }: Props) {
   function updateCameraClipping(orbit = orbitState, mdl = modelRef.current ?? model) {
     const camera = cameraRef.current
 
-    if (!mdl) {
-      camera.near = 0.1
-      camera.far = 1000
-      return
-    }
-
-    const clipBounds = getClipBounds(mdl.bounds)
+    const clipBounds = getClipBounds(mdl ? mdl.bounds : null)
     const position = getOrbitCameraPosition(orbit)
     const { forward } = getOrbitCameraBasis(orbit, camera.up)
     const corners = getBoundsCorners(clipBounds)
@@ -1353,12 +1351,14 @@ export function GCodeViewer({ className, isTablet }: Props) {
   }
 
   function fitToView(m?: GCodeModel | null) {
-    const mdl = m ?? model
-    if (!mdl) return
+    const mdl = m === undefined ? model : m
+    const machineStore = useMachineStore.getState()
+    const { maxTravelX: bedW, maxTravelY: bedH } = machineStore.controllerSettings
+    if (!mdl && (bedW == null || bedH == null)) return
 
     if (is3D) {
       const { w, h } = canvasLogicalSize()
-      const clipBounds = getClipBounds(mdl.bounds)
+      const clipBounds = getClipBounds(mdl ? mdl.bounds : null)
       const centerX = (clipBounds.minX + clipBounds.maxX) / 2
       const centerY = (clipBounds.minY + clipBounds.maxY) / 2
       const centerZ = (clipBounds.minZ + clipBounds.maxZ) / 2
@@ -1419,13 +1419,26 @@ export function GCodeViewer({ className, isTablet }: Props) {
       updateCameraFromOrbit(nextOrbit)
     } else {
       const { w, h } = canvasLogicalSize()
-      const { bounds } = mdl
-      const modelW = bounds.maxX - bounds.minX || 1
-      const modelH = bounds.maxY - bounds.minY || 1
+      let bMinX: number, bMinY: number, bMaxX: number, bMaxY: number
+      if (mdl) {
+        bMinX = mdl.bounds.minX
+        bMinY = mdl.bounds.minY
+        bMaxX = mdl.bounds.maxX
+        bMaxY = mdl.bounds.maxY
+      } else {
+        const hdi = machineStore.controllerSettings.homingDirInvert ?? 0
+        const wco = machineStore.status.wco
+        bMinX = -wco.x - ((hdi & 1) ? 0 : (bedW as number))
+        bMinY = -wco.y - ((hdi & 2) ? 0 : (bedH as number))
+        bMaxX = bMinX + (bedW as number)
+        bMaxY = bMinY + (bedH as number)
+      }
+      const modelW = bMaxX - bMinX || 1
+      const modelH = bMaxY - bMinY || 1
       const pad = 40
       const scale = Math.min((w - pad * 2) / modelW, (h - pad * 2) / modelH)
-      const cx = (bounds.minX + bounds.maxX) / 2
-      const cy = (bounds.minY + bounds.maxY) / 2
+      const cx = (bMinX + bMaxX) / 2
+      const cy = (bMinY + bMaxY) / 2
       transformRef.current = {
         ox: w / 2 - cx * scale,
         oy: h / 2 + cy * scale,
@@ -1454,12 +1467,11 @@ export function GCodeViewer({ className, isTablet }: Props) {
       }
 
       const mdl = modelRef.current
-      if (!mdl) {
-        rendererRef.current.gl.clear(rendererRef.current.gl.COLOR_BUFFER_BIT | rendererRef.current.gl.DEPTH_BUFFER_BIT)
-        return
-      }
+      const store = useMachineStore.getState()
+      const { maxTravelX: btx, maxTravelY: bty, homingDirInvert: hdi3d = 0 } = store.controllerSettings
+      const bedReady3d = btx != null && bty != null
 
-      if (needsFitRef.current && w > 1 && h > 1) {
+      if (needsFitRef.current && w > 1 && h > 1 && (mdl || bedReady3d)) {
         needsFitRef.current = false
         fitToView(mdl)
         return
@@ -1468,17 +1480,32 @@ export function GCodeViewer({ className, isTablet }: Props) {
       updateCameraFromOrbit()
       cameraRef.current.aspect = w / h
 
-      const store = useMachineStore.getState()
       const running3d = store.status.state === 'Run' || store.status.state === 'Hold'
       const progress3d = running3d ? progressRef.current : null
-      const use3DProgressOverlay = progress3d !== null && mdl.segments.length <= LARGE_PROGRESS_OVERLAY_SEGMENT_LIMIT
+      const use3DProgressOverlay = mdl !== null && progress3d !== null && mdl.segments.length <= LARGE_PROGRESS_OVERLAY_SEGMENT_LIMIT
       const wpos3d = showToolRef.current ? store.status.wpos : null
-      const markerGeometry = ensureEntryExitMarkerGeometry(mdl)
-      const { maxTravelX: btx, maxTravelY: bty, homingDirInvert: hdi3d = 0 } = store.controllerSettings
+      const markerGeometry = mdl ? ensureEntryExitMarkerGeometry(mdl) : { vertices: EMPTY_FLOAT32, colors: EMPTY_FLOAT32, triangleVertices: EMPTY_FLOAT32, triangleColors: EMPTY_FLOAT32 }
       const wco3d = store.status.wco
       const bedOx3d = -wco3d.x - ((hdi3d & 1) ? 0 : btx ?? 0)
       const bedOy3d = -wco3d.y - ((hdi3d & 2) ? 0 : bty ?? 0)
-      const bedGeometry = btx != null && bty != null ? buildBedLineGeometry(btx, bty, bedOx3d, bedOy3d) : null
+      const bedGeometry = bedReady3d ? buildBedLineGeometry(btx as number, bty as number, bedOx3d, bedOy3d) : null
+
+      if (!mdl) {
+        if (!bedReady3d && !wpos3d) {
+          rendererRef.current.gl.clear(rendererRef.current.gl.COLOR_BUFFER_BIT | rendererRef.current.gl.DEPTH_BUFFER_BIT)
+          return
+        }
+        clearStaticPathGeometryUpload()
+        const toolGeometry = wpos3d
+          ? createVertexData([], null, wpos3d)
+          : { vertices: EMPTY_FLOAT32, colors: EMPTY_FLOAT32, triangleVertices: EMPTY_FLOAT32, triangleColors: EMPTY_FLOAT32, toolVertexStart: 0 }
+        const mergedVertices = mergeFloat32Arrays(bedGeometry?.vertices ?? EMPTY_FLOAT32, toolGeometry.vertices)
+        const mergedColors = mergeFloat32Arrays(bedGeometry?.colors ?? EMPTY_FLOAT32, toolGeometry.colors)
+        const bedVertexCount = bedGeometry ? bedGeometry.vertices.length / 3 : 0
+        const toolVertexStart = toolGeometry.vertices.length > 0 ? bedVertexCount : mergedVertices.length / 3
+        renderLines(rendererRef.current, cameraRef.current, mergedVertices, mergedColors, toolVertexStart, 3, toolGeometry.triangleVertices, toolGeometry.triangleColors)
+        return
+      }
 
       if (!use3DProgressOverlay) {
         const staticGeometry = ensureStaticPathGeometry(mdl)
@@ -1529,10 +1556,14 @@ export function GCodeViewer({ className, isTablet }: Props) {
       const ctx = canvas.getContext('2d')
       if (!ctx) return
 
-      if (needsFitRef.current && w > 1 && h > 1 && modelRef.current) {
-        needsFitRef.current = false
-        fitToView(modelRef.current)
-        return
+      if (needsFitRef.current && w > 1 && h > 1) {
+        const machineStore = useMachineStore.getState()
+        const bedReady = machineStore.controllerSettings.maxTravelX != null && machineStore.controllerSettings.maxTravelY != null
+        if (modelRef.current || bedReady) {
+          needsFitRef.current = false
+          fitToView(modelRef.current)
+          return
+        }
       }
 
       const t = transformRef.current
@@ -1554,11 +1585,18 @@ export function GCodeViewer({ className, isTablet }: Props) {
       }
 
       const mdl = modelRef.current
-      if (!mdl) return
-
-      const { segments } = mdl
       const store = useMachineStore.getState()
       const running = store.status.state === 'Run' || store.status.state === 'Hold'
+
+      if (!mdl) {
+        if (showToolRef.current) {
+          const wpos = store.status.wpos
+          drawToolPosition(ctx, t, wpos.x, wpos.y, running)
+        }
+        return
+      }
+
+      const { segments } = mdl
       const progress = running ? progressRef.current : null
 
       const staticPaths = ensureStatic2DPaths(mdl)
@@ -1608,6 +1646,13 @@ export function GCodeViewer({ className, isTablet }: Props) {
       t.oy += dy
     }
   }
+
+  useEffect(() => {
+    if (!model && controllerSettings.maxTravelX != null && controllerSettings.maxTravelY != null) {
+      needsFitRef.current = true
+      scheduleRender()
+    }
+  }, [controllerSettings.maxTravelX, controllerSettings.maxTravelY, controllerSettings.homingDirInvert, model, is3D])
 
   useEffect(() => {
     if (isRunning && modelRef.current) {
