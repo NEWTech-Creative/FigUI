@@ -62,8 +62,10 @@ function clamp(v: number, min: number, max: number) {
 interface Props {
   workspacePlugin: Plugin | null
   controlsPlugin:  Plugin | null
+  jogPlugin:       Plugin | null
   onCloseWorkspacePlugin: () => void
   onCloseControlsPlugin:  () => void
+  onCloseJogPlugin:       () => void
   onLaunchPanel: (plugin: Plugin) => void
   activeLayout: ActiveLayout
 }
@@ -71,8 +73,10 @@ interface Props {
 export function DesktopLayout({
   workspacePlugin,
   controlsPlugin,
+  jogPlugin,
   onCloseWorkspacePlugin,
   onCloseControlsPlugin,
+  onCloseJogPlugin,
   onLaunchPanel,
   activeLayout,
 }: Props) {
@@ -323,9 +327,17 @@ export function DesktopLayout({
     )
   }
 
+  const jogSlot = jogPlugin ? (
+    <div className="panel flex flex-col flex-1 min-h-0 overflow-hidden">
+      <PluginFrame plugin={jogPlugin} onClose={onCloseJogPlugin} inline />
+    </div>
+  ) : (
+    <JogPad />
+  )
+
   // ── Standard layout ────────────────────────────────────────────────────────
   if (!workspacePlugin && !controlsPlugin) {
-    const leftContent  = <><DRO /><JogPad /></>
+    const leftContent  = <><DRO />{jogSlot}</>
     const centerContent = (
       <>
         <GCodeViewer className="flex-1 min-h-[300px]" />
@@ -388,7 +400,7 @@ export function DesktopLayout({
   if (workspacePlugin) {
     return (
       <div ref={containerRef} className="flex flex-1 min-h-0 p-3 overflow-hidden">
-        {leftPanelOuter(<><DRO /><JogPad /></>)}
+        {leftPanelOuter(<><DRO />{jogSlot}</>)}
         <ResizeHandle
           collapseToward="left"
           collapsed={leftCollapsed}

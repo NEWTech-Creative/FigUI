@@ -89,12 +89,14 @@ export function App() {
   const [workspacePlugin, setWorkspacePlugin] = useState<Plugin | null>(null)
   const [controlsPlugin,  setControlsPlugin]  = useState<Plugin | null>(null)
   const [fullPlugin,      setFullPlugin]      = useState<Plugin | null>(null)
+  const [jogPlugin,       setJogPlugin]       = useState<Plugin | null>(null)
 
   const handleLaunchPanel = useCallback((plugin: Plugin) => {
     const layout = getEffectiveLayout(plugin.manifest, activeLayout)
     if (layout === 'workspace') setWorkspacePlugin(plugin)
     else if (layout === 'controls') setControlsPlugin(plugin)
     else if (layout === 'full') setFullPlugin(plugin)
+    else if (layout === 'jog') setJogPlugin(plugin)
   }, [activeLayout])
 
   const reconnectTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
@@ -459,7 +461,13 @@ export function App() {
           <div className="flex flex-col gap-3 p-3 pb-20">
             <DRO />
             <JobControl />
-            <TabletJogPad />
+            {jogPlugin ? (
+              <div className="panel flex flex-col h-[60vh] overflow-hidden">
+                <PluginFrame plugin={jogPlugin} onClose={() => setJogPlugin(null)} inline />
+              </div>
+            ) : (
+              <TabletJogPad />
+            )}
             <ProbePanel />
           </div>
         )}
@@ -516,7 +524,13 @@ export function App() {
         <div className="flex-1 min-h-[0px] flex portrait:flex-col landscape:flex landscape:flex-row gap-3 p-3 overflow-y-auto landscape:overflow-hidden">
           <div className="flex flex-col gap-1 portrait:shrink-0 landscape:flex-1 landscape:basis-1/2 landscape:min-h-0 landscape:overflow-hidden">
             <DRO isTablet />
-            <TabletJogPad />
+            {jogPlugin ? (
+              <div className="panel flex flex-col flex-1 min-h-0 overflow-hidden">
+                <PluginFrame plugin={jogPlugin} onClose={() => setJogPlugin(null)} inline />
+              </div>
+            ) : (
+              <TabletJogPad />
+            )}
           </div>
           <TabletAccordion tabletTab={tabletTab} setTabletTab={setTabletTab} onLaunchPanel={handleLaunchPanel} />
         </div>
@@ -526,7 +540,13 @@ export function App() {
         <div className="flex-1 min-h-[0px] flex portrait:flex-col landscape:flex-row gap-3 p-3 overflow-y-auto landscape:overflow-hidden">
           <div className="flex flex-col gap-1 portrait:shrink-0 landscape:flex-1 landscape:basis-1/2 landscape:min-h-0 landscape:overflow-hidden">
             <DRO isTablet />
-            <TabletJogPad />
+            {jogPlugin ? (
+              <div className="panel flex flex-col flex-1 min-h-0 overflow-hidden">
+                <PluginFrame plugin={jogPlugin} onClose={() => setJogPlugin(null)} inline />
+              </div>
+            ) : (
+              <TabletJogPad />
+            )}
           </div>
           <div className="panel flex flex-col landscape:flex-1 landscape:basis-1/2 landscape:min-h-0 portrait:min-h-[55vh] landscape:overflow-hidden">
             <PluginFrame plugin={workspacePlugin} onClose={() => setWorkspacePlugin(null)} inline />
@@ -547,8 +567,10 @@ export function App() {
         <DesktopLayout
           workspacePlugin={workspacePlugin}
           controlsPlugin={controlsPlugin}
+          jogPlugin={jogPlugin}
           onCloseWorkspacePlugin={() => setWorkspacePlugin(null)}
           onCloseControlsPlugin={() => setControlsPlugin(null)}
+          onCloseJogPlugin={() => setJogPlugin(null)}
           onLaunchPanel={handleLaunchPanel}
           activeLayout={activeLayout}
         />

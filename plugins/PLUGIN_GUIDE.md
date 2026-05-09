@@ -13,6 +13,7 @@ Plugins are self-contained HTML files that run inside FigUI and can communicate 
   - [workspace](#workspace)
   - [controls](#controls)
   - [full](#full)
+  - [jog](#jog)
   - [Responsive overrides](#responsive-overrides)
 - [Theme](#theme)
   - [Available variables](#available-variables)
@@ -75,7 +76,7 @@ my-plugin/
 | `version` | No | Shown as a small badge (e.g. `v1.0.0`) |
 | `entry` | No | Entry HTML file. Defaults to `index.html` |
 | `icon` | No | Icon image filename. Recommended size: **48×48 px**. Must be `icon.png` for store submissions. |
-| `layout` | No | How the plugin is embedded in the UI. One of `"default"`, `"workspace"`, `"controls"`, `"full"`. Omit for the standard floating window. See [Layout modes](#layout-modes). |
+| `layout` | No | How the plugin is embedded in the UI. One of `"default"`, `"workspace"`, `"controls"`, `"full"`, `"jog"`. Omit for the standard floating window. See [Layout modes](#layout-modes). |
 | `layoutTablet` | No | Layout override for tablet screens. See [Responsive overrides](#responsive-overrides). |
 | `layoutMobile` | No | Layout override for mobile screens. See [Responsive overrides](#responsive-overrides). |
 | `files` | No | List of files to download when installing from the store. If omitted, only `entry` and `icon` are fetched. **Required if you have additional assets** (e.g. `style.css`). |
@@ -141,6 +142,18 @@ The plugin takes the **entire content area** below the header, hiding all other 
 ```
 
 ![Layout Workspace](../docs/screenshots/plugin-layouts/layout-full.png) 
+
+---
+
+### jog
+
+The plugin takes the **jog controls slot** below the DRO, replacing the standard jog pad while leaving the DRO, G-code viewer, file manager, and the rest of the UI in place. Use this for plugins that offer alternative motion controls — pendant-style jogging, gamepad mappings, custom axis controls, or wizard-driven movement helpers.
+
+```json
+{ "layout": "jog" }
+```
+
+The slot is shared across form factors: on desktop it appears in the left column under the DRO, on tablet it occupies the lower half of the left column under the DRO, and on mobile it sits in the Control panel between the job controls and the probe panel.
 
 ---
 

@@ -88,7 +88,7 @@ export interface Macro {
 
 export type SidebarTab = 'files' | 'macros' | 'plugins'
 
-export type PluginLayout = 'default' | 'workspace' | 'controls' | 'full'
+export type PluginLayout = 'default' | 'workspace' | 'controls' | 'full' | 'jog'
 export type ActiveLayout = 'mobile' | 'tablet' | 'desktop'
 
 export interface PluginManifest {
