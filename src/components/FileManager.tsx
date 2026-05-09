@@ -305,15 +305,18 @@ function FileRow({ entry, path, fs, canLoadGcode, onNavigate, onRefresh, onEdit,
   )
 }
 
+const _fmCache = new Map<Filesystem, { result: FileListResult; path: string }>()
+let _fmLastFs: Filesystem = 'sd'
+
 export function FileManager({ isTablet }: { isTablet?: boolean }) {
   const espInfo = useMachineStore(s => s.espInfo)
   const machineState = useMachineStore(s => s.status.state)
   const primarySd   = espInfo?.primarySd   ?? '/sd/'
   const canLoadGcode = machineState !== 'Run' && machineState !== 'Hold'
 
-  const [fs, setFs]             = useState<Filesystem>('sd')
-  const [path, setPath]         = useState(primarySd)
-  const [result, setResult]     = useState<FileListResult | null>(null)
+  const [fs, setFs]             = useState<Filesystem>(_fmLastFs)
+  const [path, setPath]         = useState(_fmCache.get(_fmLastFs)?.path ?? primarySd)
+  const [result, setResult]     = useState<FileListResult | null>(_fmCache.get(_fmLastFs)?.result ?? null)
   const [loading, setLoading]   = useState(false)
   const [error, setError]       = useState('')
   const [uploading, setUploading]   = useState(false)
@@ -336,6 +339,8 @@ export function FileManager({ isTablet }: { isTablet?: boolean }) {
       const data = await listFiles(p, filesystem)
       setResult(data)
       setPath(p)
+      _fmCache.set(filesystem, { result: data, path: p })
+      _fmLastFs = filesystem
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Failed to load')
     } finally {
@@ -343,10 +348,20 @@ export function FileManager({ isTablet }: { isTablet?: boolean }) {
     }
   }, [])
 
-  useEffect(() => { load(sdRoot, 'sd') }, [load, sdRoot])
+  useEffect(() => {
+    if (_fmCache.has('sd')) return
+    load(sdRoot, 'sd')
+  }, [load, sdRoot])
 
   function switchFs(newFs: Filesystem) {
+    _fmLastFs = newFs
     setFs(newFs)
+    const cached = _fmCache.get(newFs)
+    if (cached) {
+      setResult(cached.result)
+      setPath(cached.path)
+      return
+    }
     setResult(null)
     const root = newFs === 'sd' ? sdRoot : localRoot
     load(root, newFs)
