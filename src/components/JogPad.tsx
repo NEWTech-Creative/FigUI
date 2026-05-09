@@ -1286,7 +1286,7 @@ export function TabletJogPad() {
 
         {/* Jog controls */}
         <div className="p-2 sm:p-4 portrait:p-5 landscape:p-6 max-sm:portrait:p-2 flex-1 min-h-0 flex justify-center items-center overflow-hidden">
-          <div className="flex flex-row items-stretch justify-center portrait:h-[320px] portrait:gap-6 landscape:gap-5 landscape:w-full landscape:aspect-[7/5] landscape:max-h-full max-sm:portrait:w-full max-sm:portrait:aspect-[7/5] max-sm:portrait:gap-2 select-none [-webkit-touch-callout:none]">
+          <div className="flex flex-row items-stretch justify-center portrait:h-[320px] portrait:gap-6 landscape:gap-5 landscape:w-full landscape:aspect-[7/5] landscape:max-h-full max-sm:portrait:w-full max-sm:portrait:h-[52vw] max-sm:portrait:gap-2 select-none [-webkit-touch-callout:none]">
           <div className="grid grid-cols-3 grid-rows-3 gap-2 sm:gap-4 portrait:gap-4 max-sm:portrait:gap-2 landscape:shrink-0 aspect-square">
             <div />
             <button
