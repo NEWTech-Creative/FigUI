@@ -1,5 +1,5 @@
 import { useState, useCallback, useEffect, useRef } from 'react'
-import { RotateCcw, Play, Square } from 'lucide-react'
+import { RotateCcw, Play, Square, ArrowLeft } from 'lucide-react'
 import { useMachineStore } from '../store'
 import { loadPersistedJogFeed } from '../lib/jog'
 import { sendRaw, sendRealtime } from '../lib/ws'
@@ -600,6 +600,7 @@ export function JogPad() {
   const [zFeed, setZFeed]   = useState(() => loadPersistedJogFeed('jog.zFeed', 200))
   const [abcFeed, setAbcFeed] = useState(() => loadPersistedJogFeed('jog.abcFeed', 500))
   const [continuous, setContinuous] = useState(false)
+  const [compact, setCompact] = useState(() => localStorage.getItem('jog.desktopStyle') === 'compact')
   const [keyboardJog, setKeyboardJog] = useState(false)
   const [activeKeys, setActiveKeys] = useState<Set<string>>(new Set())
   const pressedKeysRef = useRef<Set<string>>(new Set())
@@ -810,77 +811,85 @@ export function JogPad() {
   return (
     <>
       {!jobRunning && (
-        <div className="panel flex flex-col">
-          <div className="panel-header text-lg font-bold">Jog</div>
-          <div className="flex flex-col p-3 gap-3">
+        compact
+          ? <TabletJogPad onSwitchStyle={() => {
+              setCompact(false)
+              localStorage.setItem('jog.desktopStyle', 'rose')
+            }} />
+          : <div className="panel flex flex-col">
+              <div className="panel-header text-lg font-bold">Jog</div>
+              <div className="flex flex-col p-3 gap-3">
 
-            <div className="flex items-center justify-center gap-2">
-              <div className="inline-flex rounded border border-border overflow-hidden">
-                <button className={`px-3 py-1 text-base font-bold transition-all ${
-                  !continuous ? 'bg-accent/15 text-accent' : 'bg-transparent text-text-muted hover:text-text-primary'
-                }`} onClick={() => setContinuous(false)}>Step</button>
-                <button className={`px-3 py-1 text-base font-bold border-l border-border transition-all ${
-                  continuous ? 'bg-accent/15 text-accent' : 'bg-transparent text-text-muted hover:text-text-primary'
-                }`} onClick={() => setContinuous(true)}>Continuous</button>
+                <div className="flex items-center justify-center gap-2">
+                  <div className="inline-flex rounded border border-border overflow-hidden">
+                    <button className={`px-3 py-1 text-base font-bold transition-all ${
+                      !continuous ? 'bg-accent/15 text-accent' : 'bg-transparent text-text-muted hover:text-text-primary'
+                    }`} onClick={() => setContinuous(false)}>Step</button>
+                    <button className={`px-3 py-1 text-base font-bold border-l border-border transition-all ${
+                      continuous ? 'bg-accent/15 text-accent' : 'bg-transparent text-text-muted hover:text-text-primary'
+                    }`} onClick={() => setContinuous(true)}>Continuous</button>
+                    <button className="px-3 py-1 text-base font-bold border-l border-border transition-all bg-transparent text-text-muted hover:text-text-primary" onClick={() => {
+                      setCompact(true)
+                      localStorage.setItem('jog.desktopStyle', 'compact')
+                    }}>Compact</button>
+                  </div>
+                  {continuous && (
+                    <button
+                      title={keyboardJog ? 'Keyboard jog ON — Arrows: X/Y · −/+: Z' : 'Enable keyboard jogging'}
+                      onClick={() => setKeyboardJog(k => !k)}
+                      className={`flex items-center justify-center w-7 h-7 rounded border transition-all ${
+                        keyboardJog
+                          ? 'bg-accent/15 border-accent/50 text-accent'
+                          : 'border-border text-text-muted hover:text-text-primary'
+                      }`}
+                    >
+                      <svg viewBox="0 0 16 16" width="14" height="14" fill="currentColor">
+                        <rect x="1" y="3" width="14" height="10" rx="2" fill="none" stroke="currentColor" strokeWidth="1.3"/>
+                        <rect x="3" y="5.5" width="2" height="2" rx="0.4"/>
+                        <rect x="6.5" y="5.5" width="2" height="2" rx="0.4"/>
+                        <rect x="10" y="5.5" width="2" height="2" rx="0.4"/>
+                        <rect x="3" y="9" width="2" height="2" rx="0.4"/>
+                        <rect x="6.5" y="9" width="3" height="2" rx="0.4"/>
+                        <rect x="10" y="9" width="2" height="2" rx="0.4"/>
+                      </svg>
+                    </button>
+                  )}
+                </div>
+
+                <div className="flex items-center justify-center gap-3 shrink-0">
+                  <JogRose xyFeed={xyFeed} continuous={continuous} disabled={!canJog}
+                    isJogging={status.state === 'Jog'}
+                    activeKeys={activeKeys} units={units} />
+                  <AxisBar axis="Z" color="var(--info)" steps={zSteps} feed={zFeed}
+                    continuous={continuous} disabled={!canJog} activeKeys={activeKeys} units={units} />
+                  {(['A', 'B', 'C'] as const).slice(0, axes - 3).map((ax, i) => (
+                    <AxisBar key={ax} axis={ax}
+                      color={(['var(--accent)', 'var(--purple)', 'var(--teal)'] as const)[i]}
+                      steps={ABC_STEPS} feed={abcFeed}
+                      continuous={continuous} disabled={!canJog} units="mm" />
+                  ))}
+                </div>
+
+                <div className="flex gap-2 items-center">
+                  <FeedButton label="XY" value={xyFeed} presets={xyFeedPresetValues} onChange={setXyFeed} formatValue={linearFeedFormatter} />
+                  <FeedButton label="Z"  value={zFeed}  presets={zFeedPresetValues} onChange={setZFeed} formatValue={linearFeedFormatter} />
+                  {axes > 3 && <FeedButton label="ABC" value={abcFeed} presets={MM_FEED_PRESETS} onChange={setAbcFeed} formatValue={rotaryFeedFormatter} />}
+                  <span className="text-base text-text-dim shrink-0">
+                    {axes > 3 ? `XYZ ${feedUnitLabel(units)}` : feedUnitLabel(units)}
+                  </span>
+                </div>
+
+                <div className="text-center text-base text-text-dim leading-tight">
+                  {continuous
+                    ? keyboardJog
+                      ? 'Arrows: X/Y · −/+: Z · Hold to jog'
+                      : 'Hold to jog · enable keyboard'
+                    : ''
+                  }
+                </div>
+
               </div>
-              {continuous && (
-                <button
-                  title={keyboardJog ? 'Keyboard jog ON — Arrows: X/Y · −/+: Z' : 'Enable keyboard jogging'}
-                  onClick={() => setKeyboardJog(k => !k)}
-                  className={`flex items-center justify-center w-7 h-7 rounded border transition-all ${
-                    keyboardJog
-                      ? 'bg-accent/15 border-accent/50 text-accent'
-                      : 'border-border text-text-muted hover:text-text-primary'
-                  }`}
-                >
-                  <svg viewBox="0 0 16 16" width="14" height="14" fill="currentColor">
-                    <rect x="1" y="3" width="14" height="10" rx="2" fill="none" stroke="currentColor" strokeWidth="1.3"/>
-                    <rect x="3" y="5.5" width="2" height="2" rx="0.4"/>
-                    <rect x="6.5" y="5.5" width="2" height="2" rx="0.4"/>
-                    <rect x="10" y="5.5" width="2" height="2" rx="0.4"/>
-                    <rect x="3" y="9" width="2" height="2" rx="0.4"/>
-                    <rect x="6.5" y="9" width="3" height="2" rx="0.4"/>
-                    <rect x="10" y="9" width="2" height="2" rx="0.4"/>
-                  </svg>
-                </button>
-              )}
             </div>
-
-            <div className="flex items-center justify-center gap-3 shrink-0">
-              <JogRose xyFeed={xyFeed} continuous={continuous} disabled={!canJog}
-                isJogging={status.state === 'Jog'}
-                activeKeys={activeKeys} units={units} />
-              <AxisBar axis="Z" color="var(--info)" steps={zSteps} feed={zFeed}
-                continuous={continuous} disabled={!canJog} activeKeys={activeKeys} units={units} />
-              {(['A', 'B', 'C'] as const).slice(0, axes - 3).map((ax, i) => (
-                <AxisBar key={ax} axis={ax}
-                  color={(['var(--accent)', 'var(--purple)', 'var(--teal)'] as const)[i]}
-                  steps={ABC_STEPS} feed={abcFeed}
-                  continuous={continuous} disabled={!canJog} units="mm" />
-              ))}
-            </div>
-
-            <div className="flex gap-2 items-center">
-              <FeedButton label="XY" value={xyFeed} presets={xyFeedPresetValues} onChange={setXyFeed} formatValue={linearFeedFormatter} />
-              <FeedButton label="Z"  value={zFeed}  presets={zFeedPresetValues} onChange={setZFeed} formatValue={linearFeedFormatter} />
-              {axes > 3 && <FeedButton label="ABC" value={abcFeed} presets={MM_FEED_PRESETS} onChange={setAbcFeed} formatValue={rotaryFeedFormatter} />}
-              <span className="text-base text-text-dim shrink-0">
-                {axes > 3 ? `XYZ ${feedUnitLabel(units)}` : feedUnitLabel(units)}
-              </span>
-            </div>
-
-            <div className="text-center text-base text-text-dim leading-tight">
-              {continuous
-                ? keyboardJog
-                  ? 'Arrows: X/Y · −/+: Z · Hold to jog'
-                  : 'Hold to jog · enable keyboard'
-                : ''
-              }
-            </div>
-
-
-          </div>
-        </div>
       )}
 
       <div className="panel flex flex-col">
@@ -1160,7 +1169,7 @@ export function OverridesPanel({ className, isTablet }: { className?: string; is
   )
 }
 
-export function TabletJogPad() {
+export function TabletJogPad({ onSwitchStyle }: { onSwitchStyle?: () => void } = {}) {
   const status = useMachineStore(s => s.status)
   const units = useMachineStore(s => s.units)
   const controllerSettings = useMachineStore(s => s.controllerSettings)
@@ -1221,9 +1230,20 @@ export function TabletJogPad() {
 
   return (
     <>
-    <div className="panel flex flex-col flex-1 min-h-0 portrait:flex-none portrait:h-[440px] max-sm:portrait:h-auto">
+    <div className={`panel flex flex-col portrait:flex-none portrait:h-[440px] max-sm:portrait:h-auto ${onSwitchStyle ? 'flex-none h-[440px]' : 'flex-1 min-h-0'}`}>
       <div className="panel-header flex flex-row items-stretch justify-between shrink-0 !p-0 border-b border-border overflow-hidden">
-        <div className="flex items-center justify-center w-16 py-3 font-bold text-lg tracking-wider border-r border-border shrink-0">JOG</div>
+        <div className="flex flex-col items-center justify-center w-16 py-3 font-bold text-lg tracking-wider border-r border-border shrink-0 gap-2">
+          JOG
+          {onSwitchStyle && (
+            <button
+              onClick={onSwitchStyle}
+              title="Switch to rose view"
+              className="text-text-muted hover:text-accent transition-colors"
+            >
+              <ArrowLeft size={16} />
+            </button>
+          )}
+        </div>
         <div className="flex flex-1 items-stretch divide-x divide-border bg-surface">
           {steps.map(s => (
             <button
