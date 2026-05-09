@@ -1,0 +1,10 @@
+{
+  "name": "Teachmode",
+  "description": "Capture, edit, play back, import, and export taught machine positions as G-code.",
+  "version": "9.1.0",
+  "entry": "index.html",
+  "layout": "workspace",
+  "layoutTablet": "full",
+  "layoutMobile": "full",
+  "files": ["index.html"]
+}
