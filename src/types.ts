@@ -11,6 +11,24 @@ export interface Position {
   c?: number
 }
 
+export interface GCodeModes {
+  motion?: string
+  wcs?: string
+  plane?: string
+  units?: string
+  distance?: string
+  arcDistance?: string
+  feedRateMode?: string
+  cutterComp?: string
+  toolLength?: string
+  programState?: string
+  spindle?: string
+  coolant?: string
+  tool?: number
+  feed?: number
+  spindleSpeed?: number
+}
+
 export interface MachineStatus {
   state: MachineState
   alarmCode?: number
@@ -27,6 +45,7 @@ export interface MachineStatus {
   pinState: string
   sdFilename?: string
   sdPercent?: number
+  gcodeModes?: GCodeModes
 }
 
 export interface FileEntry {
@@ -57,11 +76,22 @@ export interface ESPInfo {
 }
 
 export interface ControllerSettings {
+  junctionDeviation?: number
+  homingDirInvert?: number
   spindleMin?: number
   spindleMax?: number
+  stepsPerMmX?: number
+  stepsPerMmY?: number
+  stepsPerMmZ?: number
   maxRateX?: number
   maxRateY?: number
   maxRateZ?: number
+  accelX?: number
+  accelY?: number
+  accelZ?: number
+  maxTravelX?: number
+  maxTravelY?: number
+  maxTravelZ?: number
 }
 
 export interface Macro {
@@ -77,7 +107,7 @@ export interface Macro {
 
 export type SidebarTab = 'files' | 'macros' | 'plugins'
 
-export type PluginLayout = 'default' | 'workspace' | 'controls' | 'full'
+export type PluginLayout = 'default' | 'workspace' | 'controls' | 'full' | 'jog'
 export type ActiveLayout = 'mobile' | 'tablet' | 'desktop'
 
 export interface PluginManifest {

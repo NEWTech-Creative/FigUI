@@ -1,4 +1,4 @@
-import type { ControllerSettings, MachineStatus, MachineState, Position } from '../types'
+import type { ControllerSettings, GCodeModes, MachineStatus, MachineState, Position } from '../types'
 
 export function parseStatusReport(raw: string): Partial<MachineStatus> | null {
   if (!raw.startsWith('<') || !raw.endsWith('>')) return null
@@ -68,42 +68,79 @@ export function parseESP800(raw: string): Record<string, string> {
   return result
 }
 
+const MODAL_GROUPS: Array<{ key: keyof GCodeModes; values: ReadonlySet<string> }> = [
+  { key: 'motion', values: new Set(['G0', 'G1', 'G2', 'G3', 'G38.2', 'G38.3', 'G38.4', 'G38.5', 'G80']) },
+  { key: 'wcs', values: new Set(['G54', 'G55', 'G56', 'G57', 'G58', 'G59', 'G59.1', 'G59.2', 'G59.3']) },
+  { key: 'plane', values: new Set(['G17', 'G18', 'G19']) },
+  { key: 'units', values: new Set(['G20', 'G21']) },
+  { key: 'distance', values: new Set(['G90', 'G91']) },
+  { key: 'arcDistance', values: new Set(['G90.1', 'G91.1']) },
+  { key: 'feedRateMode', values: new Set(['G93', 'G94', 'G95']) },
+  { key: 'cutterComp', values: new Set(['G40', 'G41', 'G42']) },
+  { key: 'toolLength', values: new Set(['G43.1', 'G49']) },
+  { key: 'programState', values: new Set(['M0', 'M1', 'M2', 'M30']) },
+  { key: 'spindle', values: new Set(['M3', 'M4', 'M5']) },
+  { key: 'coolant', values: new Set(['M7', 'M8', 'M9']) },
+]
+
 export function parseGcStateLine(line: string): Partial<MachineStatus> | null {
   const match = line.match(/^\[GC:(.+)\]$/)
   if (!match) return null
 
-  const words = match[1].trim().split(/\s+/)
+  const words = match[1].trim().split(/\s+/).filter(Boolean)
   const modal = new Set(words)
-  const spindleWord = words.find(word => /^S-?\d+(?:\.\d+)?$/.test(word))
-  const spindleValue = spindleWord ? Number.parseFloat(spindleWord.slice(1)) : undefined
+
+  const gcodeModes: GCodeModes = {}
+  for (const group of MODAL_GROUPS) {
+    for (const w of words) {
+      if (group.values.has(w)) {
+        gcodeModes[group.key] = w as never
+        break
+      }
+    }
+  }
+
+  for (const w of words) {
+    if (/^T\d+$/.test(w)) gcodeModes.tool = Number.parseInt(w.slice(1), 10)
+    else if (/^F-?\d+(?:\.\d+)?$/.test(w)) gcodeModes.feed = Number.parseFloat(w.slice(1))
+    else if (/^S-?\d+(?:\.\d+)?$/.test(w)) gcodeModes.spindleSpeed = Number.parseFloat(w.slice(1))
+  }
+
+  const result: Partial<MachineStatus> = { gcodeModes }
+  const spindleValue = gcodeModes.spindleSpeed
 
   if (modal.has('M5')) {
-    return {
-      spindleRunning: false,
-      spindle: spindleValue ?? 0,
-    }
+    result.spindleRunning = false
+    result.spindle = spindleValue ?? 0
+  } else if (modal.has('M3') || modal.has('M4')) {
+    result.spindleRunning = true
+    if (spindleValue != null) result.spindle = spindleValue
   }
 
-  if (modal.has('M3') || modal.has('M4')) {
-    return {
-      spindleRunning: true,
-      ...(spindleValue != null ? { spindle: spindleValue } : {}),
-    }
-  }
-
-  return null
+  return result
 }
 
 const CONTROLLER_SETTING_MAP: Record<string, keyof ControllerSettings> = {
+  '11': 'junctionDeviation',
+  '23': 'homingDirInvert',
   '30': 'spindleMax',
   '31': 'spindleMin',
+  '100': 'stepsPerMmX',
+  '101': 'stepsPerMmY',
+  '102': 'stepsPerMmZ',
   '110': 'maxRateX',
   '111': 'maxRateY',
   '112': 'maxRateZ',
+  '120': 'accelX',
+  '121': 'accelY',
+  '122': 'accelZ',
+  '130': 'maxTravelX',
+  '131': 'maxTravelY',
+  '132': 'maxTravelZ',
 }
 
 export function parseControllerSettingLine(line: string): Partial<ControllerSettings> | null {
-  const match = line.match(/^\$(30|31|110|111|112)=(-?\d+(?:\.\d+)?)(?:\s|$)/)
+  const match = line.match(/^\$(11|23|30|31|100|101|102|110|111|112|120|121|122|130|131|132)=(-?\d+(?:\.\d+)?)(?:\s|$)/)
   if (!match) return null
 
   const value = Number.parseFloat(match[2])

@@ -4,10 +4,10 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "dev": "vite",
-    "build": "tsc && vite build",
-    "build:esp32": "tsc && node scripts/build-esp32.mjs",
-    "build:demo": "tsc && vite build --mode demo",
+    "dev": "node scripts/generate-icons.mjs && vite",
+    "build": "node scripts/generate-icons.mjs && tsc && vite build",
+    "build:esp32": "node scripts/generate-icons.mjs && tsc && node scripts/build-esp32.mjs",
+    "build:demo": "node scripts/generate-icons.mjs && tsc && vite build --mode demo",
     "preview": "vite preview"
   },
   "dependencies": {

@@ -9,7 +9,7 @@ import { CURRENT_VERSION, GITHUB_REPO, DISMISSED_VERSION_KEY, semverGt } from '.
 import { startWatchdog, stopWatchdog } from './lib/jogWatchdog'
 import { Header } from './components/Header'
 import { DRO } from './components/DRO'
-import { JogPad, TabletJogPad } from './components/JogPad'
+import { TabletJogPad } from './components/JogPad'
 import { ProbePanel } from './components/ProbePanel'
 import { TabletAccordion } from './components/TabletAccordion'
 
@@ -25,6 +25,7 @@ import { WifiOff, RefreshCw, Crosshair, Monitor, FolderOpen, TerminalSquare, Ale
 import type { Plugin, SidebarTab, ActiveLayout } from './types'
 import { getEffectiveLayout } from './types'
 import { PluginFrame } from './components/PluginFrame'
+import { DesktopLayout } from './components/DesktopLayout'
 
 const SIDEBAR_TABS: { id: SidebarTab; label: string }[] = [
   { id: 'files',   label: 'Files'   },
@@ -88,16 +89,17 @@ export function App() {
   const [workspacePlugin, setWorkspacePlugin] = useState<Plugin | null>(null)
   const [controlsPlugin,  setControlsPlugin]  = useState<Plugin | null>(null)
   const [fullPlugin,      setFullPlugin]      = useState<Plugin | null>(null)
+  const [jogPlugin,       setJogPlugin]       = useState<Plugin | null>(null)
 
   const handleLaunchPanel = useCallback((plugin: Plugin) => {
     const layout = getEffectiveLayout(plugin.manifest, activeLayout)
     if (layout === 'workspace') setWorkspacePlugin(plugin)
     else if (layout === 'controls') setControlsPlugin(plugin)
     else if (layout === 'full') setFullPlugin(plugin)
+    else if (layout === 'jog') setJogPlugin(plugin)
   }, [activeLayout])
 
   const reconnectTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
-  const stableConnectTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
   const inFlightPromise = useRef<Promise<boolean> | null>(null)
   const backoffMs = useRef(0)
   const cachedWsHost = useRef<string | null>(null)
@@ -218,20 +220,10 @@ export function App() {
         clearTimeout(reconnectTimer.current)
         reconnectTimer.current = null
       }
-      if (stableConnectTimer.current) clearTimeout(stableConnectTimer.current)
-      // Only send $SS and $$ startup queries after stable connection to prevent ESP32 from flooding TX queue.
+      backoffMs.current = 0
       setStartupPending(true)
-      stableConnectTimer.current = setTimeout(() => {
-        backoffMs.current = 0
-        stableConnectTimer.current = null
-        sendStartupQueries()
-        setStartupPending(false)
-      }, 2000)
+      sendStartupQueries().finally(() => setStartupPending(false))
     } else {
-      if (stableConnectTimer.current) {
-        clearTimeout(stableConnectTimer.current)
-        stableConnectTimer.current = null
-      }
       setStartupPending(false)
       if (!reconnectTimer.current) {
         // Respect existing backoff so rapid connect/drop loops slow down.
@@ -469,7 +461,13 @@ export function App() {
           <div className="flex flex-col gap-3 p-3 pb-20">
             <DRO />
             <JobControl />
-            <JogPad />
+            {jogPlugin ? (
+              <div className="panel flex flex-col h-[60vh] overflow-hidden">
+                <PluginFrame plugin={jogPlugin} onClose={() => setJogPlugin(null)} inline />
+              </div>
+            ) : (
+              <TabletJogPad />
+            )}
             <ProbePanel />
           </div>
         )}
@@ -483,7 +481,7 @@ export function App() {
             <div className="panel flex flex-col flex-1 min-h-0 overflow-hidden">
               {sidebarTabBar}
               <div className="flex-1 min-h-0 overflow-hidden">
-                {sidebarTab === 'files'   && <FileManager />}
+                {sidebarTab === 'files'   && <FileManager isTablet />}
                 {sidebarTab === 'macros'  && <Macros />}
                 {sidebarTab === 'plugins' && <PluginLauncher />}
               </div>
@@ -526,7 +524,13 @@ export function App() {
         <div className="flex-1 min-h-[0px] flex portrait:flex-col landscape:flex landscape:flex-row gap-3 p-3 overflow-y-auto landscape:overflow-hidden">
           <div className="flex flex-col gap-1 portrait:shrink-0 landscape:flex-1 landscape:basis-1/2 landscape:min-h-0 landscape:overflow-hidden">
             <DRO isTablet />
-            <TabletJogPad />
+            {jogPlugin ? (
+              <div className="panel flex flex-col flex-1 min-h-0 overflow-hidden">
+                <PluginFrame plugin={jogPlugin} onClose={() => setJogPlugin(null)} inline />
+              </div>
+            ) : (
+              <TabletJogPad />
+            )}
           </div>
           <TabletAccordion tabletTab={tabletTab} setTabletTab={setTabletTab} onLaunchPanel={handleLaunchPanel} />
         </div>
@@ -536,7 +540,13 @@ export function App() {
         <div className="flex-1 min-h-[0px] flex portrait:flex-col landscape:flex-row gap-3 p-3 overflow-y-auto landscape:overflow-hidden">
           <div className="flex flex-col gap-1 portrait:shrink-0 landscape:flex-1 landscape:basis-1/2 landscape:min-h-0 landscape:overflow-hidden">
             <DRO isTablet />
-            <TabletJogPad />
+            {jogPlugin ? (
+              <div className="panel flex flex-col flex-1 min-h-0 overflow-hidden">
+                <PluginFrame plugin={jogPlugin} onClose={() => setJogPlugin(null)} inline />
+              </div>
+            ) : (
+              <TabletJogPad />
+            )}
           </div>
           <div className="panel flex flex-col landscape:flex-1 landscape:basis-1/2 landscape:min-h-0 portrait:min-h-[55vh] landscape:overflow-hidden">
             <PluginFrame plugin={workspacePlugin} onClose={() => setWorkspacePlugin(null)} inline />
@@ -553,78 +563,18 @@ export function App() {
         </div>
       )}
 
-{!fullPlugin && activeLayout === 'desktop' && !workspacePlugin && !controlsPlugin && <div className="flex-1 min-h-0 grid grid-cols-[380px_1fr_340px] gap-3 p-3 overflow-hidden">
-
-        {/* Left: DRO + jog controls */}
-        <div className="flex flex-col gap-3 min-h-0 overflow-y-auto">
-          <DRO />
-          <JogPad />
-        </div>
-
-        {/* Center: G-code viewer + probe */}
-        <div className="min-h-0 flex flex-col gap-3 overflow-y-auto">
-          <GCodeViewer className="flex-1 min-h-[300px]" />
-          <ProbePanel />
-        </div>
-
-        {/* Right: tabbed panel + terminal */}
-        <div className="flex flex-col min-h-0 gap-3 overflow-hidden">
-          <div className="panel flex flex-col min-h-0 flex-1 overflow-hidden">
-            {sidebarTabBar}
-            <div className="flex-1 min-h-0 overflow-hidden">
-              {sidebarTab === 'files'   && <FileManager />}
-              {sidebarTab === 'macros'  && <Macros />}
-              {sidebarTab === 'plugins' && <PluginLauncher onLaunchPanel={handleLaunchPanel} activeLayout={activeLayout} />}
-            </div>
-          </div>
-
-          <div className="panel flex flex-col min-h-[200px] flex-1 overflow-hidden">
-            <Terminal />
-          </div>
-        </div>
-
-      </div>}
-
-      {/* workspace layout: plugin takes center + right, DRO/JogPad stays on left */}
-      {!fullPlugin && activeLayout === 'desktop' && workspacePlugin && <div className="flex-1 min-h-0 grid grid-cols-[380px_1fr] gap-3 p-3 overflow-hidden">
-
-        <div className="flex flex-col gap-3 min-h-0 overflow-y-auto">
-          <DRO />
-          <JogPad />
-        </div>
-
-        <div className="panel flex flex-col min-h-0 overflow-hidden">
-          <PluginFrame plugin={workspacePlugin} onClose={() => setWorkspacePlugin(null)} inline />
-        </div>
-
-      </div>}
-
-      {!fullPlugin && activeLayout === 'desktop' && controlsPlugin && <div className="flex-1 min-h-0 grid grid-cols-[380px_1fr_340px] gap-3 p-3 overflow-hidden">
-
-        <div className="panel flex flex-col min-h-0 overflow-hidden">
-          <PluginFrame plugin={controlsPlugin} onClose={() => setControlsPlugin(null)} inline />
-        </div>
-
-        <div className="min-h-0 flex flex-col gap-3 overflow-y-auto">
-          <GCodeViewer className="flex-1 min-h-[300px]" />
-          <ProbePanel />
-        </div>
-
-        <div className="flex flex-col min-h-0 gap-3 overflow-hidden">
-          <div className="panel flex flex-col min-h-0 flex-1 overflow-hidden">
-            {sidebarTabBar}
-            <div className="flex-1 min-h-0 overflow-hidden">
-              {sidebarTab === 'files'   && <FileManager />}
-              {sidebarTab === 'macros'  && <Macros />}
-              {sidebarTab === 'plugins' && <PluginLauncher onLaunchPanel={handleLaunchPanel} activeLayout={activeLayout} />}
-            </div>
-          </div>
-          <div className="panel flex flex-col min-h-[200px] flex-1 overflow-hidden">
-            <Terminal />
-          </div>
-        </div>
-
-      </div>}
+      {!fullPlugin && activeLayout === 'desktop' && (
+        <DesktopLayout
+          workspacePlugin={workspacePlugin}
+          controlsPlugin={controlsPlugin}
+          jogPlugin={jogPlugin}
+          onCloseWorkspacePlugin={() => setWorkspacePlugin(null)}
+          onCloseControlsPlugin={() => setControlsPlugin(null)}
+          onCloseJogPlugin={() => setJogPlugin(null)}
+          onLaunchPanel={handleLaunchPanel}
+          activeLayout={activeLayout}
+        />
+      )}
 
 
       {settingsOpen && (

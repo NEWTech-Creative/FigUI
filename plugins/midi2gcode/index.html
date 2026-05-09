@@ -1,0 +1,641 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>MIDI to G-code</title>
+<style>
+* { box-sizing: border-box; margin: 0; padding: 0 }
+body {
+  font-family: system-ui, -apple-system, sans-serif;
+  font-size: 17px;
+  background: var(--bg);
+  color: var(--text-primary);
+  height: 100vh;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+.header {
+  display: flex;
+  align-items: center;
+  padding: 10px 14px;
+  border-bottom: 1px solid var(--border);
+  flex-shrink: 0;
+  gap: 10px;
+}
+.header h1 { font-size: 19px; font-weight: 600 }
+.split {
+  display: flex;
+  flex: 1;
+  overflow: hidden;
+}
+.panel-left {
+  width: 300px;
+  min-width: 240px;
+  border-right: 1px solid var(--border);
+  overflow-y: auto;
+  padding: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  flex-shrink: 0;
+}
+.panel-right {
+  flex: 1;
+  overflow-y: auto;
+  padding: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+.section-label {
+  font-size: 14px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--text-muted);
+  margin-bottom: 8px;
+  display: block;
+}
+.param-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 6px;
+}
+.param-row label {
+  width: 90px;
+  flex-shrink: 0;
+  color: var(--text-muted);
+  font-size: 16px;
+}
+input[type=number], input[type=text] {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  color: var(--text-primary);
+  border-radius: 4px;
+  padding: 7px 10px;
+  font-size: 16px;
+  width: 80px;
+  -moz-appearance: textfield;
+}
+input[type=number]::-webkit-inner-spin-button { opacity: 0.5 }
+input[type=number][readonly] {
+  opacity: 0.65;
+  cursor: default;
+}
+input[type=text] { width: 100% }
+.unit { color: var(--text-dim); font-size: 15px; flex-shrink: 0 }
+.check-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 6px;
+  cursor: pointer;
+  user-select: none;
+}
+.check-row span { font-size: 16px; color: var(--text-muted) }
+.btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding: 9px 18px;
+  border-radius: 6px;
+  border: none;
+  font-size: 17px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: background 0.12s, opacity 0.12s;
+  white-space: nowrap;
+}
+.btn-primary { background: var(--accent); color: #fff }
+.btn-primary:hover { background: var(--accent-hover) }
+.btn-primary:disabled { opacity: 0.4; cursor: default }
+.btn-secondary {
+  background: var(--surface);
+  color: var(--text-primary);
+  border: 1px solid var(--border);
+}
+.btn-secondary:hover { background: var(--elevated) }
+.btn-secondary:disabled { opacity: 0.4; cursor: default }
+.upload-zone {
+  border: 1.5px dashed var(--border-strong);
+  border-radius: 8px;
+  padding: 20px 14px;
+  text-align: center;
+  cursor: pointer;
+  transition: border-color 0.15s, background 0.15s;
+  color: var(--text-muted);
+  font-size: 15px;
+  line-height: 1.5;
+}
+.upload-zone:hover, .upload-zone.drag-over {
+  border-color: var(--accent);
+  background: rgba(var(--accent-rgb), 0.06);
+}
+.upload-zone.has-file {
+  border-color: var(--ok);
+  background: rgba(var(--ok-rgb), 0.06);
+  color: var(--ok);
+}
+.upload-zone input { display: none }
+.status-bar {
+  padding: 8px 12px;
+  border-radius: 6px;
+  font-size: 16px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  color: var(--text-muted);
+  flex-shrink: 0;
+}
+.status-bar.ok { border-color: var(--ok); color: var(--ok) }
+.status-bar.error { border-color: var(--danger); color: var(--danger) }
+.status-bar.info { border-color: var(--accent); color: var(--accent) }
+.save-row {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+}
+.save-row input[type=text] { flex: 1; width: auto }
+.actions { display: flex; gap: 8px; align-items: center; flex-wrap: wrap }
+.save-success {
+  padding: 12px 16px;
+  border-radius: 8px;
+  background: rgba(0, 200, 120, 0.1);
+  border: 1.5px solid var(--ok);
+  color: var(--ok);
+  font-size: 17px;
+  font-weight: 500;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+.save-success strong { color: var(--text-primary); font-weight: 600 }
+.open-link {
+  background: var(--ok);
+  color: #fff;
+  border: none;
+  border-radius: 5px;
+  padding: 9px 20px;
+  font-size: 16px;
+  font-weight: 600;
+  cursor: pointer;
+  text-decoration: none;
+  white-space: nowrap;
+  display: inline-block;
+}
+.open-link:hover { opacity: 0.82 }
+.notice {
+  font-size: 14px;
+  color: var(--text-muted);
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 10px 12px;
+  line-height: 1.5;
+}
+.notice strong { color: var(--text-primary) }
+</style>
+</head>
+<body>
+<div class="split">
+  <div class="panel-left">
+
+    <div>
+      <span class="section-label">Steps per mm</span>
+      <div class="param-row">
+        <label>X</label>
+        <input type="number" id="stepsX" value="—" min="1" step="any" readonly>
+        <span class="unit">st/mm</span>
+      </div>
+      <div class="param-row">
+        <label>Y</label>
+        <input type="number" id="stepsY" value="—" min="1" step="any" readonly>
+        <span class="unit">st/mm</span>
+      </div>
+      <div class="param-row">
+        <label>Z</label>
+        <input type="number" id="stepsZ" value="—" min="1" step="any" readonly>
+        <span class="unit">st/mm</span>
+      </div>
+    </div>
+
+    <div>
+      <span class="section-label">Travel limits</span>
+      <div class="param-row">
+        <label>X</label>
+        <input type="number" id="travelX" value="—" min="1" step="any">
+        <span class="unit">mm</span>
+      </div>
+      <div class="param-row">
+        <label>Y</label>
+        <input type="number" id="travelY" value="—" min="1" step="any">
+        <span class="unit">mm</span>
+      </div>
+      <div class="param-row">
+        <label>Z</label>
+        <input type="number" id="travelZ" value="—" min="1" step="any">
+        <span class="unit">mm</span>
+      </div>
+    </div>
+
+    <div>
+      <span class="section-label">Constraints</span>
+      <div class="param-row">
+        <label>Safety</label>
+        <input type="number" id="safetyMM" value="5" min="0" step="0.5">
+        <span class="unit">mm</span>
+      </div>
+    </div>
+
+    <div>
+      <span class="section-label">Options</span>
+      <label class="check-row">
+        <input type="checkbox" id="ignorePerc" checked>
+        <span>Ignore percussion (ch 10)</span>
+      </label>
+      <label class="check-row">
+        <input type="checkbox" id="useZ" checked>
+        <span>Use Z axis (limited travel)</span>
+      </label>
+    </div>
+
+    <div class="notice">
+      <strong>Driver compatibility:</strong> Volume depends on stepper motor vibration. Smooth drivers (Trinamic, DM556, etc.) may produce very quiet or inaudible results. Best results are obtained by disabling smoothing, stealthChop, or similar features.
+    </div>
+
+  </div>
+
+  <div class="panel-right">
+
+    <div>
+      <span class="section-label">MIDI File</span>
+      <div class="upload-zone" id="uploadZone"
+        onclick="document.getElementById('fileInput').click()"
+        ondragover="onDragOver(event)"
+        ondrop="onDrop(event)"
+        ondragleave="onDragLeave(event)">
+        <input type="file" id="fileInput" accept=".mid,.midi" onchange="onFileSelected(event)">
+        <span id="uploadLabel">Click to choose a .mid / .midi file, or drag and drop</span>
+      </div>
+    </div>
+
+    <div class="actions">
+      <button class="btn btn-primary" id="convertBtn" onclick="convert()" disabled>Convert to G-code</button>
+      <button class="btn btn-secondary" onclick="loadDemo()">Load Demo</button>
+    </div>
+
+    <div id="statusBar" class="status-bar">Ready — choose a MIDI file to begin.</div>
+
+    <div id="saveSuccess" class="save-success" style="display:none">
+      <span>File saved to <strong id="savedPath"></strong></span>
+      <a id="openLink" class="open-link" style="display:none" onclick="openSaved()">Open in viewer</a>
+    </div>
+
+    <div id="saveSection" style="display:none">
+      <span class="section-label">Save G-code to device</span>
+      <div class="save-row">
+        <input type="text" id="saveName" value="music.nc" placeholder="filename.nc">
+        <button class="btn btn-secondary" id="saveIntBtn" onclick="saveToDevice('local')">Internal</button>
+        <button class="btn btn-secondary" id="saveSDBtn" onclick="saveToDevice('sd')">SD Card</button>
+      </div>
+    </div>
+
+  </div>
+</div>
+
+<script>
+let msgId = 0
+const pending = {}
+
+function call(method, params) {
+  return new Promise((resolve, reject) => {
+    const id = String(++msgId)
+    pending[id] = { resolve, reject }
+    window.parent.postMessage({ type: 'fluid-request', id, method, params: params ?? {} }, '*')
+  })
+}
+
+window.addEventListener('message', e => {
+  if (e.data?.type === 'fluid-response') {
+    const p = pending[e.data.id]
+    if (p) {
+      delete pending[e.data.id]
+      e.data.error ? p.reject(new Error(e.data.error)) : p.resolve(e.data.result)
+    }
+  }
+  if (e.data?.type === 'fluid-theme') {
+    for (const [k, v] of Object.entries(e.data.vars ?? {}))
+      document.documentElement.style.setProperty(k, v)
+  }
+})
+
+async function loadMachineSettings() {
+  try {
+    const s = await call('getMachineSettings', {})
+    if (!s) return
+    if (s.stepsPerMmX != null) document.getElementById('stepsX').value = s.stepsPerMmX
+    if (s.stepsPerMmY != null) document.getElementById('stepsY').value = s.stepsPerMmY
+    if (s.stepsPerMmZ != null) document.getElementById('stepsZ').value = s.stepsPerMmZ
+    if (s.maxTravelX != null) document.getElementById('travelX').value = s.maxTravelX
+    if (s.maxTravelY != null) document.getElementById('travelY').value = s.maxTravelY
+    if (s.maxTravelZ != null) document.getElementById('travelZ').value = s.maxTravelZ
+  } catch {}
+}
+
+// ---- MIDI parser ----
+
+function parseMidi(buffer) {
+  const bytes = new Uint8Array(buffer)
+  let pos = 0
+
+  const read1 = () => bytes[pos++]
+  const read2 = () => { const v = (bytes[pos] << 8) | bytes[pos + 1]; pos += 2; return v }
+  const read4 = () => { const v = ((bytes[pos] << 24) | (bytes[pos+1] << 16) | (bytes[pos+2] << 8) | bytes[pos+3]) >>> 0; pos += 4; return v }
+  const readStr = n => { const s = String.fromCharCode(...bytes.slice(pos, pos + n)); pos += n; return s }
+  const readVlq = () => { let v = 0, b; do { b = read1(); v = (v << 7) | (b & 0x7F) } while (b & 0x80); return v }
+
+  if (readStr(4) !== 'MThd') throw new Error('Not a valid MIDI file')
+  read4()
+  read2()
+  const nTracks = read2()
+  const division = read2()
+  if (division & 0x8000) throw new Error('SMPTE time division not supported')
+  const ticksPerBeat = division
+
+  const tracks = []
+  for (let t = 0; t < nTracks; t++) {
+    if (readStr(4) !== 'MTrk') throw new Error('Expected MTrk chunk')
+    const trackLen = read4()
+    const trackEnd = pos + trackLen
+    const events = []
+    let tick = 0
+    let rs = 0
+
+    while (pos < trackEnd) {
+      const delta = readVlq()
+      tick += delta
+      let sb = bytes[pos]
+
+      if (sb === 0xFF) {
+        pos++; rs = 0
+        const mt = read1()
+        const ml = readVlq()
+        if (mt === 0x51 && ml === 3) {
+          const tempo = (read1() << 16) | (read1() << 8) | read1()
+          events.push({ tick, type: 'tempo', tempo, pri: 0 })
+        } else {
+          pos += ml
+        }
+      } else if (sb === 0xF0 || sb === 0xF7) {
+        pos++; rs = 0
+        pos += readVlq()
+      } else {
+        if (sb & 0x80) { rs = sb; pos++ } else { sb = rs }
+        const type = sb & 0xF0
+        const ch = sb & 0x0F
+        if (type === 0x80) {
+          const note = read1(); read1()
+          events.push({ tick, type: 'off', ch, note, pri: 1 })
+        } else if (type === 0x90) {
+          const note = read1(), vel = read1()
+          events.push({ tick, type: vel > 0 ? 'on' : 'off', ch, note, pri: 1 })
+        } else if (type === 0xA0 || type === 0xB0 || type === 0xE0) {
+          pos += 2
+        } else if (type === 0xC0 || type === 0xD0) {
+          pos += 1
+        } else {
+          pos++
+        }
+      }
+    }
+    pos = trackEnd
+    tracks.push(events)
+  }
+
+  return { ticksPerBeat, tracks }
+}
+
+function mergeEvents(tracks) {
+  const all = tracks.flat()
+  all.sort((a, b) => a.tick !== b.tick ? a.tick - b.tick : a.pri - b.pri)
+  return all
+}
+
+function generateGcode(merged, ticksPerBeat, p) {
+  const AXES = p.useZ ? ['X', 'Y', 'Z'] : ['X', 'Y']
+  const steps = { X: p.stepsX, Y: p.stepsY, Z: p.stepsZ }
+  const travel = { X: p.travelX, Y: p.travelY, Z: p.travelZ }
+
+  const pos = { X: p.safetyMM, Y: p.safetyMM, Z: p.safetyMM }
+  const dir = { X: 1, Y: 1, Z: 1 }
+  let tempo = 500000
+  const active = new Set()
+  const lines = []
+
+  const noteHz = n => 440.0 * Math.pow(2, (n - 69) / 12.0)
+  const axisFeed = (ax, n) => 60.0 * noteHz(n) / steps[ax]
+
+  function emitSpan(dtSec) {
+    if (dtSec <= 0) return
+
+    const sorted = [...active].sort((a, b) => b - a)
+    const nxyz = {}
+    AXES.forEach(ax => { nxyz[ax] = null })
+    sorted.slice(0, AXES.length).forEach((n, i) => { nxyz[AXES[i]] = n })
+
+    const moving = AXES.filter(ax => nxyz[ax] !== null)
+    if (!moving.length) { lines.push(`G4 P${dtSec.toFixed(4)}`); return }
+
+    const feed = {}
+    for (const ax of moving) feed[ax] = axisFeed(ax, nxyz[ax])
+
+    // sqrt(sum of squares) preserves each axis's individual step rate
+    const combinedFeed = Math.sqrt(moving.reduce((s, ax) => s + feed[ax] ** 2, 0))
+
+    let remaining = dtSec
+
+    while (remaining > 0.001) {
+      for (const ax of moving) {
+        if (pos[ax] <= p.safetyMM + 0.001) dir[ax] = 1
+        else if (pos[ax] >= travel[ax] - p.safetyMM - 0.001) dir[ax] = -1
+      }
+
+      let tStep = remaining
+      for (const ax of moving) {
+        const v = feed[ax] / 60.0
+        const boundary = dir[ax] > 0 ? travel[ax] - p.safetyMM : p.safetyMM
+        const gap = Math.abs(boundary - pos[ax])
+        if (gap > 0.001) tStep = Math.min(tStep, gap / v)
+      }
+
+      let cmd = 'G1'
+      for (const ax of moving) {
+        pos[ax] = Math.max(p.safetyMM, Math.min(travel[ax] - p.safetyMM,
+          pos[ax] + dir[ax] * (feed[ax] / 60.0) * tStep))
+        cmd += ` ${ax}${pos[ax].toFixed(3)}`
+      }
+      cmd += ` F${combinedFeed.toFixed(3)}`
+      lines.push(cmd)
+
+      remaining -= tStep
+    }
+  }
+
+  lines.push('; MIDI to FluidNC G-code music')
+  lines.push(`; Steps/mm X=${p.stepsX} Y=${p.stepsY} Z=${p.stepsZ}`)
+  lines.push(`; Travel mm X=${p.travelX} Y=${p.travelY} Z=${p.travelZ}`)
+  lines.push(`; Safety ${p.safetyMM}mm`)
+  lines.push('G21')
+  lines.push('G90')
+  lines.push('G94')
+  lines.push('M5')
+  lines.push(`G0 X${pos.X.toFixed(3)} Y${pos.Y.toFixed(3)} Z${pos.Z.toFixed(3)}`)
+
+  let prevTick = 0
+  for (const ev of merged) {
+    const dt = ev.tick - prevTick
+    if (dt > 0) emitSpan((dt * tempo) / (ticksPerBeat * 1e6))
+    prevTick = ev.tick
+
+    if (ev.type === 'tempo') {
+      tempo = ev.tempo
+    } else if (ev.type === 'on') {
+      if (!(p.ignorePerc && ev.ch === 9)) active.add(ev.note)
+    } else if (ev.type === 'off') {
+      if (!(p.ignorePerc && ev.ch === 9)) active.delete(ev.note)
+    }
+  }
+
+  lines.push(`G0 X${pos.X.toFixed(3)} Y${pos.Y.toFixed(3)} Z${pos.Z.toFixed(3)}`)
+  lines.push('M30')
+
+  return lines.join('\n')
+}
+
+let midiFile = null
+let gcodeOutput = null
+let lastSavedPath = null
+
+function getParams() {
+  return {
+    stepsX: +document.getElementById('stepsX').value,
+    stepsY: +document.getElementById('stepsY').value,
+    stepsZ: +document.getElementById('stepsZ').value,
+    travelX: +document.getElementById('travelX').value,
+    travelY: +document.getElementById('travelY').value,
+    travelZ: +document.getElementById('travelZ').value,
+    safetyMM: +document.getElementById('safetyMM').value,
+    ignorePerc: document.getElementById('ignorePerc').checked,
+    useZ: document.getElementById('useZ').checked,
+  }
+}
+
+function setStatus(msg, cls) {
+  const el = document.getElementById('statusBar')
+  el.textContent = msg
+  el.className = 'status-bar' + (cls ? ' ' + cls : '')
+}
+
+function onDragOver(e) {
+  e.preventDefault()
+  document.getElementById('uploadZone').classList.add('drag-over')
+}
+function onDragLeave() {
+  document.getElementById('uploadZone').classList.remove('drag-over')
+}
+function onDrop(e) {
+  e.preventDefault()
+  document.getElementById('uploadZone').classList.remove('drag-over')
+  const f = e.dataTransfer.files[0]
+  if (f) loadFile(f)
+}
+function onFileSelected(e) {
+  const f = e.target.files[0]
+  if (f) loadFile(f)
+}
+
+function loadDemo() {
+  const b64 = 'TVRoZAAAAAYAAQAEPABNVHJrAAAAFQD/WAQEAhgIAP9RAwZQYarUAP8vAE1UcmsAAAAdAP8DBU1peGVyAP8EBU1peGVyAP8hAQKq1AD/LwBNVHJrAAAAmAD/AxVNSURJIEZpbGUgVHJhY2sgMiBDaDEA/wQGTk4xOSAxAP8hAQcAwACDAJBBbYHtAIBBAIHwAJBAZIHwAIBAAIHwAJA+ZIHwAIA+AIHwAJAyE4HwAIAyAIHzAJBBbYHtAIBBAIHwAJBDZIHwAIBDAPgAkEBk+ACAQAAAkD5kgfAAgD4AgfAAkDITgfAAgDIAjsQA/y8ATVRyawAAAb8A/wMGTk4xOSAxAP8EC05OMTkgMSBDb3B5AP8hAQkAkEpkvACASgAAkExkvACATAAAkE1kvACATQCBtACQSmS8AIBKAACQTGS8AIBMAACQTWS8AIBNALwAkExkvACATAAAkEpkvACASgAAkExkvACATAAAkE1kvACATQAAkE9kvACATwC8AJBKZLwAgEoAAJBMZLwAgEwAAJBNZLwAgE0AgbQAkEpkvACASgAAkExkvACATAAAkE1kvACATQC8AJBMZLwAgEwAAJBKZLwAgEoAAJBMZLwAgEwAAJBNZLwAgE0AAJBPZLwAgE8AvACQSmS8AIBKAACQTGS8AIBMAACQTWS8AIBNAIG0AJBKZLwAgEoAAJBMZLwAgEwAAJBNZLwAgE0AvACQTGS8AIBMAACQSmS8AIBKAACQTGS8AIBMAACQTWS8AIBNAACQT2S8AIBPALwAkEpkvACASgAAkExkvACATAAAkE1kvACATQCBtACQSmS8AIBKAACQTGS8AIBMAACQTWS8AIBNALwAkExkvACATAAAkEpkvACASgAAkExkvACATAAAkE1kvACATQAAkE9kvACATwCNkAD/LwA='
+  const bin = atob(b64)
+  const bytes = new Uint8Array(bin.length)
+  for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i)
+  const file = new File([bytes], 'demo.mid', { type: 'audio/midi' })
+  loadFile(file)
+}
+
+function loadFile(f) {
+  midiFile = f
+  gcodeOutput = null
+  document.getElementById('uploadLabel').textContent = `${f.name}  (${(f.size / 1024).toFixed(1)} KB)`
+  document.getElementById('uploadZone').classList.add('has-file')
+  document.getElementById('convertBtn').disabled = false
+  document.getElementById('saveSection').style.display = 'none'
+  document.getElementById('saveSuccess').style.display = 'none'
+  document.getElementById('saveName').value = f.name.replace(/\.(mid|midi)$/i, '') + '.nc'
+  setStatus(`Loaded ${f.name} — click Convert to generate G-code.`, 'info')
+}
+
+async function convert() {
+  if (!midiFile) return
+  document.getElementById('convertBtn').disabled = true
+  setStatus('Parsing MIDI...', 'info')
+
+  try {
+    const buf = await midiFile.arrayBuffer()
+    const midi = parseMidi(buf)
+    const merged = mergeEvents(midi.tracks)
+
+    setStatus('Generating G-code...', 'info')
+    await new Promise(r => setTimeout(r, 10))
+
+    const gcode = generateGcode(merged, midi.ticksPerBeat, getParams())
+    gcodeOutput = gcode
+
+    const lines = gcode.split('\n')
+    document.getElementById('saveSection').style.display = ''
+    setStatus(`Done — ${lines.length.toLocaleString()} lines, ${(gcodeOutput.length / 1024).toFixed(1)} KB`, 'ok')
+  } catch (err) {
+    setStatus('Error: ' + err.message, 'error')
+  } finally {
+    document.getElementById('convertBtn').disabled = false
+  }
+}
+
+async function saveToDevice(fs) {
+  if (!gcodeOutput) return
+  const name = document.getElementById('saveName').value.trim() || 'music.nc'
+  const path = (fs === 'sd' ? '/sd/' : '/') + name
+  setStatus(`Saving to ${path}…`, 'info')
+  document.getElementById('saveSuccess').style.display = 'none'
+  try {
+    await call('writeFile', { path, content: gcodeOutput, fs })
+    lastSavedPath = path
+    document.getElementById('savedPath').textContent = path
+    const openLink = document.getElementById('openLink')
+    openLink.style.display = fs === 'sd' ? 'inline-block' : 'none'
+    document.getElementById('saveSuccess').style.display = 'flex'
+    setStatus('Ready — choose a MIDI file to begin.')
+  } catch (err) {
+    setStatus('Save failed: ' + err.message, 'error')
+  }
+}
+
+async function openSaved() {
+  if (!lastSavedPath) return
+  try {
+    await call('openFile', { path: lastSavedPath })
+    call('close')
+  } catch (err) {
+    setStatus('Could not open file: ' + err.message, 'error')
+  }
+}
+
+loadMachineSettings()
+</script>
+</body>
+</html>

@@ -310,6 +310,109 @@ button, a, [role="button"], label, input, select, textarea {
   border-radius: 3px;
 }
 
+/* ── Resize handles ───────────────────────────────────────────────────────── */
+.resize-handle {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  z-index: 10;
+}
+
+.resize-handle--h {
+  width: 8px;
+  height: 100%;
+  cursor: col-resize;
+}
+
+.resize-handle--v {
+  height: 8px;
+  width: 100%;
+  cursor: row-resize;
+}
+
+.resize-handle__line {
+  position: absolute;
+  background: transparent;
+  transition: background 120ms;
+  pointer-events: none;
+  border-radius: 1px;
+}
+
+.resize-handle--h .resize-handle__line {
+  top: 0; bottom: 0; width: 1px;
+  left: 50%; transform: translateX(-50%);
+}
+
+.resize-handle--v .resize-handle__line {
+  left: 0; right: 0; height: 1px;
+  top: 50%; transform: translateY(-50%);
+}
+
+.resize-handle:hover .resize-handle__line,
+.resize-handle--dragging .resize-handle__line {
+  background: var(--border-strong);
+}
+
+.resize-handle--dragging .resize-handle__line {
+  background: var(--accent);
+  opacity: 0.7;
+}
+
+/* Collapse/expand button */
+.resize-handle__btn {
+  position: relative;
+  z-index: 1;
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  border: 1px solid var(--border);
+  background: var(--surface);
+  color: var(--text-muted);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  opacity: 0;
+  transition: opacity 120ms, color 120ms, border-color 120ms, background 120ms;
+  cursor: pointer;
+  box-shadow: 0 1px 4px rgba(0,0,0,0.18);
+  flex-shrink: 0;
+}
+
+.resize-handle:hover .resize-handle__btn {
+  opacity: 1;
+}
+
+.resize-handle__btn:hover {
+  color: var(--text-primary);
+  border-color: var(--border-strong);
+  background: var(--elevated);
+}
+
+/* Grip dots (non-collapsible handles) */
+.resize-handle__grip {
+  position: relative;
+  z-index: 1;
+  display: flex;
+  gap: 2px;
+  opacity: 0;
+  transition: opacity 120ms;
+}
+
+.resize-handle--h .resize-handle__grip { flex-direction: column; }
+.resize-handle--v .resize-handle__grip { flex-direction: row; }
+
+.resize-handle:hover .resize-handle__grip { opacity: 0.45; }
+
+.resize-handle__grip span {
+  display: block;
+  width: 3px;
+  height: 3px;
+  border-radius: 50%;
+  background: var(--text-muted);
+}
+
 .panel-header {
   padding: 10px 16px;
   border-bottom: 1px solid var(--border);

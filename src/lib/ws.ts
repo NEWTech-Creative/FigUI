@@ -1,5 +1,6 @@
 import { parseControllerSettingLine, parseGcStateLine, parseStatusReport } from './parser'
 import { useMachineStore } from '../store'
+import { sendCommand } from './http'
 
 let socket: WebSocket | null = null
 
@@ -8,6 +9,7 @@ let generation = 0
 let pingTimer: ReturnType<typeof setInterval> | null = null
 let livenessTimer: ReturnType<typeof setInterval> | null = null
 let statusPollTimer: ReturnType<typeof setInterval> | null = null
+let gcStatePollTimer: ReturnType<typeof setInterval> | null = null
 let pendingPingOks = 0
 
 interface SilentResponseMatcher {
@@ -16,15 +18,15 @@ interface SilentResponseMatcher {
   done: (line: string) => boolean
 }
 
-const SETTINGS_DUMP_SILENT_RESPONSE: SilentResponseMatcher = {
-  starts: (line) => /^\$\d+=/.test(line),
-  consume: (line) => /^\$\d+=/.test(line),
-  done: (line) => line === 'ok' || line === 'error',
-}
-
 const ALARM_QUERY_SILENT_RESPONSE: SilentResponseMatcher = {
   starts: (line) => /^\d+:\s/.test(line) || /^Active alarm:\s*\d+\s*\([^)]+\)/.test(line),
   consume: (line) => /^\d+:\s/.test(line) || /^Active alarm:\s*\d+\s*\([^)]+\)/.test(line),
+  done: (line) => line === 'ok' || line === 'error',
+}
+
+const GCODE_STATE_QUERY_SILENT_RESPONSE: SilentResponseMatcher = {
+  starts: (line) => line.startsWith('[GC:') && line.endsWith(']'),
+  consume: (line) => line.startsWith('[GC:') && line.endsWith(']'),
   done: (line) => line === 'ok' || line === 'error',
 }
 
@@ -151,6 +153,7 @@ const LIVENESS_CHECK_MS = 2000
 const LIVENESS_TIMEOUT_MS = 12000
 const OPEN_TIMEOUT_MS = 6000
 const STATUS_POLL_INTERVAL_MS = 500
+const GC_STATE_POLL_INTERVAL_MS = 2000
 // 0x3F = '?' — FluidNC's real-time status request byte.
 const STATUS_REPORT_BYTE = 0x3F
 
@@ -197,6 +200,7 @@ export function connect(host: string): Promise<void> {
       startPing()
       startLivenessWatchdog()
       startStatusPoll()
+      startGcStatePoll()
 
       resolve()
     }
@@ -240,6 +244,7 @@ function handleDisconnect() {
   stopPing()
   stopLivenessWatchdog()
   stopStatusPoll()
+  stopGcStatePoll()
   stopCommandProcessor()
   // Drop pending acks — they'll never resolve now.
   pendingAcknowledgments.forEach(({ timeoutId }) => clearTimeout(timeoutId))
@@ -303,6 +308,20 @@ function startStatusPoll() {
 
 function stopStatusPoll() {
   if (statusPollTimer) { clearInterval(statusPollTimer); statusPollTimer = null }
+}
+
+function startGcStatePoll() {
+  stopGcStatePoll()
+  const tick = () => {
+    if (socket?.readyState !== WebSocket.OPEN) return
+    sendSilentRaw('$G', GCODE_STATE_QUERY_SILENT_RESPONSE)
+  }
+  tick()
+  gcStatePollTimer = setInterval(tick, GC_STATE_POLL_INTERVAL_MS)
+}
+
+function stopGcStatePoll() {
+  if (gcStatePollTimer) { clearInterval(gcStatePollTimer); gcStatePollTimer = null }
 }
 
 function startLivenessWatchdog() {
@@ -395,6 +414,15 @@ function handleLine(line: string) {
     return
   }
 
+  if (line === 'ok' || line === 'error') {
+    for (const [ackKey, ackData] of pendingAcknowledgments.entries()) {
+      clearTimeout(ackData.timeoutId)
+      ackData.callback()
+      pendingAcknowledgments.delete(ackKey)
+      break
+    }
+  }
+
   if (isSilentLine) return
 
   const alarmMatch = line.match(/^Active alarm:\s*(\d+)\s*\(([^)]+)\)/)
@@ -419,15 +447,6 @@ function handleLine(line: string) {
   }
 
   if (line.startsWith('{"EEPROM":') || line.startsWith('{"cmd":"400"')) return
-
-  if (line === 'ok' || line === 'error') {
-    for (const [ackKey, ackData] of pendingAcknowledgments.entries()) {
-      clearTimeout(ackData.timeoutId)
-      ackData.callback()
-      pendingAcknowledgments.delete(ackKey)
-      break
-    }
-  }
 
   if (line === 'ok' && pendingPingOks > 0) { pendingPingOks--; return }
 
@@ -462,13 +481,27 @@ export function sendSilentAlarmQuery() {
   return sendSilentRaw('$A', ALARM_QUERY_SILENT_RESPONSE)
 }
 
-// Replays the startup log ($SS — version, WiFi, warnings) and refreshes the
-// controller settings used by jog and spindle controls ($$). Called by App.tsx
-// only after the WS has been stable for a couple of seconds. See ws.onopen for
-// why these can't be fired immediately on open.
-export function sendStartupQueries() {
-  sendRaw('$SS')
-  sendSilentRaw('$$', SETTINGS_DUMP_SILENT_RESPONSE)
+
+export async function sendStartupQueries() {
+  try {
+    const ssText = await sendCommand('$SS')
+    ssText.split('\n').forEach(raw => {
+      const line = raw.trim()
+      if (line) lineHandlers.forEach(fn => fn(line))
+    })
+  } catch { /* noop */ }
+
+  try {
+    const settingsText = await sendCommand('$$')
+    settingsText.split('\n').forEach(raw => {
+      const line = raw.trim()
+      if (!line) return
+      const settings = parseControllerSettingLine(line)
+      if (settings) {
+        useMachineStore.getState().updateControllerSettings(settings)
+      }
+    })
+  } catch { /* noop */ }
 }
 
 export function sendRealtime(byte: number) {
@@ -545,6 +578,7 @@ export function disconnect() {
   stopPing()
   stopLivenessWatchdog()
   stopStatusPoll()
+  stopGcStatePoll()
   stopCommandProcessor()
   pendingSilentResponses.length = 0
   activeSilentResponse = null

@@ -6,6 +6,7 @@ import { useGCodeStore } from '../store/gcode'
 import { sendRaw, sendRealtime } from '../lib/ws'
 import type { Units } from '../types'
 import { displayToMm, mmToDisplay } from '../lib/units'
+import { formatRuntime, useJobRuntimeEstimate } from '../lib/jobRuntime'
 import { createRenderer, renderLines, setStaticLineData, type WebGLRenderer, type Camera, type Vector3 } from '../lib/webgl'
 import { addSegmentToPath, clamp01, getArcGeometry, normalizeAngle } from '../lib/gcodeBuild'
 
@@ -21,6 +22,7 @@ const TOOL_GLOW     = 'rgba(239,68,68,0.25)'
 const AXIS_X_COLOR  = '#ef4444'
 const AXIS_Y_COLOR  = '#22c55e'
 const AXIS_Z_COLOR  = '#60a5fa'
+const BED_COLOR     = 'rgba(100,180,255,0.35)'
 
 interface Transform {
   ox: number
@@ -37,6 +39,7 @@ interface OrbitState {
   theta: number
   phi: number
   radius: number
+  orthoSize: number
   target: Vector3
 }
 
@@ -83,6 +86,9 @@ const LARGE_PROGRESS_OVERLAY_SEGMENT_LIMIT = 100_000
 const EMPTY_FLOAT32 = new Float32Array(0)
 const WHEEL_ZOOM_SENSITIVITY = 0.0012
 const VIEW_FIT_PADDING = 1.15
+const CAMERA_CLIP_NEAR_MIN = 0.001
+const CAMERA_CLIP_PADDING_RATIO = 0.05
+const CAMERA_CLIP_PADDING_MIN = 0.5
 const ENTRY_EXIT_CONE_HEIGHT = 1.6
 const ENTRY_EXIT_CONE_RADIUS = 0.65
 const TOOLHEAD_CONE_HEIGHT = 5
@@ -272,6 +278,21 @@ function mergeFloat32Arrays(...arrays: Float32Array[]) {
 }
 
 
+function buildBedLineGeometry(bedW: number, bedH: number, ox: number, oy: number): { vertices: Float32Array, colors: Float32Array } {
+  const x0 = ox, y0 = oy, x1 = ox + bedW, y1 = oy + bedH
+  const corners = [
+    [x0, y0, 0], [x1, y0, 0],
+    [x1, y0, 0], [x1, y1, 0],
+    [x1, y1, 0], [x0, y1, 0],
+    [x0, y1, 0], [x0, y0, 0],
+  ]
+  const vertices = new Float32Array(corners.flat())
+  const c = [0.27, 0.60, 1.0, 0.85]
+  const colorData: number[] = []
+  for (let i = 0; i < corners.length; i++) colorData.push(...c)
+  return { vertices, colors: new Float32Array(colorData) }
+}
+
 function drawSegment(
   ctx: CanvasRenderingContext2D,
   seg: Segment,
@@ -431,6 +452,51 @@ function getOrbitCameraBasis(orbit: OrbitState, up: Vector3) {
   const right = normalizeVector(...Object.values(crossProduct(forward, up)) as [number, number, number])
   const screenUp = normalizeVector(...Object.values(crossProduct(right, forward)) as [number, number, number])
   return { forward, right, screenUp }
+}
+
+function getBoundsCorners(bounds: GCodeModel['bounds']) {
+  return [
+    { x: bounds.minX, y: bounds.minY, z: bounds.minZ },
+    { x: bounds.minX, y: bounds.minY, z: bounds.maxZ },
+    { x: bounds.minX, y: bounds.maxY, z: bounds.minZ },
+    { x: bounds.minX, y: bounds.maxY, z: bounds.maxZ },
+    { x: bounds.maxX, y: bounds.minY, z: bounds.minZ },
+    { x: bounds.maxX, y: bounds.minY, z: bounds.maxZ },
+    { x: bounds.maxX, y: bounds.maxY, z: bounds.minZ },
+    { x: bounds.maxX, y: bounds.maxY, z: bounds.maxZ },
+  ]
+}
+
+function getClipBounds(modelBounds: GCodeModel['bounds'] | null) {
+  const store = useMachineStore.getState()
+  const { maxTravelX, maxTravelY, homingDirInvert = 0 } = store.controllerSettings
+
+  let minX = modelBounds ? modelBounds.minX : Infinity
+  let minY = modelBounds ? modelBounds.minY : Infinity
+  let minZ = modelBounds ? modelBounds.minZ : Infinity
+  let maxX = modelBounds ? modelBounds.maxX : -Infinity
+  let maxY = modelBounds ? modelBounds.maxY : -Infinity
+  let maxZ = modelBounds ? modelBounds.maxZ : -Infinity
+
+  if (maxTravelX != null && maxTravelY != null) {
+    const bedOx = -store.status.wco.x - ((homingDirInvert & 1) ? 0 : maxTravelX)
+    const bedOy = -store.status.wco.y - ((homingDirInvert & 2) ? 0 : maxTravelY)
+    const bedMaxX = bedOx + maxTravelX
+    const bedMaxY = bedOy + maxTravelY
+
+    minX = Math.min(minX, bedOx, bedMaxX)
+    minY = Math.min(minY, bedOy, bedMaxY)
+    minZ = Math.min(minZ, 0)
+    maxX = Math.max(maxX, bedOx, bedMaxX)
+    maxY = Math.max(maxY, bedOy, bedMaxY)
+    maxZ = Math.max(maxZ, 0)
+  }
+
+  if (!isFinite(minX) || !isFinite(maxX) || !isFinite(minY) || !isFinite(maxY) || !isFinite(minZ) || !isFinite(maxZ)) {
+    return { minX: -100, minY: -100, minZ: 0, maxX: 100, maxY: 100, maxZ: 0 }
+  }
+
+  return { minX, minY, minZ, maxX, maxY, maxZ }
 }
 
 
@@ -728,6 +794,18 @@ function drawOrigin(ctx: CanvasRenderingContext2D, t: Transform) {
   ctx.fill()
 }
 
+function drawBedBoundary(ctx: CanvasRenderingContext2D, t: Transform, bedW: number, bedH: number, originX: number, originY: number) {
+  const sx0 = t.ox + originX * t.scale
+  const sy0 = t.oy - originY * t.scale
+  const sx1 = t.ox + (originX + bedW) * t.scale
+  const sy1 = t.oy - (originY + bedH) * t.scale
+  ctx.strokeStyle = BED_COLOR
+  ctx.lineWidth = 1.5
+  ctx.setLineDash([6, 4])
+  ctx.strokeRect(sx0, sy1, sx1 - sx0, sy0 - sy1)
+  ctx.setLineDash([])
+}
+
 function drawToolPosition(
   ctx: CanvasRenderingContext2D,
   t: Transform,
@@ -803,7 +881,7 @@ export function GCodeViewer({ className, isTablet }: Props) {
   const lastPinchDistRef = useRef<number | null>(null)
   const animRef = useRef(0)
   const renderRef = useRef<() => void>(() => {})
-  const needsFitRef = useRef(false)
+  const needsFitRef = useRef(true)
   const progressRef = useRef<ToolpathProgress | null>(null)
   const prevIsRunningRef = useRef(false)
   const prevModelRef = useRef<GCodeModel | null>(null)
@@ -826,6 +904,7 @@ export function GCodeViewer({ className, isTablet }: Props) {
     theta: Math.PI / 4,
     phi: Math.PI / 4,
     radius: 100,
+    orthoSize: Math.tan(Math.PI / 8) * 100,
     target: { x: 0, y: 0, z: 0 },
   })
   const orbitDragRef = useRef<{ sx: number; sy: number; theta: number; phi: number } | null>(null)
@@ -891,7 +970,45 @@ export function GCodeViewer({ className, isTablet }: Props) {
     camera.position.y = orbit.target.y + orbit.radius * Math.sin(orbit.phi) * Math.sin(orbit.theta)
     camera.position.z = orbit.target.z + orbit.radius * Math.cos(orbit.phi)
     camera.projection = projectionMode
-    camera.orthoSize = Math.max(Math.tan(camera.fov / 2) * orbit.radius, 1e-3)
+    camera.orthoSize = Math.max(orbit.orthoSize, 1e-3)
+    updateCameraClipping(orbit)
+  }
+
+  function updateCameraClipping(orbit = orbitState, mdl = modelRef.current ?? model) {
+    const camera = cameraRef.current
+
+    const clipBounds = getClipBounds(mdl ? mdl.bounds : null)
+    const position = getOrbitCameraPosition(orbit)
+    const { forward } = getOrbitCameraBasis(orbit, camera.up)
+    const corners = getBoundsCorners(clipBounds)
+    const diagonal = Math.hypot(
+      clipBounds.maxX - clipBounds.minX,
+      clipBounds.maxY - clipBounds.minY,
+      clipBounds.maxZ - clipBounds.minZ,
+    )
+    const padding = Math.max(
+      CAMERA_CLIP_PADDING_MIN,
+      diagonal * CAMERA_CLIP_PADDING_RATIO,
+      orbit.radius * CAMERA_CLIP_PADDING_RATIO,
+    )
+
+    let minDepth = Number.POSITIVE_INFINITY
+    let maxDepth = Number.NEGATIVE_INFINITY
+
+    for (const corner of corners) {
+      const depth = dotProduct(subtractVectors(corner, position), forward)
+      minDepth = Math.min(minDepth, depth)
+      maxDepth = Math.max(maxDepth, depth)
+    }
+
+    if (!Number.isFinite(minDepth) || !Number.isFinite(maxDepth)) {
+      camera.near = 0.1
+      camera.far = 1000
+      return
+    }
+
+    camera.near = Math.max(CAMERA_CLIP_NEAR_MIN, minDepth - padding)
+    camera.far = Math.max(camera.near + padding * 2, maxDepth + padding)
   }
 
   function getScreenAnchor(clientX: number, clientY: number): ScreenAnchor | null {
@@ -911,9 +1028,15 @@ export function GCodeViewer({ className, isTablet }: Props) {
   }
 
   function zoomOrbitTowardAnchor(prev: OrbitState, zoomFactor: number, anchor: ScreenAnchor | null): OrbitState {
-    const nextRadius = Math.max(1, prev.radius * zoomFactor)
-    if (!anchor || Math.abs(nextRadius - prev.radius) < 1e-9) {
-      return { ...prev, radius: nextRadius }
+    const nextRadius = projectionMode === 'orthographic'
+      ? prev.radius
+      : Math.max(1, prev.radius * zoomFactor)
+    const nextOrthoSize = projectionMode === 'orthographic'
+      ? Math.max(1e-3, prev.orthoSize * zoomFactor)
+      : prev.orthoSize
+
+    if (!anchor || (Math.abs(nextRadius - prev.radius) < 1e-9 && Math.abs(nextOrthoSize - prev.orthoSize) < 1e-9)) {
+      return { ...prev, radius: nextRadius, orthoSize: nextOrthoSize }
     }
 
     const camera = cameraRef.current
@@ -957,6 +1080,7 @@ export function GCodeViewer({ className, isTablet }: Props) {
         return {
           ...prev,
           radius: nextRadius,
+          orthoSize: nextOrthoSize,
           target: {
             x: target.x + delta.x,
             y: target.y + delta.y,
@@ -966,9 +1090,13 @@ export function GCodeViewer({ className, isTablet }: Props) {
       }
     }
 
-    const oldHalfHeight = Math.tan(camera.fov / 2) * prev.radius
+    const oldHalfHeight = projectionMode === 'orthographic'
+      ? prev.orthoSize
+      : Math.tan(camera.fov / 2) * prev.radius
     const oldHalfWidth = oldHalfHeight * anchor.aspect
-    const newHalfHeight = Math.tan(camera.fov / 2) * nextRadius
+    const newHalfHeight = projectionMode === 'orthographic'
+      ? nextOrthoSize
+      : Math.tan(camera.fov / 2) * nextRadius
     const newHalfWidth = newHalfHeight * anchor.aspect
 
     const oldOffset = addVectors(
@@ -983,6 +1111,7 @@ export function GCodeViewer({ className, isTablet }: Props) {
     return {
       ...prev,
       radius: nextRadius,
+      orthoSize: nextOrthoSize,
       target: {
         x: target.x + oldOffset.x - newOffset.x,
         y: target.y + oldOffset.y - newOffset.y,
@@ -1163,8 +1292,11 @@ export function GCodeViewer({ className, isTablet }: Props) {
   }
 
   const status = useMachineStore(s => s.status)
+  const controllerSettings = useMachineStore(s => s.controllerSettings)
   const units = useMachineStore(s => s.units)
-  const sdPercent = status.sdPercent ?? 0
+  const runtime = useJobRuntimeEstimate(status, model, controllerSettings, loadedPath, fileName)
+  const progressPercent = runtime.progressPercent
+  const showEstimatedTiming = runtime.source === 'estimated'
   const isRunning = status.state === 'Run' || status.state === 'Hold'
   const isJobRunning = status.state === 'Run'
   const isJobHeld = status.state === 'Hold'
@@ -1219,45 +1351,51 @@ export function GCodeViewer({ className, isTablet }: Props) {
   }
 
   function fitToView(m?: GCodeModel | null) {
-    const mdl = m ?? model
-    if (!mdl) return
+    const mdl = m === undefined ? model : m
+    const machineStore = useMachineStore.getState()
+    const { maxTravelX: bedW, maxTravelY: bedH } = machineStore.controllerSettings
+    if (!mdl && (bedW == null || bedH == null)) return
 
     if (is3D) {
       const { w, h } = canvasLogicalSize()
-      const { bounds } = mdl
-      const centerX = (bounds.minX + bounds.maxX) / 2
-      const centerY = (bounds.minY + bounds.maxY) / 2
-      const centerZ = (bounds.minZ + bounds.maxZ) / 2
+      const clipBounds = getClipBounds(mdl ? mdl.bounds : null)
+      const centerX = (clipBounds.minX + clipBounds.maxX) / 2
+      const centerY = (clipBounds.minY + clipBounds.maxY) / 2
+      const centerZ = (clipBounds.minZ + clipBounds.maxZ) / 2
       const camera = cameraRef.current
       const aspect = Math.max(w / Math.max(h, 1), 1e-6)
       const tanHalfFov = Math.max(Math.tan(camera.fov / 2), 1e-6)
       const target = { x: centerX, y: centerY, z: centerZ }
       const fitOrbit = { ...orbitState, target }
       const { forward, right, screenUp } = getOrbitCameraBasis(fitOrbit, camera.up)
-      const corners = [
-        { x: bounds.minX, y: bounds.minY, z: bounds.minZ },
-        { x: bounds.minX, y: bounds.minY, z: bounds.maxZ },
-        { x: bounds.minX, y: bounds.maxY, z: bounds.minZ },
-        { x: bounds.minX, y: bounds.maxY, z: bounds.maxZ },
-        { x: bounds.maxX, y: bounds.minY, z: bounds.minZ },
-        { x: bounds.maxX, y: bounds.minY, z: bounds.maxZ },
-        { x: bounds.maxX, y: bounds.maxY, z: bounds.minZ },
-        { x: bounds.maxX, y: bounds.maxY, z: bounds.maxZ },
-      ]
+      const corners = getBoundsCorners(clipBounds)
       let nextRadius = 1
+      let nextOrthoSize = orbitState.orthoSize
 
       if (projectionMode === 'orthographic') {
         let maxRight = 0
         let maxUp = 0
+        let maxTargetDistance = 0
+        const diagonal = Math.hypot(
+          clipBounds.maxX - clipBounds.minX,
+          clipBounds.maxY - clipBounds.minY,
+          clipBounds.maxZ - clipBounds.minZ,
+        )
+        const depthPadding = Math.max(CAMERA_CLIP_PADDING_MIN, diagonal * CAMERA_CLIP_PADDING_RATIO)
 
         for (const corner of corners) {
           const relative = subtractVectors(corner, target)
           maxRight = Math.max(maxRight, Math.abs(dotProduct(relative, right)))
           maxUp = Math.max(maxUp, Math.abs(dotProduct(relative, screenUp)))
+          maxTargetDistance = Math.max(
+            maxTargetDistance,
+            Math.hypot(relative.x, relative.y, relative.z),
+          )
         }
 
         const requiredHalfHeight = Math.max(maxUp, maxRight / aspect)
-        nextRadius = Math.max(1, requiredHalfHeight * VIEW_FIT_PADDING / tanHalfFov)
+        nextOrthoSize = Math.max(1e-3, requiredHalfHeight * VIEW_FIT_PADDING)
+        nextRadius = Math.max(1, maxTargetDistance + depthPadding)
       } else {
         for (const corner of corners) {
           const relative = subtractVectors(corner, target)
@@ -1273,6 +1411,7 @@ export function GCodeViewer({ className, isTablet }: Props) {
       const nextOrbit = {
         ...orbitState,
         radius: nextRadius,
+        orthoSize: nextOrthoSize,
         target,
       }
 
@@ -1280,13 +1419,26 @@ export function GCodeViewer({ className, isTablet }: Props) {
       updateCameraFromOrbit(nextOrbit)
     } else {
       const { w, h } = canvasLogicalSize()
-      const { bounds } = mdl
-      const modelW = bounds.maxX - bounds.minX || 1
-      const modelH = bounds.maxY - bounds.minY || 1
+      let bMinX: number, bMinY: number, bMaxX: number, bMaxY: number
+      if (mdl) {
+        bMinX = mdl.bounds.minX
+        bMinY = mdl.bounds.minY
+        bMaxX = mdl.bounds.maxX
+        bMaxY = mdl.bounds.maxY
+      } else {
+        const hdi = machineStore.controllerSettings.homingDirInvert ?? 0
+        const wco = machineStore.status.wco
+        bMinX = -wco.x - ((hdi & 1) ? 0 : (bedW as number))
+        bMinY = -wco.y - ((hdi & 2) ? 0 : (bedH as number))
+        bMaxX = bMinX + (bedW as number)
+        bMaxY = bMinY + (bedH as number)
+      }
+      const modelW = bMaxX - bMinX || 1
+      const modelH = bMaxY - bMinY || 1
       const pad = 40
       const scale = Math.min((w - pad * 2) / modelW, (h - pad * 2) / modelH)
-      const cx = (bounds.minX + bounds.maxX) / 2
-      const cy = (bounds.minY + bounds.maxY) / 2
+      const cx = (bMinX + bMaxX) / 2
+      const cy = (bMinY + bMaxY) / 2
       transformRef.current = {
         ox: w / 2 - cx * scale,
         oy: h / 2 + cy * scale,
@@ -1315,12 +1467,11 @@ export function GCodeViewer({ className, isTablet }: Props) {
       }
 
       const mdl = modelRef.current
-      if (!mdl) {
-        rendererRef.current.gl.clear(rendererRef.current.gl.COLOR_BUFFER_BIT | rendererRef.current.gl.DEPTH_BUFFER_BIT)
-        return
-      }
+      const store = useMachineStore.getState()
+      const { maxTravelX: btx, maxTravelY: bty, homingDirInvert: hdi3d = 0 } = store.controllerSettings
+      const bedReady3d = btx != null && bty != null
 
-      if (needsFitRef.current && w > 1 && h > 1) {
+      if (needsFitRef.current && w > 1 && h > 1 && (mdl || bedReady3d)) {
         needsFitRef.current = false
         fitToView(mdl)
         return
@@ -1329,12 +1480,32 @@ export function GCodeViewer({ className, isTablet }: Props) {
       updateCameraFromOrbit()
       cameraRef.current.aspect = w / h
 
-      const store = useMachineStore.getState()
       const running3d = store.status.state === 'Run' || store.status.state === 'Hold'
       const progress3d = running3d ? progressRef.current : null
-      const use3DProgressOverlay = progress3d !== null && mdl.segments.length <= LARGE_PROGRESS_OVERLAY_SEGMENT_LIMIT
+      const use3DProgressOverlay = mdl !== null && progress3d !== null && mdl.segments.length <= LARGE_PROGRESS_OVERLAY_SEGMENT_LIMIT
       const wpos3d = showToolRef.current ? store.status.wpos : null
-      const markerGeometry = ensureEntryExitMarkerGeometry(mdl)
+      const markerGeometry = mdl ? ensureEntryExitMarkerGeometry(mdl) : { vertices: EMPTY_FLOAT32, colors: EMPTY_FLOAT32, triangleVertices: EMPTY_FLOAT32, triangleColors: EMPTY_FLOAT32 }
+      const wco3d = store.status.wco
+      const bedOx3d = -wco3d.x - ((hdi3d & 1) ? 0 : btx ?? 0)
+      const bedOy3d = -wco3d.y - ((hdi3d & 2) ? 0 : bty ?? 0)
+      const bedGeometry = bedReady3d ? buildBedLineGeometry(btx as number, bty as number, bedOx3d, bedOy3d) : null
+
+      if (!mdl) {
+        if (!bedReady3d && !wpos3d) {
+          rendererRef.current.gl.clear(rendererRef.current.gl.COLOR_BUFFER_BIT | rendererRef.current.gl.DEPTH_BUFFER_BIT)
+          return
+        }
+        clearStaticPathGeometryUpload()
+        const toolGeometry = wpos3d
+          ? createVertexData([], null, wpos3d)
+          : { vertices: EMPTY_FLOAT32, colors: EMPTY_FLOAT32, triangleVertices: EMPTY_FLOAT32, triangleColors: EMPTY_FLOAT32, toolVertexStart: 0 }
+        const mergedVertices = mergeFloat32Arrays(bedGeometry?.vertices ?? EMPTY_FLOAT32, toolGeometry.vertices)
+        const mergedColors = mergeFloat32Arrays(bedGeometry?.colors ?? EMPTY_FLOAT32, toolGeometry.colors)
+        const bedVertexCount = bedGeometry ? bedGeometry.vertices.length / 3 : 0
+        const toolVertexStart = toolGeometry.vertices.length > 0 ? bedVertexCount : mergedVertices.length / 3
+        renderLines(rendererRef.current, cameraRef.current, mergedVertices, mergedColors, toolVertexStart, 3, toolGeometry.triangleVertices, toolGeometry.triangleColors)
+        return
+      }
 
       if (!use3DProgressOverlay) {
         const staticGeometry = ensureStaticPathGeometry(mdl)
@@ -1342,23 +1513,26 @@ export function GCodeViewer({ className, isTablet }: Props) {
         const toolGeometry = wpos3d
           ? createVertexData([], null, wpos3d)
           : { vertices: EMPTY_FLOAT32, colors: EMPTY_FLOAT32, triangleVertices: EMPTY_FLOAT32, triangleColors: EMPTY_FLOAT32, toolVertexStart: 0 }
-        const mergedVertices = mergeFloat32Arrays(markerGeometry.vertices, toolGeometry.vertices)
-        const mergedColors = mergeFloat32Arrays(markerGeometry.colors, toolGeometry.colors)
+        const mergedVertices = mergeFloat32Arrays(bedGeometry?.vertices ?? EMPTY_FLOAT32, markerGeometry.vertices, toolGeometry.vertices)
+        const mergedColors = mergeFloat32Arrays(bedGeometry?.colors ?? EMPTY_FLOAT32, markerGeometry.colors, toolGeometry.colors)
         const mergedTriangleVertices = mergeFloat32Arrays(markerGeometry.triangleVertices, toolGeometry.triangleVertices)
         const mergedTriangleColors = mergeFloat32Arrays(markerGeometry.triangleColors, toolGeometry.triangleColors)
+        const bedVertexCount = bedGeometry ? bedGeometry.vertices.length / 3 : 0
         const markerVertexCount = markerGeometry.vertices.length / 3
-        const toolVertexStart = toolGeometry.vertices.length > 0 ? markerVertexCount : mergedVertices.length / 3
+        const toolVertexStart = toolGeometry.vertices.length > 0 ? bedVertexCount + markerVertexCount : mergedVertices.length / 3
         renderLines(rendererRef.current, cameraRef.current, mergedVertices, mergedColors, toolVertexStart, 3, mergedTriangleVertices, mergedTriangleColors)
       } else {
         clearStaticPathGeometryUpload()
         const { vertices, colors, triangleVertices, triangleColors, toolVertexStart } = createVertexData(mdl.segments, progress3d, wpos3d)
         const toolStartOffset = toolVertexStart * 3
         const mergedVertices = mergeFloat32Arrays(
+          bedGeometry?.vertices ?? EMPTY_FLOAT32,
           vertices.subarray(0, toolStartOffset),
           markerGeometry.vertices,
           vertices.subarray(toolStartOffset),
         )
         const mergedColors = mergeFloat32Arrays(
+          bedGeometry?.colors ?? EMPTY_FLOAT32,
           colors.subarray(0, toolStartOffset * 4 / 3),
           markerGeometry.colors,
           colors.subarray(toolStartOffset * 4 / 3),
@@ -1370,7 +1544,7 @@ export function GCodeViewer({ className, isTablet }: Props) {
           cameraRef.current,
           mergedVertices,
           mergedColors,
-          toolVertexStart + markerGeometry.vertices.length / 3,
+          toolVertexStart + (bedGeometry ? bedGeometry.vertices.length / 3 : 0) + markerGeometry.vertices.length / 3,
           3,
           mergedTriangleVertices,
           mergedTriangleColors,
@@ -1382,10 +1556,14 @@ export function GCodeViewer({ className, isTablet }: Props) {
       const ctx = canvas.getContext('2d')
       if (!ctx) return
 
-      if (needsFitRef.current && w > 1 && h > 1 && modelRef.current) {
-        needsFitRef.current = false
-        fitToView(modelRef.current)
-        return
+      if (needsFitRef.current && w > 1 && h > 1) {
+        const machineStore = useMachineStore.getState()
+        const bedReady = machineStore.controllerSettings.maxTravelX != null && machineStore.controllerSettings.maxTravelY != null
+        if (modelRef.current || bedReady) {
+          needsFitRef.current = false
+          fitToView(modelRef.current)
+          return
+        }
       }
 
       const t = transformRef.current
@@ -1396,12 +1574,29 @@ export function GCodeViewer({ className, isTablet }: Props) {
 
       drawOrigin(ctx, t)
 
-      const mdl = modelRef.current
-      if (!mdl) return
+      const store2d = useMachineStore.getState()
+      const bedSettings = store2d.controllerSettings
+      if (bedSettings.maxTravelX != null && bedSettings.maxTravelY != null) {
+        const wco2d = store2d.status.wco
+        const hdi2d = bedSettings.homingDirInvert ?? 0
+        const bedOx2d = -wco2d.x - ((hdi2d & 1) ? 0 : bedSettings.maxTravelX)
+        const bedOy2d = -wco2d.y - ((hdi2d & 2) ? 0 : bedSettings.maxTravelY)
+        drawBedBoundary(ctx, t, bedSettings.maxTravelX, bedSettings.maxTravelY, bedOx2d, bedOy2d)
+      }
 
-      const { segments } = mdl
+      const mdl = modelRef.current
       const store = useMachineStore.getState()
       const running = store.status.state === 'Run' || store.status.state === 'Hold'
+
+      if (!mdl) {
+        if (showToolRef.current) {
+          const wpos = store.status.wpos
+          drawToolPosition(ctx, t, wpos.x, wpos.y, running)
+        }
+        return
+      }
+
+      const { segments } = mdl
       const progress = running ? progressRef.current : null
 
       const staticPaths = ensureStatic2DPaths(mdl)
@@ -1451,6 +1646,13 @@ export function GCodeViewer({ className, isTablet }: Props) {
       t.oy += dy
     }
   }
+
+  useEffect(() => {
+    if (!model && controllerSettings.maxTravelX != null && controllerSettings.maxTravelY != null) {
+      needsFitRef.current = true
+      scheduleRender()
+    }
+  }, [controllerSettings.maxTravelX, controllerSettings.maxTravelY, controllerSettings.homingDirInvert, model, is3D])
 
   useEffect(() => {
     if (isRunning && modelRef.current) {
@@ -1551,7 +1753,7 @@ export function GCodeViewer({ className, isTablet }: Props) {
     }
     container.addEventListener('wheel', onWheel, { passive: false })
     return () => container.removeEventListener('wheel', onWheel)
-  }, [is3D])
+  }, [is3D, projectionMode])
 
   function onPointerDown(e: React.PointerEvent) {
     ;(e.target as HTMLElement).setPointerCapture(e.pointerId)
@@ -1981,13 +2183,21 @@ export function GCodeViewer({ className, isTablet }: Props) {
       <div className="shrink-0 border-t border-border bg-surface px-4 pt-2.5 pb-3 flex flex-col gap-2">
         {/* Progress bar — only while a job is active */}
         {(isJobRunning || isJobHeld) && (
-          <div className="flex items-center gap-2.5">
-            <div className="flex-1 h-1.5 bg-elevated rounded-full overflow-hidden">
-              <div className="h-full bg-ok transition-all duration-500 rounded-full" style={{ width: `${sdPercent}%` }} />
-            </div>
-            <span className="text-sm font-mono text-text-muted tabular-nums w-9 text-right">
-              {sdPercent}%
-            </span>
+          <div className="flex flex-col gap-1.5">
+            {progressPercent != null && (
+              <div className="flex items-center gap-2.5">
+                <div className="flex-1 h-1.5 bg-elevated rounded-full overflow-hidden">
+                  <div className="h-full bg-ok transition-all duration-500 rounded-full" style={{ width: `${progressPercent}%` }} />
+                </div>
+              </div>
+            )}
+            {showEstimatedTiming && (
+              <div className="flex items-center justify-between gap-3 text-[11px] font-mono text-text-muted tabular-nums">
+                <span>Elapsed {formatRuntime(runtime.elapsedSeconds)}</span>
+                <span>Remain {formatRuntime(runtime.remainingSeconds)}</span>
+                <span>Total {formatRuntime(runtime.totalSeconds)}</span>
+              </div>
+            )}
           </div>
         )}
 

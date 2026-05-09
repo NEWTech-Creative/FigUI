@@ -36,6 +36,7 @@ function FileRow({ entry, path, fs, canLoadGcode, onNavigate, onRefresh, onEdit,
   const [deleting, setDeleting] = useState(false)
   const [renaming, setRenaming] = useState(false)
   const [newName, setNewName]   = useState(entry.name)
+  const [showMenu, setShowMenu] = useState(false)
   const renameRef = useRef<HTMLInputElement>(null)
 
   const fullPath = path.endsWith('/') ? path : `${path}/`
@@ -79,104 +80,233 @@ function FileRow({ entry, path, fs, canLoadGcode, onNavigate, onRefresh, onEdit,
     document.body.removeChild(a)
   }
 
+  function handleTap() {
+    if (entry.isDir) {
+      onNavigate(`${fullPath}${entry.name}`)
+    } else {
+      setShowMenu(true)
+    }
+  }
+
+  function handleGcodeLoad() {
+    setShowMenu(false)
+    window.dispatchEvent(new CustomEvent('gcode:load', { detail: fullName }))
+  }
+
+  function handleMenuEdit() {
+    setShowMenu(false)
+    onEdit(fullPath, entry.name)
+  }
+
+  function handleMenuDownload() {
+    setShowMenu(false)
+    handleDownload()
+  }
+
+  function handleMenuRename() {
+    setShowMenu(false)
+    startRename()
+  }
+
+  async function handleMenuDelete() {
+    setShowMenu(false)
+    await handleDelete()
+  }
+
   return (
-    <div className={`flex items-center gap-2 px-3 ${isTablet ? 'py-3' : 'py-2'} hover:bg-elevated group transition-colors`}>
-      <div className="text-text-dim shrink-0">
-        {entry.isDir
-          ? <Folder size={isTablet ? 20 : 14} className="text-accent/70" />
-          : <File size={isTablet ? 20 : 14} />}
+    <>
+      <div className={`flex items-center gap-2 px-3 ${isTablet ? 'py-3' : 'py-2'} hover:bg-elevated group transition-colors`}>
+        <div className="text-text-dim shrink-0">
+          {entry.isDir
+            ? <Folder size={isTablet ? 20 : 14} className="text-accent/70" />
+            : <File size={isTablet ? 20 : 14} />}
+        </div>
+
+        {renaming ? (
+          <input
+            ref={renameRef}
+            className={`flex-1 input-field py-0.5 text-lg`}
+            value={newName}
+            onChange={e => setNewName(e.target.value)}
+            onKeyDown={e => {
+              if (e.key === 'Enter') commitRename()
+              if (e.key === 'Escape') setRenaming(false)
+            }}
+            onBlur={commitRename}
+            autoFocus
+          />
+        ) : isTablet ? (
+          <button
+            className={`flex-1 text-left text-2xl truncate ${
+              entry.isDir
+                ? 'text-text-primary'
+                : isGcode(entry.name)
+                  ? canLoadGcode ? 'text-text-primary' : 'text-text-dim'
+                  : 'text-text-primary'
+            }`}
+            onClick={handleTap}
+          >
+            {entry.name}
+          </button>
+        ) : entry.isDir ? (
+          <button
+            className={`flex-1 text-left text-xl text-text-primary hover:text-accent truncate`}
+            onClick={() => onNavigate(`${fullPath}${entry.name}`)}
+          >
+            {entry.name}
+          </button>
+        ) : isGcode(entry.name) ? (
+          <button
+            className={`flex-1 text-left text-xl truncate ${canLoadGcode ? 'text-text-primary hover:text-accent' : 'text-text-dim cursor-not-allowed'}`}
+            onClick={() => {
+              if (!canLoadGcode) return
+              window.dispatchEvent(new CustomEvent('gcode:load', { detail: fullName }))
+            }}
+            title={canLoadGcode ? 'Load in G-code viewer' : 'Cannot load another file while a job is running or held'}
+          >
+            {entry.name}
+          </button>
+        ) : (
+          <span className={`flex-1 text-xl text-text-primary truncate`}>{entry.name}</span>
+        )}
+
+        {!renaming && !isTablet && (
+          <div className="w-28 shrink-0 flex items-center justify-end">
+            {!entry.isDir && (
+              <span className="text-base text-text-dim font-mono text-right group-hover:hidden">{fmtSize(entry.size)}</span>
+            )}
+            <div className="hidden group-hover:flex items-center gap-1">
+              {!entry.isDir && isEditable(entry.name) && (
+                <button
+                  className="p-1.5 rounded text-info hover:bg-info/10 transition-colors"
+                  onClick={() => onEdit(fullPath, entry.name)}
+                  title="Edit file"
+                >
+                  <FileCode size={12} />
+                </button>
+              )}
+              {!entry.isDir && (
+                <button
+                  className="p-1.5 rounded text-info hover:bg-info/10 transition-colors"
+                  onClick={handleDownload}
+                  title="Download"
+                >
+                  <Download size={12} />
+                </button>
+              )}
+              <button
+                className="p-1.5 rounded text-text-muted hover:text-text-primary hover:bg-elevated transition-colors"
+                onClick={startRename}
+                title="Rename"
+              >
+                <Pencil size={12} />
+              </button>
+              <button
+                className="p-1.5 rounded text-danger hover:bg-danger/10 transition-colors"
+                onClick={handleDelete}
+                disabled={deleting}
+                title="Delete"
+              >
+                <Trash2 size={12} />
+              </button>
+            </div>
+          </div>
+        )}
+
+        {renaming && (
+          <button
+            className="p-1.5 rounded text-ok hover:bg-ok/10 transition-colors shrink-0"
+            onClick={commitRename}
+            title="Confirm rename"
+          >
+            <Check size={12} />
+          </button>
+        )}
       </div>
 
-      {renaming ? (
-        <input
-          ref={renameRef}
-          className={`flex-1 input-field py-0.5 text-lg`}
-          value={newName}
-          onChange={e => setNewName(e.target.value)}
-          onKeyDown={e => {
-            if (e.key === 'Enter') commitRename()
-            if (e.key === 'Escape') setRenaming(false)
-          }}
-          onBlur={commitRename}
-          autoFocus
-        />
-      ) : entry.isDir ? (
-        <button
-          className={`flex-1 text-left ${isTablet ? 'text-2xl' : 'text-xl'} text-text-primary hover:text-accent truncate`}
-          onClick={() => onNavigate(`${fullPath}${entry.name}`)}
+      {showMenu && (
+        <div
+          className="fixed inset-0 z-50 flex items-end"
+          onClick={() => setShowMenu(false)}
         >
-          {entry.name}
-        </button>
-      ) : isGcode(entry.name) ? (
-        <button
-          className={`flex-1 text-left ${isTablet ? 'text-2xl' : 'text-xl'} truncate ${canLoadGcode ? 'text-text-primary hover:text-accent' : 'text-text-dim cursor-not-allowed'}`}
-          onClick={() => {
-            if (!canLoadGcode) return
-            window.dispatchEvent(new CustomEvent('gcode:load', { detail: fullName }))
-          }}
-          title={canLoadGcode ? 'Load in G-code viewer' : 'Cannot load another file while a job is running or held'}
-        >
-          {entry.name}
-        </button>
-      ) : (
-        <span className={`flex-1 ${isTablet ? 'text-2xl' : 'text-xl'} text-text-primary truncate`}>{entry.name}</span>
-      )}
-
-      {!renaming && (
-        <div className={`${isTablet ? 'w-36' : 'w-28'} shrink-0 flex items-center justify-end`}>
-          {!entry.isDir && (
-            <span className={`${isTablet ? 'text-base' : 'text-base'} text-text-dim font-mono text-right group-hover:hidden`}>{fmtSize(entry.size)}</span>
-          )}
-          <div className="hidden group-hover:flex items-center gap-1">
-            {!entry.isDir && isEditable(entry.name) && (
+          <div
+            className="w-full bg-surface border-t border-border rounded-t-xl shadow-xl"
+            onClick={e => e.stopPropagation()}
+          >
+            <div className="flex items-center justify-between px-5 py-4 border-b border-border">
+              <div className="flex items-center gap-3 min-w-0">
+                {entry.isDir
+                  ? <Folder size={20} className="text-accent/70 shrink-0" />
+                  : <File size={20} className="text-text-dim shrink-0" />}
+                <span className="text-xl font-medium text-text-primary truncate">{entry.name}</span>
+              </div>
               <button
-                className={`${isTablet ? 'p-2.5' : 'p-1.5'} rounded text-info hover:bg-info/10 transition-colors`}
-                onClick={() => onEdit(fullPath, entry.name)}
-                title="Edit file"
+                className="p-2 rounded text-text-muted hover:text-text-primary shrink-0"
+                onClick={() => setShowMenu(false)}
               >
-                <FileCode size={isTablet ? 18 : 12} />
+                <X size={20} />
               </button>
-            )}
-            {!entry.isDir && (
+            </div>
+            <div className="px-3 py-3 flex flex-col gap-1">
+              {!entry.isDir && isGcode(entry.name) && (
+                <button
+                  className={`flex items-center gap-4 px-4 py-4 rounded-lg text-xl w-full text-left transition-colors ${
+                    canLoadGcode
+                      ? 'text-accent hover:bg-accent/10'
+                      : 'text-text-dim cursor-not-allowed'
+                  }`}
+                  onClick={canLoadGcode ? handleGcodeLoad : undefined}
+                  disabled={!canLoadGcode}
+                >
+                  <ChevronRight size={22} />
+                  <span>Load in Viewer</span>
+                  {!canLoadGcode && <span className="text-base text-text-dim ml-auto">Job running</span>}
+                </button>
+              )}
+              {!entry.isDir && isEditable(entry.name) && (
+                <button
+                  className="flex items-center gap-4 px-4 py-4 rounded-lg text-xl w-full text-left text-info hover:bg-info/10 transition-colors"
+                  onClick={handleMenuEdit}
+                >
+                  <FileCode size={22} />
+                  <span>Edit</span>
+                </button>
+              )}
+              {!entry.isDir && (
+                <button
+                  className="flex items-center gap-4 px-4 py-4 rounded-lg text-xl w-full text-left text-text-primary hover:bg-elevated transition-colors"
+                  onClick={handleMenuDownload}
+                >
+                  <Download size={22} />
+                  <span>Download</span>
+                </button>
+              )}
               <button
-                className={`${isTablet ? 'p-2.5' : 'p-1.5'} rounded text-info hover:bg-info/10 transition-colors`}
-                onClick={handleDownload}
-                title="Download"
+                className="flex items-center gap-4 px-4 py-4 rounded-lg text-xl w-full text-left text-text-primary hover:bg-elevated transition-colors"
+                onClick={handleMenuRename}
               >
-                <Download size={isTablet ? 18 : 12} />
+                <Pencil size={22} />
+                <span>Rename</span>
               </button>
-            )}
-            <button
-              className={`${isTablet ? 'p-2.5' : 'p-1.5'} rounded text-text-muted hover:text-text-primary hover:bg-elevated transition-colors`}
-              onClick={startRename}
-              title="Rename"
-            >
-              <Pencil size={isTablet ? 18 : 12} />
-            </button>
-            <button
-              className={`${isTablet ? 'p-2.5' : 'p-1.5'} rounded text-danger hover:bg-danger/10 transition-colors`}
-              onClick={handleDelete}
-              disabled={deleting}
-              title="Delete"
-            >
-              <Trash2 size={isTablet ? 18 : 12} />
-            </button>
+              <button
+                className="flex items-center gap-4 px-4 py-4 rounded-lg text-xl w-full text-left text-danger hover:bg-danger/10 transition-colors"
+                onClick={handleMenuDelete}
+                disabled={deleting}
+              >
+                <Trash2 size={22} />
+                <span>Delete</span>
+              </button>
+            </div>
+            <div className="h-safe-bottom pb-4" />
           </div>
         </div>
       )}
-
-      {renaming && (
-        <button
-          className="p-1.5 rounded text-ok hover:bg-ok/10 transition-colors shrink-0"
-          onClick={commitRename}
-          title="Confirm rename"
-        >
-          <Check size={12} />
-        </button>
-      )}
-    </div>
+    </>
   )
 }
+
+const _fmCache = new Map<Filesystem, { result: FileListResult; path: string }>()
+let _fmLastFs: Filesystem = 'sd'
 
 export function FileManager({ isTablet }: { isTablet?: boolean }) {
   const espInfo = useMachineStore(s => s.espInfo)
@@ -184,19 +314,22 @@ export function FileManager({ isTablet }: { isTablet?: boolean }) {
   const primarySd   = espInfo?.primarySd   ?? '/sd/'
   const canLoadGcode = machineState !== 'Run' && machineState !== 'Hold'
 
-  const [fs, setFs]             = useState<Filesystem>('sd')
-  const [path, setPath]         = useState(primarySd)
-  const [result, setResult]     = useState<FileListResult | null>(null)
+  const [fs, setFs]             = useState<Filesystem>(_fmLastFs)
+  const [path, setPath]         = useState(_fmCache.get(_fmLastFs)?.path ?? primarySd)
+  const [result, setResult]     = useState<FileListResult | null>(_fmCache.get(_fmLastFs)?.result ?? null)
   const [loading, setLoading]   = useState(false)
   const [error, setError]       = useState('')
-  const [uploading, setUploading]   = useState(false)
-  const [uploadPct, setUploadPct]   = useState(0)
+  const [uploading, setUploading]       = useState(false)
+  const [uploadPct, setUploadPct]       = useState(0)
+  const [uploadIdx, setUploadIdx]       = useState(0)
+  const [uploadTotal, setUploadTotal]   = useState(0)
   const [newDirName, setNewDirName] = useState('')
   const [showNewDir, setShowNewDir] = useState(false)
   const [newFileName, setNewFileName] = useState('')
   const [showNewFile, setShowNewFile] = useState(false)
   const [editing, setEditing]       = useState<{ path: string; filename: string; content: string } | null>(null)
   const [editLoading, setEditLoading] = useState(false)
+  const [dragOver, setDragOver] = useState(false)
   const fileInput = useRef<HTMLInputElement>(null)
 
   const sdRoot    = primarySd
@@ -209,6 +342,8 @@ export function FileManager({ isTablet }: { isTablet?: boolean }) {
       const data = await listFiles(p, filesystem)
       setResult(data)
       setPath(p)
+      _fmCache.set(filesystem, { result: data, path: p })
+      _fmLastFs = filesystem
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Failed to load')
     } finally {
@@ -216,10 +351,20 @@ export function FileManager({ isTablet }: { isTablet?: boolean }) {
     }
   }, [])
 
-  useEffect(() => { load(sdRoot, 'sd') }, [load, sdRoot])
+  useEffect(() => {
+    if (_fmCache.has('sd')) return
+    load(sdRoot, 'sd')
+  }, [load, sdRoot])
 
   function switchFs(newFs: Filesystem) {
+    _fmLastFs = newFs
     setFs(newFs)
+    const cached = _fmCache.get(newFs)
+    if (cached) {
+      setResult(cached.result)
+      setPath(cached.path)
+      return
+    }
     setResult(null)
     const root = newFs === 'sd' ? sdRoot : localRoot
     load(root, newFs)
@@ -242,10 +387,13 @@ export function FileManager({ isTablet }: { isTablet?: boolean }) {
   async function handleUpload(files: FileList | null) {
     if (!files || !files.length) return
     setUploading(true)
+    setUploadTotal(files.length)
     setUploadPct(0)
     try {
-      for (const file of files) {
-        await uploadFile(path, file, fs, p => setUploadPct(p))
+      for (let i = 0; i < files.length; i++) {
+        setUploadIdx(i + 1)
+        setUploadPct(0)
+        await uploadFile(path, files[i], fs, p => setUploadPct(p))
       }
       load(path, fs)
     } catch (e) {
@@ -416,7 +564,7 @@ export function FileManager({ isTablet }: { isTablet?: boolean }) {
       {uploading && (
         <div className="px-3 py-2 bg-info/5 border-b border-info/20">
           <div className="flex justify-between text-base text-info mb-1">
-            <span>Uploading…</span>
+            <span>Uploading{uploadTotal > 1 ? ` (${uploadIdx} of ${uploadTotal})` : ''}…</span>
             <span>{uploadPct}%</span>
           </div>
           <div className="w-full h-1 bg-elevated rounded-full overflow-hidden">
@@ -425,7 +573,21 @@ export function FileManager({ isTablet }: { isTablet?: boolean }) {
         </div>
       )}
 
-      <div className="flex-1 overflow-y-auto min-h-0">
+      <div
+        className="flex-1 overflow-y-auto min-h-0 relative"
+        onDragOver={e => { e.preventDefault(); setDragOver(true) }}
+        onDragEnter={e => { e.preventDefault(); setDragOver(true) }}
+        onDragLeave={e => { if (!e.currentTarget.contains(e.relatedTarget as Node)) setDragOver(false) }}
+        onDrop={e => { e.preventDefault(); setDragOver(false); handleUpload(e.dataTransfer.files) }}
+      >
+        {dragOver && (
+          <div className="absolute inset-0 z-10 flex items-center justify-center bg-accent/10 border-2 border-dashed border-accent rounded-sm pointer-events-none">
+            <div className="flex flex-col items-center gap-2 text-accent">
+              <Upload size={isTablet ? 40 : 28} />
+              <span className={isTablet ? 'text-xl' : 'text-base'}>Drop files to upload</span>
+            </div>
+          </div>
+        )}
         {error && (
           <div className="m-3 p-3 rounded-sm bg-danger/10 border border-danger/30 text-danger text-base">
             {error}
