@@ -449,6 +449,7 @@
         <div class="mb">
             <h3>Save</h3>
             <textarea id="ot" readonly></textarea>
+            <input type="text" id="sv-fn" class="rp-input" placeholder="capture.nc" style="margin-bottom:0.5rem">
             <div style="display:flex;flex-direction:column;gap:0.5rem">
                 <button id="sd-sv" style="background:var(--pr)">Save to SD</button>
                 <button id="dl"    style="background:#28a745">Download</button>
@@ -1069,7 +1070,9 @@
                     t += "\n";
                 });
                 t += "M30\n";
-                el('ot').value = t; el('mo').style.display = 'flex';
+                el('ot').value = t;
+                el('sv-fn').value = `cap_${Date.now()}.nc`;
+                el('mo').style.display = 'flex';
             }
         };
 
@@ -1149,14 +1152,16 @@
             } catch (err) { alert("Save failed: " + err.message); }
         }
 
-        el('sd-sv').onclick = () => { const n = prompt("Filename:", `cap_${Date.now()}.nc`); if (n) uploadSDFile(n, el('ot').value); };
+        el('sd-sv').onclick = () => { const n = (el('sv-fn').value.trim() || `cap_${Date.now()}`); uploadSDFile(n, el('ot').value); };
         el('sd-cl').onclick = () => el('sd-mo').style.display = 'none';
         el('cl').onclick    = () => el('mo').style.display = 'none';
         el('cp').onclick    = () => { el('ot').select(); document.execCommand('copy'); };
         el('dl').onclick    = () => {
             const b = new Blob([el('ot').value], { type: 'text/plain' });
+            const raw = el('sv-fn').value.trim() || `cap_${++fc}`;
+            const name = raw.endsWith('.nc') ? raw : raw + '.nc';
             const a = document.createElement('a'); a.href = URL.createObjectURL(b);
-            a.download = `cap_${++fc}.nc`; document.body.append(a); a.click(); a.remove();
+            a.download = name; document.body.append(a); a.click(); a.remove();
             el('mo').style.display = 'none';
         };
 
