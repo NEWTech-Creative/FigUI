@@ -8,12 +8,12 @@
 #
 # Dependencies: pip install flask websockets requests zeroconf
 
-proxy = True
+proxy = False
 
 import asyncio, json, os, re, shutil, sys, threading, random
 
 import requests
-from flask import Flask, request, send_from_directory, Response
+from flask import Flask, request, send_from_directory, send_file, Response
 
 try:
     import websockets
@@ -395,62 +395,165 @@ def do_proxy(req):
     except Exception as e:
         return {'error': str(e)}, 502
 
+def _ensure_sim_storage():
+    for fs in ('sd', 'localfs'):
+        os.makedirs(os.path.join(test_files, fs), exist_ok=True)
+        os.makedirs(os.path.join(test_files, fs, 'plugins'), exist_ok=True)
+
+def _strip_path(fs_dir, path):
+    """Normalise WebUI paths like '/sd/subdir/' or '/plugins' to storage-relative paths."""
+    path = (path or '/').replace('\\', '/').strip()
+    if path.startswith('/'): path = path[1:]
+    if path in ('', '.', fs_dir): return ''
+
+    # Strip filesystem aliases that FigUI/FluidNC can prepend.
+    aliases = {
+        'sd': ('sd/',),
+        'localfs': ('localfs/', 'ext/'),
+    }.get(fs_dir, ())
+    for prefix in aliases:
+        if path.startswith(prefix):
+            path = path[len(prefix):]
+            break
+
+    parts = [p for p in path.split('/') if p not in ('', '.')]
+    safe = []
+    for part in parts:
+        if part == '..':
+            if safe: safe.pop()
+            continue
+        safe.append(part)
+    return os.path.join(*safe) if safe else ''
+
+def _fs_root(fs_dir):
+    _ensure_sim_storage()
+    return os.path.abspath(os.path.join(test_files, fs_dir))
+
+def _fs_path(fs_dir, path=''):
+    root = _fs_root(fs_dir)
+    rel = _strip_path(fs_dir, path)
+    target = os.path.abspath(os.path.join(root, rel))
+    if target != root and not target.startswith(root + os.sep):
+        raise ValueError('Invalid path')
+    return target
+
+def _soft_delete_marker(path):
+    return os.path.join(path, '.deleted')
+
+def _mark_deleted(path):
+    os.makedirs(path, exist_ok=True)
+    try:
+        with open(_soft_delete_marker(path), 'w', encoding='utf-8') as f:
+            f.write('deleted')
+    except Exception:
+        pass
+
+def _clear_deleted(path):
+    marker = _soft_delete_marker(path)
+    if os.path.exists(marker):
+        try:
+            os.remove(marker)
+        except Exception:
+            pass
+
+def _is_deleted(path):
+    root = os.path.abspath(path)
+    while root and root != os.path.dirname(root):
+        if os.path.exists(_soft_delete_marker(root)):
+            return True
+        root = os.path.dirname(root)
+    return False
+
+def _serve_fs_file(fs_dir, filename):
+    path = _fs_path(fs_dir, filename)
+    if _is_deleted(path) or not os.path.isfile(path):
+        return ('Not found', 404)
+    return send_file(path)
+
+def _force_remove_file(path):
+    if not os.path.exists(path):
+        return
+    try:
+        os.chmod(path, 0o666)
+    except Exception:
+        pass
+    os.remove(path)
+
+def _force_remove_tree(path):
+    def clear_and_retry(func, target, exc_info):
+        try:
+            os.chmod(target, 0o666)
+            func(target)
+        except Exception:
+            pass
+
+    if not os.path.exists(path):
+        return
+    shutil.rmtree(path, onerror=clear_and_retry)
+
 def make_files_list(fs, subdir, status):
-    directory = os.path.join(test_files, fs, subdir)
+    directory = _fs_path(fs, subdir)
     os.makedirs(directory, exist_ok=True)
     usage = shutil.disk_usage(directory)
     files = []
     for name in sorted(os.listdir(directory)):
+        if name == '.deleted':
+            continue
         fp = os.path.join(directory, name)
+        if _is_deleted(fp):
+            continue
         is_dir = os.path.isdir(fp)
         files.append({
             'name': name, 'shortname': name,
-            'size': -1 if is_dir else os.path.getsize(fp),
+            'size': '-1' if is_dir else str(os.path.getsize(fp)),
             'isDir': is_dir,
             'datetime': '',
         })
     occ = int(round(100 * usage.used / usage.total)) if usage.total else 0
-    return json.dumps({'files': files, 'path': subdir,
+    return json.dumps({'files': files, 'path': '/' + _strip_path(fs, subdir).replace(os.sep, '/'),
                        'total': usage.total, 'used': usage.used,
                        'occupation': occ, 'status': status})
-
-def _strip_path(fs_dir, path):
-    """Normalise a WebUI path like '/sd/subdir/' to just 'subdir/'."""
-    if path.startswith('/'): path = path[1:]
-    # Strip the filesystem root prefix that the WebUI prepends
-    # e.g. 'sd/' or 'ext/' when the request comes from the SD card view
-    prefix = fs_dir + '/'
-    if path == fs_dir:           return ''
-    if path.startswith(prefix):  return path[len(prefix):]
-    return path
 
 def handle_fs_action(fs_dir, request):
     """Shared file-operation logic for both /upload (SD) and /files (localfs)."""
     action = request.args.get('action')
-    raw_path = request.args.get('path', '/')
+    raw_path = request.args.get('path') or request.form.get('path') or '/'
     fname    = request.args.get('filename') or ''
-    path     = _strip_path(fs_dir, raw_path)
-    localdir  = os.path.join(test_files, fs_dir, path)
-    localpath = os.path.join(localdir, fname)
+    localdir = _fs_path(fs_dir, raw_path)
+    localpath = _fs_path(fs_dir, os.path.join(_strip_path(fs_dir, raw_path), fname))
     os.makedirs(localdir, exist_ok=True)
 
     if request.method == 'POST':
+        _clear_deleted(localdir)
         for f in request.files.values():
-            f.save(os.path.join(localdir, f.filename))
+            filename = (f.filename or '').replace('\\', '/')
+            if raw_path and raw_path != '/':
+                target = _fs_path(fs_dir, os.path.join(_strip_path(fs_dir, raw_path), os.path.basename(filename)))
+            elif filename.startswith('/') or filename.startswith(('plugins/', 'sd/', 'localfs/', 'ext/')):
+                target = _fs_path(fs_dir, filename)
+            else:
+                target = _fs_path(fs_dir, os.path.join(_strip_path(fs_dir, raw_path), filename))
+            os.makedirs(os.path.dirname(target), exist_ok=True)
+            _clear_deleted(os.path.dirname(target))
+            f.save(target)
     elif action == 'delete':
-        try: os.remove(localpath)
+        try: _force_remove_file(localpath)
         except: pass
     elif action == 'deletedir':
-        shutil.rmtree(localpath, ignore_errors=True)
+        try: _force_remove_tree(localpath)
+        except: pass
+        if os.path.exists(localpath):
+            _mark_deleted(localpath)
     elif action == 'createdir':
         os.makedirs(localpath, exist_ok=True)
+        _clear_deleted(localpath)
     elif action == 'rename':
         newname = request.args.get('newname', '')
         if newname:
             try: os.rename(localpath, os.path.join(localdir, newname))
             except: pass
 
-    return make_files_list(fs_dir, path, 'Ok')
+    return make_files_list(fs_dir, raw_path, 'Ok')
 
 @app.route('/')
 def index():
@@ -485,18 +588,36 @@ def do_files():
 
 @app.route('/sd/<path:filename>')
 def serve_sd_file(filename):
-    return send_from_directory(os.path.join(test_files, 'sd'), filename)
+    return _serve_fs_file('sd', filename)
 
 @app.route('/ext/<path:filename>')
 def serve_ext_file(filename):
-    return send_from_directory(os.path.join(test_files, 'localfs'), filename)
+    return _serve_fs_file('localfs', filename)
 
 @app.route('/localfs/<path:filename>')
 def serve_localfs_file(filename):
-    return send_from_directory(os.path.join(test_files, 'localfs'), filename)
+    return _serve_fs_file('localfs', filename)
+
+@app.route('/plugins/registry.json')
+def serve_plugin_registry():
+    return send_from_directory('plugins', 'registry.json')
+
+@app.route('/plugins/<path:filename>')
+def serve_plugin_file(filename):
+    local_file = _fs_path('localfs', os.path.join('plugins', filename))
+    if _is_deleted(local_file):
+        return ('Not found', 404)
+    if os.path.isfile(local_file):
+        return send_file(local_file)
+    return send_from_directory('plugins', filename)
+
+@app.route('/<path:filename>')
+def serve_internal_file(filename):
+    return _serve_fs_file('localfs', filename)
 
 # ─── Start ────────────────────────────────────────────────────────────────────
 
+_ensure_sim_storage()
 threading.Thread(target=start_ws_thread, daemon=True).start()
 
 print(f'Mode : {"proxy → " + fluidnc_ip if proxy else "standalone simulation"}')
