@@ -32,6 +32,14 @@
       "version": "9.3.0",
       "author": "Myles (NEWTech Creative)",
       "base": "https://raw.githubusercontent.com/figamore/FigUI/main/plugins/teachmode/"
+    },
+    {
+      "id": "centre-probe",
+      "name": "Centre Probe",
+      "description": "Find the centre of circular bores and rectangular pockets using internal probing, then set X/Y work origin.",
+      "version": "1.0.0",
+      "author": "Myles (NEWTech Creative)",
+      "base": "https://raw.githubusercontent.com/figamore/FigUI/main/plugins/centre-probe/"
     }
   ]
 }
