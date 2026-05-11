@@ -1,0 +1,940 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Centre Probe</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+<div class="header">
+  <span class="header-title">Centre Probe</span>
+  <div class="tab-group">
+    <button class="tab active" id="tab-circle" onclick="switchTab('circle')">Circle Bore</button>
+    <button class="tab"        id="tab-rect"   onclick="switchTab('rect')">Rectangle</button>
+  </div>
+</div>
+<div class="offset-bar">
+  <span class="offset-label">Work Offset</span>
+  <select id="wcs-select" class="offset-select">
+    <option value="1">G54</option>
+    <option value="2">G55</option>
+    <option value="3">G56</option>
+    <option value="4">G57</option>
+    <option value="5">G58</option>
+    <option value="6">G59</option>
+  </select>
+  <span class="offset-sep"></span>
+  <span class="offset-label">Probe Mode</span>
+  <select id="probe-mode" class="offset-select">
+    <option value="fast">Fast  (1 pass)</option>
+    <option value="precise">Precise  (2 passes)</option>
+  </select>
+</div>
+
+<div class="split-layout">
+
+  <div class="split-left">
+
+    <!-- ── CIRCLE PANEL ───────────────────────────────────────────── -->
+    <div id="panel-circle">
+
+      <div class="section">
+        <div class="section-hd"><span class="section-label">Parameters</span></div>
+        <div class="params-body">
+          <div class="param-row">
+            <span class="param-label">Plunge Depth</span>
+            <div class="param-controls">
+              <input class="param-input" type="number" id="c-plunge" value="10" min="0.5" step="0.5">
+              <span class="param-unit">mm</span>
+            </div>
+          </div>
+          <div class="param-row">
+            <span class="param-label">Probe Distance</span>
+            <div class="param-controls">
+              <input class="param-input" type="number" id="c-dist" value="30" min="1" step="1">
+              <span class="param-unit">mm</span>
+            </div>
+          </div>
+          <div class="param-row">
+            <span class="param-label">Feed Rate</span>
+            <div class="param-controls">
+              <input class="param-input" type="number" id="c-feed" value="100" min="1" step="10">
+              <span class="param-unit">mm/min</span>
+            </div>
+          </div>
+          <div class="param-row">
+            <span class="param-label">Safe Z</span>
+            <div class="param-controls">
+              <input class="param-input" type="number" id="c-safez" value="5" min="0" step="0.5">
+              <span class="param-unit">mm</span>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="section hint-section">
+        <div class="hint-text">
+          Position the tool roughly over the hole centre with Z work origin at the top surface.
+          The probe will plunge to depth, measure left/right walls to find X centre, then probe
+          the top wall to calculate the full centre.
+        </div>
+      </div>
+
+      <div class="section" id="c-steps-section" style="display:none">
+        <div class="section-hd"><span class="section-label">Progress</span></div>
+        <div id="c-steps-list" class="steps-list"></div>
+      </div>
+
+      <div class="section" id="c-results-section" style="display:none">
+        <div class="section-hd"><span class="section-label">Results</span></div>
+        <div id="c-results-body" class="results-body"></div>
+      </div>
+
+      <div class="action-bar">
+        <button class="primary-btn"   id="c-start-btn" onclick="startCircle()">Start Circle Probe</button>
+        <button class="danger-btn"    id="c-abort-btn" onclick="abortProbe()" style="display:none">Abort</button>
+        <button class="ok-btn"        id="c-zero-btn"  onclick="setZero()"   style="display:none">Set X0 Y0</button>
+        <button class="secondary-btn" id="c-reset-btn" onclick="resetCircle()" style="display:none">Reset</button>
+      </div>
+
+    </div>
+
+    <!-- ── RECTANGLE PANEL ───────────────────────────────────────── -->
+    <div id="panel-rect" style="display:none">
+
+      <div class="section">
+        <div class="section-hd"><span class="section-label">Parameters</span></div>
+        <div class="params-body">
+          <div class="param-row">
+            <span class="param-label">Plunge Depth</span>
+            <div class="param-controls">
+              <input class="param-input" type="number" id="r-plunge" value="10" min="0.5" step="0.5">
+              <span class="param-unit">mm</span>
+            </div>
+          </div>
+          <div class="param-row">
+            <span class="param-label">Probe Distance</span>
+            <div class="param-controls">
+              <input class="param-input" type="number" id="r-dist" value="30" min="1" step="1">
+              <span class="param-unit">mm</span>
+            </div>
+          </div>
+          <div class="param-row">
+            <span class="param-label">Feed Rate</span>
+            <div class="param-controls">
+              <input class="param-input" type="number" id="r-feed" value="100" min="1" step="10">
+              <span class="param-unit">mm/min</span>
+            </div>
+          </div>
+          <div class="param-row">
+            <span class="param-label">Safe Z</span>
+            <div class="param-controls">
+              <input class="param-input" type="number" id="r-safez" value="5" min="0" step="0.5">
+              <span class="param-unit">mm</span>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="section hint-section">
+        <div class="hint-text">
+          Position the tool roughly in the centre of the pocket with Z work origin at the top surface.
+          The probe will plunge to depth, then measure all four walls to find the exact centre.
+        </div>
+      </div>
+
+      <div class="section" id="r-steps-section" style="display:none">
+        <div class="section-hd"><span class="section-label">Progress</span></div>
+        <div id="r-steps-list" class="steps-list"></div>
+      </div>
+
+      <div class="section" id="r-results-section" style="display:none">
+        <div class="section-hd"><span class="section-label">Results</span></div>
+        <div id="r-results-body" class="results-body"></div>
+      </div>
+
+      <div class="action-bar">
+        <button class="primary-btn"   id="r-start-btn" onclick="startRect()">Start Rectangle Probe</button>
+        <button class="danger-btn"    id="r-abort-btn" onclick="abortProbe()" style="display:none">Abort</button>
+        <button class="ok-btn"        id="r-zero-btn"  onclick="setZero()"   style="display:none">Set X0 Y0</button>
+        <button class="secondary-btn" id="r-reset-btn" onclick="resetRect()" style="display:none">Reset</button>
+      </div>
+
+    </div>
+
+  </div>
+
+  <!-- ── DIAGRAM ────────────────────────────────────────────────── -->
+  <div class="split-right">
+    <div class="diagram-wrap">
+      <canvas id="probe-canvas"></canvas>
+    </div>
+  </div>
+
+</div>
+
+<div id="toast"></div>
+
+<script>
+
+// ── API bridge ─────────────────────────────────────────────────────────────
+let msgId = 0
+const pending = {}
+
+function call(method, params) {
+  return new Promise((resolve, reject) => {
+    const id = String(++msgId)
+    pending[id] = { resolve, reject }
+    window.parent.postMessage({ type: 'fluid-request', id, method, params: params ?? {} }, '*')
+  })
+}
+
+window.addEventListener('message', e => {
+  if (e.data?.type === 'fluid-response') {
+    const p = pending[e.data.id]
+    if (p) {
+      delete pending[e.data.id]
+      e.data.error ? p.reject(new Error(e.data.error)) : p.resolve(e.data.result)
+    }
+  }
+  if (e.data?.type === 'fluid-event' && e.data.event === 'status') {
+    const s = e.data.data
+    if (s?.wco)  state.wco = s.wco
+    if (s?.wpos) state.toolPos = s.wpos
+    if (state.probing && (s?.state === 'Alarm' || s?.state === 'Door')) {
+      state.abort = true
+      if (state.probeReject) {
+        state.probeReject(new Error('Machine alarm — probing interrupted'))
+        state.probeReject = null
+      }
+    }
+  }
+})
+
+// ── State ───────────────────────────────────────────────────────────────────
+const state = {
+  wco:        { x: 0, y: 0, z: 0 },
+  toolPos:    null,
+  probing:    false,
+  abort:      false,
+  probeReject: null,
+  mode:       'circle',
+  result:     null,
+  diagram:    null,
+}
+
+// ── Toast ───────────────────────────────────────────────────────────────────
+let toastTimer
+function toast(msg, type = 'ok') {
+  const el = document.getElementById('toast')
+  el.textContent = msg
+  el.className = 'show ' + type
+  clearTimeout(toastTimer)
+  toastTimer = setTimeout(() => { el.className = '' }, 2800)
+}
+
+// ── Tab switch ──────────────────────────────────────────────────────────────
+function switchTab(tab) {
+  state.mode = tab
+  document.getElementById('panel-circle').style.display = tab === 'circle' ? '' : 'none'
+  document.getElementById('panel-rect').style.display   = tab === 'rect'   ? '' : 'none'
+  document.getElementById('tab-circle').classList.toggle('active', tab === 'circle')
+  document.getElementById('tab-rect').classList.toggle('active',   tab === 'rect')
+  drawDiagram()
+}
+
+// ── Core probe primitive ────────────────────────────────────────────────────
+// Sends G38.2 in one axis and resolves with the PRB contact coordinates.
+function doProbe(axis, target, feedRate) {
+  return new Promise((resolve, reject) => {
+    let settled = false
+
+    function settle(fn) {
+      if (settled) return
+      settled = true
+      state.probeReject = null
+      clearTimeout(tid)
+      window.removeEventListener('message', onMsg)
+      fn()
+    }
+
+    const tid = setTimeout(
+      () => settle(() => reject(new Error('No probe response (30 s timeout)'))),
+      30000
+    )
+
+    const onMsg = e => {
+      if (e.data?.type !== 'fluid-event' || e.data.event !== 'line') return
+      const m = String(e.data.data ?? '').match(/\[PRB:([^,]+),([^,]+),([^:]+):([01])\]/)
+      if (m) settle(() => resolve({
+        mx: parseFloat(m[1]),
+        my: parseFloat(m[2]),
+        mz: parseFloat(m[3]),
+        ok: m[4] === '1',
+      }))
+    }
+    window.addEventListener('message', onMsg)
+    state.probeReject = err => settle(() => reject(err))
+
+    const cmd = axis === 'X'
+      ? `G38.2 X${target.toFixed(3)} F${feedRate}`
+      : `G38.2 Y${target.toFixed(3)} F${feedRate}`
+    call('sendCommand', { command: cmd })
+  })
+}
+
+function f3(v) { return v.toFixed(3) }
+
+// ── Steps UI ────────────────────────────────────────────────────────────────
+function initSteps(prefix, steps) {
+  const list = document.getElementById(prefix + '-steps-list')
+  list.innerHTML = steps.map(s =>
+    `<div class="step-row">
+       <span class="step-dot pending" id="dot-${prefix}-${s.id}"></span>
+       <span class="step-label">${s.label}</span>
+       <span class="step-val" id="val-${prefix}-${s.id}"></span>
+     </div>`
+  ).join('')
+  document.getElementById(prefix + '-steps-section').style.display = ''
+}
+
+function setStep(prefix, id, status, val) {
+  const dot = document.getElementById(`dot-${prefix}-${id}`)
+  const valEl = document.getElementById(`val-${prefix}-${id}`)
+  if (dot)   dot.className = `step-dot ${status}`
+  if (valEl && val !== undefined) valEl.textContent = val
+}
+
+function markActiveError(prefix, steps) {
+  for (const s of steps) {
+    const dot = document.getElementById(`dot-${prefix}-${s.id}`)
+    if (dot && dot.className.includes('active')) dot.className = 'step-dot error'
+  }
+}
+
+// ── CIRCLE PROBE ────────────────────────────────────────────────────────────
+
+async function startCircle() {
+  if (!state.toolPos) { toast('Waiting for machine position…', 'warn'); return }
+
+  const precise = document.getElementById('probe-mode').value === 'precise'
+  const CIRCLE_STEPS = precise ? [
+    { id: 'plunge',    label: 'Plunge to depth' },
+    { id: 'probe-xl',  label: 'Probe X− (rough pass)' },
+    { id: 'probe-xr',  label: 'Probe X+ (rough pass)' },
+    { id: 'centre-x',  label: 'Move to rough centre X' },
+    { id: 'probe-yt',  label: 'Probe Y+ (top wall)' },
+    { id: 'probe-xl2', label: 'Refine X− at centre Y' },
+    { id: 'probe-xr2', label: 'Refine X+ at centre Y' },
+    { id: 'centre',    label: 'Move to bore centre' },
+  ] : [
+    { id: 'plunge',   label: 'Plunge to depth' },
+    { id: 'probe-xl', label: 'Probe X−' },
+    { id: 'probe-xr', label: 'Probe X+' },
+    { id: 'centre-x', label: 'Move to centre X' },
+    { id: 'probe-yt', label: 'Probe Y+ (top wall)' },
+    { id: 'centre',   label: 'Move to bore centre' },
+  ]
+
+  const plunge = parseFloat(document.getElementById('c-plunge').value) || 10
+  const dist   = parseFloat(document.getElementById('c-dist').value)   || 30
+  const feed   = parseFloat(document.getElementById('c-feed').value)   || 100
+  const safeZ  = parseFloat(document.getElementById('c-safez').value)  || 5
+
+  const startX = state.toolPos.x
+  const startY = state.toolPos.y
+
+  state.probing = true
+  state.abort   = false
+  state.result  = null
+  state.diagram = { mode: 'circle', startX, startY, contacts: [], centreX: null, centreY: null, radius: null }
+
+  document.getElementById('c-start-btn').style.display = 'none'
+  document.getElementById('c-abort-btn').style.display = ''
+  document.getElementById('c-zero-btn').style.display  = 'none'
+  document.getElementById('c-reset-btn').style.display = 'none'
+  document.getElementById('c-results-section').style.display = 'none'
+
+  initSteps('c', CIRCLE_STEPS)
+  await call('subscribe', { event: 'line' })
+
+  try {
+    // ── Plunge ──────────────────────────────────────────────────────
+    setStep('c', 'plunge', 'active')
+    call('sendCommand', { command: 'G90' })
+    call('sendCommand', { command: `G0 Z${f3(safeZ)}` })
+    call('sendCommand', { command: `G0 X${f3(startX)} Y${f3(startY)}` })
+    call('sendCommand', { command: `G0 Z${f3(-plunge)}` })
+    setStep('c', 'plunge', 'done', `Z −${plunge} mm`)
+
+    if (state.abort) throw new Error('Aborted')
+
+    // ── Probe left (X−) ─────────────────────────────────────────────
+    setStep('c', 'probe-xl', 'active')
+    const prb_xl = await doProbe('X', startX - dist, feed)
+    if (!prb_xl.ok) throw new Error('Left wall: probe did not trigger')
+    const wx_left = prb_xl.mx - state.wco.x
+    setStep('c', 'probe-xl', 'done', `X = ${wx_left.toFixed(3)}`)
+    state.diagram.contacts.push({ x: wx_left, y: startY, label: 'L' })
+    drawDiagram()
+
+    // Retract to startX
+    call('sendCommand', { command: `G0 X${f3(startX)}` })
+    if (state.abort) throw new Error('Aborted')
+
+    // ── Probe right (X+) ─────────────────────────────────────────────
+    setStep('c', 'probe-xr', 'active')
+    const prb_xr = await doProbe('X', startX + dist, feed)
+    if (!prb_xr.ok) throw new Error('Right wall: probe did not trigger')
+    const wx_right = prb_xr.mx - state.wco.x
+    setStep('c', 'probe-xr', 'done', `X = ${wx_right.toFixed(3)}`)
+    state.diagram.contacts.push({ x: wx_right, y: startY, label: 'R' })
+
+    const centreX = (wx_left + wx_right) / 2
+    const radius  = (wx_right - wx_left) / 2
+    state.diagram.radius  = radius
+    drawDiagram()
+
+    // ── Move to centre X ─────────────────────────────────────────────
+    setStep('c', 'centre-x', 'active')
+    call('sendCommand', { command: `G0 X${f3(startX)}` })   // retract from right wall first
+    call('sendCommand', { command: `G0 X${f3(centreX)} Y${f3(startY)}` })
+    setStep('c', 'centre-x', 'done', `X = ${centreX.toFixed(3)}`)
+    state.diagram.centreX = centreX
+    drawDiagram()
+
+    if (state.abort) throw new Error('Aborted')
+
+    // ── Probe top (Y+) ───────────────────────────────────────────────
+    setStep('c', 'probe-yt', 'active')
+    const prb_yt = await doProbe('Y', startY + dist, feed)
+    if (!prb_yt.ok) throw new Error('Top wall: probe did not trigger')
+    const wy_top = prb_yt.my - state.wco.y
+    setStep('c', 'probe-yt', 'done', `Y = ${wy_top.toFixed(3)}`)
+
+    const centreY = wy_top - radius
+    state.diagram.centreY = centreY
+    drawDiagram()
+
+    let centreXFinal = centreX
+    let radiusFinal  = radius
+
+    if (precise) {
+      if (state.abort) throw new Error('Aborted')
+
+      // ── Refine X− at centre Y ─────────────────────────────────────
+      setStep('c', 'probe-xl2', 'active')
+      call('sendCommand', { command: `G0 Y${f3(startY)}` })                  // clear top wall
+      call('sendCommand', { command: `G0 X${f3(startX)} Y${f3(centreY)}` })  // startX at centreY
+      const prb_xl2 = await doProbe('X', startX - dist, feed)
+      if (!prb_xl2.ok) throw new Error('Left wall (refined): probe did not trigger')
+      const wx_left2 = prb_xl2.mx - state.wco.x
+      setStep('c', 'probe-xl2', 'done', `X = ${wx_left2.toFixed(3)}`)
+      call('sendCommand', { command: `G0 X${f3(startX)}` })                  // retract from left wall
+
+      if (state.abort) throw new Error('Aborted')
+
+      // ── Refine X+ at centre Y ─────────────────────────────────────
+      setStep('c', 'probe-xr2', 'active')
+      const prb_xr2 = await doProbe('X', startX + dist, feed)
+      if (!prb_xr2.ok) throw new Error('Right wall (refined): probe did not trigger')
+      const wx_right2 = prb_xr2.mx - state.wco.x
+      setStep('c', 'probe-xr2', 'done', `X = ${wx_right2.toFixed(3)}`)
+
+      centreXFinal = (wx_left2 + wx_right2) / 2
+      radiusFinal  = (wx_right2 - wx_left2) / 2
+
+      state.diagram.contacts = [
+        { x: wx_left2,     y: centreY, label: 'L' },
+        { x: wx_right2,    y: centreY, label: 'R' },
+        { x: centreXFinal, y: wy_top,  label: 'T' },
+      ]
+      state.diagram.centreX = centreXFinal
+      state.diagram.radius  = radiusFinal
+      drawDiagram()
+
+      call('sendCommand', { command: `G0 X${f3(startX)}` })                  // clear right wall
+    } else {
+      // Fast: add top contact, retract from top wall
+      state.diagram.contacts.push({ x: centreX, y: wy_top, label: 'T' })
+      drawDiagram()
+      call('sendCommand', { command: `G0 Y${f3(startY)}` })                  // clear top wall
+    }
+
+    // ── Move to bore centre ───────────────────────────────────────────
+    setStep('c', 'centre', 'active')
+    call('sendCommand', { command: `G0 X${f3(centreXFinal)} Y${f3(centreY)}` })
+    call('sendCommand', { command: `G0 Z${f3(safeZ)}` })                   // clear workpiece
+    call('sendCommand', { command: 'G0 Z0' })                              // descend to Z=0 — visual verification at surface
+    setStep('c', 'centre', 'done', `(${centreXFinal.toFixed(3)}, ${centreY.toFixed(3)})`)
+
+    drawDiagram()
+
+    state.result = { centreX: centreXFinal, centreY }
+
+    document.getElementById('c-results-body').innerHTML =
+      resultLine('Centre X',  centreXFinal.toFixed(4) + ' mm') +
+      resultLine('Centre Y',  centreY.toFixed(4) + ' mm') +
+      resultLine('Diameter',  (radiusFinal * 2).toFixed(4) + ' mm') +
+      resultLine('Radius',    radiusFinal.toFixed(4) + ' mm')
+
+    document.getElementById('c-results-section').style.display = ''
+    document.getElementById('c-zero-btn').style.display  = ''
+    document.getElementById('c-reset-btn').style.display = ''
+    toast('Probing complete — tool at bore centre', 'ok')
+
+  } catch (err) {
+    if (!state.abort) toast('Error: ' + err.message, 'err')
+    else toast('Aborted', 'warn')
+    markActiveError('c', CIRCLE_STEPS)
+    call('sendCommand', { command: `G0 Z${f3(safeZ)}` })
+    document.getElementById('c-reset-btn').style.display = ''
+  } finally {
+    await call('unsubscribe', { event: 'line' })
+    state.probing = false
+    document.getElementById('c-abort-btn').style.display = 'none'
+  }
+}
+
+function resetCircle() {
+  state.result  = null
+  state.diagram = null
+  document.getElementById('c-steps-section').style.display   = 'none'
+  document.getElementById('c-results-section').style.display = 'none'
+  document.getElementById('c-start-btn').style.display = ''
+  document.getElementById('c-abort-btn').style.display = 'none'
+  document.getElementById('c-zero-btn').style.display  = 'none'
+  document.getElementById('c-reset-btn').style.display = 'none'
+  drawDiagram()
+}
+
+// ── RECTANGLE PROBE ─────────────────────────────────────────────────────────
+const RECT_STEPS = [
+  { id: 'plunge',   label: 'Plunge to depth' },
+  { id: 'probe-xl', label: 'Probe X− (left wall)' },
+  { id: 'probe-xr', label: 'Probe X+ (right wall)' },
+  { id: 'centre-x', label: 'Move to centre X' },
+  { id: 'probe-yb', label: 'Probe Y− (bottom wall)' },
+  { id: 'probe-yt', label: 'Probe Y+ (top wall)' },
+  { id: 'centre',   label: 'Move to pocket centre' },
+]
+
+async function startRect() {
+  if (!state.toolPos) { toast('Waiting for machine position…', 'warn'); return }
+
+  const plunge = parseFloat(document.getElementById('r-plunge').value) || 10
+  const dist   = parseFloat(document.getElementById('r-dist').value)   || 30
+  const feed   = parseFloat(document.getElementById('r-feed').value)   || 100
+  const safeZ  = parseFloat(document.getElementById('r-safez').value)  || 5
+
+  const startX = state.toolPos.x
+  const startY = state.toolPos.y
+
+  state.probing = true
+  state.abort   = false
+  state.result  = null
+  state.diagram = { mode: 'rect', startX, startY, contacts: [], centreX: null, centreY: null, width: null, height: null }
+
+  document.getElementById('r-start-btn').style.display = 'none'
+  document.getElementById('r-abort-btn').style.display = ''
+  document.getElementById('r-zero-btn').style.display  = 'none'
+  document.getElementById('r-reset-btn').style.display = 'none'
+  document.getElementById('r-results-section').style.display = 'none'
+
+  initSteps('r', RECT_STEPS)
+  await call('subscribe', { event: 'line' })
+
+  try {
+    // ── Plunge ──────────────────────────────────────────────────────
+    setStep('r', 'plunge', 'active')
+    call('sendCommand', { command: 'G90' })
+    call('sendCommand', { command: `G0 Z${f3(safeZ)}` })
+    call('sendCommand', { command: `G0 X${f3(startX)} Y${f3(startY)}` })
+    call('sendCommand', { command: `G0 Z${f3(-plunge)}` })
+    setStep('r', 'plunge', 'done', `Z −${plunge} mm`)
+
+    if (state.abort) throw new Error('Aborted')
+
+    // ── Probe left (X−) ─────────────────────────────────────────────
+    setStep('r', 'probe-xl', 'active')
+    const prb_xl = await doProbe('X', startX - dist, feed)
+    if (!prb_xl.ok) throw new Error('Left wall: probe did not trigger')
+    const wx_left = prb_xl.mx - state.wco.x
+    setStep('r', 'probe-xl', 'done', `X = ${wx_left.toFixed(3)}`)
+    state.diagram.contacts.push({ x: wx_left, y: startY, label: 'L' })
+    drawDiagram()
+
+    call('sendCommand', { command: `G0 X${f3(startX)}` })
+    if (state.abort) throw new Error('Aborted')
+
+    // ── Probe right (X+) ─────────────────────────────────────────────
+    setStep('r', 'probe-xr', 'active')
+    const prb_xr = await doProbe('X', startX + dist, feed)
+    if (!prb_xr.ok) throw new Error('Right wall: probe did not trigger')
+    const wx_right = prb_xr.mx - state.wco.x
+    setStep('r', 'probe-xr', 'done', `X = ${wx_right.toFixed(3)}`)
+    state.diagram.contacts.push({ x: wx_right, y: startY, label: 'R' })
+
+    const centreX = (wx_left + wx_right) / 2
+    const width   = wx_right - wx_left
+    state.diagram.width = width
+    drawDiagram()
+
+    // ── Move to centre X ─────────────────────────────────────────────
+    setStep('r', 'centre-x', 'active')
+    call('sendCommand', { command: `G0 X${f3(startX)}` })
+    call('sendCommand', { command: `G0 X${f3(centreX)} Y${f3(startY)}` })
+    setStep('r', 'centre-x', 'done', `X = ${centreX.toFixed(3)}`)
+    state.diagram.centreX = centreX
+    drawDiagram()
+
+    if (state.abort) throw new Error('Aborted')
+
+    // ── Probe bottom (Y−) ────────────────────────────────────────────
+    setStep('r', 'probe-yb', 'active')
+    const prb_yb = await doProbe('Y', startY - dist, feed)
+    if (!prb_yb.ok) throw new Error('Bottom wall: probe did not trigger')
+    const wy_bottom = prb_yb.my - state.wco.y
+    setStep('r', 'probe-yb', 'done', `Y = ${wy_bottom.toFixed(3)}`)
+    state.diagram.contacts.push({ x: centreX, y: wy_bottom, label: 'B' })
+    drawDiagram()
+
+    call('sendCommand', { command: `G0 Y${f3(startY)}` })
+    if (state.abort) throw new Error('Aborted')
+
+    // ── Probe top (Y+) ───────────────────────────────────────────────
+    setStep('r', 'probe-yt', 'active')
+    const prb_yt = await doProbe('Y', startY + dist, feed)
+    if (!prb_yt.ok) throw new Error('Top wall: probe did not trigger')
+    const wy_top = prb_yt.my - state.wco.y
+    setStep('r', 'probe-yt', 'done', `Y = ${wy_top.toFixed(3)}`)
+    state.diagram.contacts.push({ x: centreX, y: wy_top, label: 'T' })
+
+    const centreY = (wy_bottom + wy_top) / 2
+    const height  = wy_top - wy_bottom
+    state.diagram.height = height
+
+    // ── Move to pocket centre ────────────────────────────────────────
+    setStep('r', 'centre', 'active')
+    call('sendCommand', { command: `G0 Y${f3(startY)}` })
+    call('sendCommand', { command: `G0 X${f3(centreX)} Y${f3(centreY)}` })
+    call('sendCommand', { command: `G0 Z${f3(safeZ)}` })                   // clear workpiece
+    call('sendCommand', { command: 'G0 Z0' })                              // descend to Z=0 — visual verification at surface
+    setStep('r', 'centre', 'done', `(${centreX.toFixed(3)}, ${centreY.toFixed(3)})`)
+
+    state.diagram.centreY = centreY
+    drawDiagram()
+
+    state.result = { centreX, centreY }
+
+    document.getElementById('r-results-body').innerHTML =
+      resultLine('Centre X',  centreX.toFixed(4) + ' mm') +
+      resultLine('Centre Y',  centreY.toFixed(4) + ' mm') +
+      resultLine('Width (X)', width.toFixed(4) + ' mm') +
+      resultLine('Height (Y)', height.toFixed(4) + ' mm')
+
+    document.getElementById('r-results-section').style.display = ''
+    document.getElementById('r-zero-btn').style.display  = ''
+    document.getElementById('r-reset-btn').style.display = ''
+    toast('Probing complete — tool at pocket centre', 'ok')
+
+  } catch (err) {
+    if (!state.abort) toast('Error: ' + err.message, 'err')
+    else toast('Aborted', 'warn')
+    markActiveError('r', RECT_STEPS)
+    call('sendCommand', { command: `G0 Z${f3(safeZ)}` })
+    document.getElementById('r-reset-btn').style.display = ''
+  } finally {
+    await call('unsubscribe', { event: 'line' })
+    state.probing = false
+    document.getElementById('r-abort-btn').style.display = 'none'
+  }
+}
+
+function resetRect() {
+  state.result  = null
+  state.diagram = null
+  document.getElementById('r-steps-section').style.display   = 'none'
+  document.getElementById('r-results-section').style.display = 'none'
+  document.getElementById('r-start-btn').style.display = ''
+  document.getElementById('r-abort-btn').style.display = 'none'
+  document.getElementById('r-zero-btn').style.display  = 'none'
+  document.getElementById('r-reset-btn').style.display = 'none'
+  drawDiagram()
+}
+
+// ── Common actions ──────────────────────────────────────────────────────────
+function abortProbe() {
+  state.abort = true
+  if (state.probeReject) {
+    state.probeReject(new Error('Aborted by user'))
+    state.probeReject = null
+  }
+  call('sendRealtime', { byte: 0x18 })
+  toast('Aborting…', 'warn')
+}
+
+function setZero() {
+  if (!state.result) return
+  const p = parseInt(document.getElementById('wcs-select').value, 10) || 1
+  call('sendCommand', { command: `G10 L20 P${p} X0 Y0` })
+  toast(`Work X0 Y0 set at centre (G${53 + p})`, 'ok')
+}
+
+function resultLine(label, value) {
+  return `<div class="result-line"><span class="rl">${label}</span><span class="rv">${value}</span></div>`
+}
+
+// ── Diagram ─────────────────────────────────────────────────────────────────
+function cssVar(name, fallback) {
+  return getComputedStyle(document.documentElement).getPropertyValue(name).trim() || fallback
+}
+
+function drawDiagram() {
+  const canvas = document.getElementById('probe-canvas')
+  if (!canvas) return
+
+  const wrap = canvas.parentElement
+  const W = wrap.clientWidth  || 300
+  const H = wrap.clientHeight || 300
+  const dpr = window.devicePixelRatio || 1
+
+  canvas.width  = W * dpr
+  canvas.height = H * dpr
+  canvas.style.width  = W + 'px'
+  canvas.style.height = H + 'px'
+
+  const ctx = canvas.getContext('2d')
+  ctx.scale(dpr, dpr)
+
+  const BG      = cssVar('--bg',           '#0c1018')
+  const BORDER  = cssVar('--border',       '#222840')
+  const ACCENT  = cssVar('--accent',       '#f0a030')
+  const OK      = cssVar('--ok',           '#22c55e')
+  const MUTED   = cssVar('--text-muted',   '#6a7898')
+  const DIM     = cssVar('--text-dim',     '#3c4860')
+  const PRIMARY = cssVar('--text-primary', '#e2e6f4')
+
+  ctx.fillStyle = BG
+  ctx.fillRect(0, 0, W, H)
+
+  const cx = W / 2
+  const cy = H / 2
+  const mg = 44
+
+  const d = state.diagram
+
+  if (!d) {
+    // Idle placeholder: draw the selected shape with probe-direction arrows
+    const idleRef   = 28
+    const idleScale = Math.min((W - 2 * mg) / 2, (H - 2 * mg) / 2) / idleRef
+
+    // Faint axis grid
+    ctx.strokeStyle = DIM
+    ctx.lineWidth   = 0.5
+    ctx.globalAlpha = 0.2
+    ctx.beginPath()
+    ctx.moveTo(mg, cy); ctx.lineTo(W - mg, cy)
+    ctx.moveTo(cx, mg); ctx.lineTo(cx, H - mg)
+    ctx.stroke()
+    ctx.globalAlpha = 1
+
+    // Shape outline (dashed)
+    ctx.strokeStyle = BORDER
+    ctx.lineWidth   = 1.5
+    ctx.setLineDash([5, 4])
+    if (state.mode === 'circle') {
+      const r = idleRef * idleScale
+      ctx.beginPath(); ctx.arc(cx, cy, r, 0, Math.PI * 2); ctx.stroke()
+    } else {
+      const w = idleRef * 2 * idleScale
+      const h = idleRef * 1.4 * idleScale
+      ctx.strokeRect(cx - w / 2, cy - h / 2, w, h)
+    }
+    ctx.setLineDash([])
+
+    // Probe direction arrows
+    function arrow(x1, y1, x2, y2) {
+      const ang = Math.atan2(y2 - y1, x2 - x1), sz = 7
+      ctx.beginPath(); ctx.moveTo(x1, y1); ctx.lineTo(x2, y2); ctx.stroke()
+      ctx.beginPath()
+      ctx.moveTo(x2, y2)
+      ctx.lineTo(x2 - sz * Math.cos(ang - 0.4), y2 - sz * Math.sin(ang - 0.4))
+      ctx.lineTo(x2 - sz * Math.cos(ang + 0.4), y2 - sz * Math.sin(ang + 0.4))
+      ctx.closePath(); ctx.fill()
+    }
+    ctx.strokeStyle = DIM
+    ctx.fillStyle   = DIM
+    ctx.lineWidth   = 1.5
+    ctx.globalAlpha = 0.65
+    const aLen = 18, aGap = 6
+    if (state.mode === 'circle') {
+      const r = idleRef * idleScale
+      arrow(cx - r - aLen - aGap, cy,       cx - r - aGap, cy)
+      arrow(cx + r + aLen + aGap, cy,       cx + r + aGap, cy)
+      arrow(cx, cy - r - aLen - aGap,       cx, cy - r - aGap)
+    } else {
+      const hw = idleRef * idleScale
+      const hh = idleRef * 0.7 * idleScale
+      arrow(cx - hw - aLen - aGap, cy,      cx - hw - aGap, cy)
+      arrow(cx + hw + aLen + aGap, cy,      cx + hw + aGap, cy)
+      arrow(cx, cy - hh - aLen - aGap,      cx, cy - hh - aGap)
+      arrow(cx, cy + hh + aLen + aGap,      cx, cy + hh + aGap)
+    }
+    ctx.globalAlpha = 1
+
+    // Centre dot
+    ctx.beginPath(); ctx.arc(cx, cy, 3, 0, Math.PI * 2)
+    ctx.fillStyle = DIM; ctx.fill()
+
+    ctx.fillStyle    = DIM
+    ctx.font         = '12px ui-sans-serif, system-ui, sans-serif'
+    ctx.textAlign    = 'center'
+    ctx.textBaseline = 'bottom'
+    ctx.fillText('Set parameters and press Start', cx, H - 10)
+    return
+  }
+
+  // Choose scale based on what's known
+  let ref = 30
+  if (d.mode === 'circle' && d.radius)            ref = d.radius * 1.6
+  else if (d.mode === 'rect' && d.width)          ref = Math.max(d.width, d.height || d.width) * 0.55
+  const scale = Math.min((W - 2 * mg) / 2, (H - 2 * mg) / 2) / ref
+
+  // Origin for diagram: use known centre, else start pos
+  const originX = d.centreX !== null ? d.centreX : d.startX
+  const originY = d.centreY !== null ? d.centreY : d.startY
+
+  function toC(wx, wy) {
+    return { x: cx + (wx - originX) * scale, y: cy - (wy - originY) * scale }
+  }
+
+  // ── Bore outline (dashed) ──────────────────────────────────────────
+  ctx.strokeStyle = BORDER
+  ctx.lineWidth = 1.5
+  ctx.setLineDash([5, 4])
+
+  if (d.mode === 'circle') {
+    const r = (d.radius || ref / 1.6) * scale
+    ctx.beginPath()
+    ctx.arc(cx, cy, r, 0, Math.PI * 2)
+    ctx.stroke()
+  } else {
+    const w = (d.width  || ref * 2) * scale
+    const h = (d.height || ref * 2) * scale
+    ctx.strokeRect(cx - w / 2, cy - h / 2, w, h)
+  }
+
+  ctx.setLineDash([])
+
+  // ── Axis lines through origin ─────────────────────────────────────
+  ctx.strokeStyle = DIM
+  ctx.lineWidth = 0.5
+  ctx.globalAlpha = 0.35
+  ctx.beginPath()
+  ctx.moveTo(mg, cy); ctx.lineTo(W - mg, cy)
+  ctx.moveTo(cx, mg); ctx.lineTo(cx, H - mg)
+  ctx.stroke()
+  ctx.globalAlpha = 1
+
+  // ── Partial X-centre line (before Y is known) ─────────────────────
+  if (d.centreX !== null && d.centreY === null) {
+    const px = cx + (d.centreX - originX) * scale
+    ctx.strokeStyle = OK
+    ctx.lineWidth = 1
+    ctx.globalAlpha = 0.45
+    ctx.setLineDash([4, 4])
+    ctx.beginPath()
+    ctx.moveTo(px, mg)
+    ctx.lineTo(px, H - mg)
+    ctx.stroke()
+    ctx.setLineDash([])
+    ctx.globalAlpha = 1
+  }
+
+  // ── Start position marker ─────────────────────────────────────────
+  const sp = toC(d.startX, d.startY)
+  ctx.beginPath()
+  ctx.arc(sp.x, sp.y, 3.5, 0, Math.PI * 2)
+  ctx.fillStyle = MUTED
+  ctx.fill()
+  ctx.fillStyle = DIM
+  ctx.font = '11px ui-monospace, monospace'
+  ctx.textAlign = 'left'
+  ctx.textBaseline = 'bottom'
+  ctx.fillText('start', sp.x + 6, sp.y - 1)
+
+  // ── Contact points ────────────────────────────────────────────────
+  const labelOffset = { L: [-14, 0], R: [14, 0], T: [0, -14], B: [0, 14] }
+  for (const c of d.contacts) {
+    const p = toC(c.x, c.y)
+    ctx.beginPath()
+    ctx.arc(p.x, p.y, 7, 0, Math.PI * 2)
+    ctx.fillStyle = ACCENT
+    ctx.fill()
+    ctx.font = 'bold 10px ui-monospace, monospace'
+    ctx.fillStyle = '#000'
+    ctx.textAlign = 'center'
+    ctx.textBaseline = 'middle'
+    ctx.fillText(c.label, p.x, p.y)
+    const off = labelOffset[c.label] || [10, -10]
+    ctx.fillStyle = PRIMARY
+    ctx.font = '10px ui-monospace, monospace'
+    ctx.textAlign = off[0] < 0 ? 'right' : off[0] > 0 ? 'left' : 'center'
+    ctx.textBaseline = off[1] < 0 ? 'bottom' : off[1] > 0 ? 'top' : 'middle'
+    const coordLabel = c.label === 'L' || c.label === 'R'
+      ? c.x.toFixed(2)
+      : c.y.toFixed(2)
+    ctx.fillText(coordLabel, p.x + off[0], p.y + off[1])
+  }
+
+  // ── Centre crosshair ──────────────────────────────────────────────
+  if (d.centreX !== null && d.centreY !== null) {
+    const p = toC(d.centreX, d.centreY)
+    const arm = 13
+    ctx.strokeStyle = OK
+    ctx.lineWidth = 2
+    ctx.beginPath()
+    ctx.moveTo(p.x - arm, p.y); ctx.lineTo(p.x + arm, p.y)
+    ctx.moveTo(p.x, p.y - arm); ctx.lineTo(p.x, p.y + arm)
+    ctx.stroke()
+    ctx.beginPath()
+    ctx.arc(p.x, p.y, 3.5, 0, Math.PI * 2)
+    ctx.fillStyle = OK
+    ctx.fill()
+    ctx.fillStyle = OK
+    ctx.font = 'bold 11px ui-sans-serif, system-ui, sans-serif'
+    ctx.textAlign = 'center'
+    ctx.textBaseline = 'top'
+    ctx.fillText('centre', p.x, p.y + 11)
+  }
+
+  // ── Dimension annotation ──────────────────────────────────────────
+  ctx.fillStyle = MUTED
+  ctx.font = '12px ui-monospace, monospace'
+  ctx.textAlign = 'center'
+  ctx.textBaseline = 'top'
+  if (d.mode === 'circle' && d.radius !== null) {
+    ctx.fillText('⌀ ' + (d.radius * 2).toFixed(3) + ' mm', cx, 10)
+  } else if (d.mode === 'rect' && d.width !== null) {
+    const txt = d.height !== null
+      ? d.width.toFixed(3) + ' × ' + d.height.toFixed(3) + ' mm'
+      : 'W: ' + d.width.toFixed(3) + ' mm'
+    ctx.fillText(txt, cx, 10)
+  }
+}
+
+// ── Init ─────────────────────────────────────────────────────────────────────
+async function init() {
+  await call('subscribe', { event: 'status' })
+  drawDiagram()
+}
+
+window.addEventListener('resize', drawDiagram)
+init()
+
+</script>
+</body>
+</html>
