@@ -28,8 +28,9 @@
   <span class="offset-sep"></span>
   <span class="offset-label">Probe Mode</span>
   <select id="probe-mode" class="offset-select">
-    <option value="fast">Fast  (1 pass)</option>
-    <option value="precise">Precise  (2 passes)</option>
+    <option value="fast">Fast — 4 touch</option>
+    <option value="precise-x">Precise — 6 touch (refine X)</option>
+    <option value="precise-xy">Precise — 8 touch (refine X+Y)</option>
   </select>
 </div>
 
@@ -61,6 +62,13 @@
             <span class="param-label">Feed Rate</span>
             <div class="param-controls">
               <input class="param-input" type="number" id="c-feed" value="100" min="1" step="10">
+              <span class="param-unit">mm/min</span>
+            </div>
+          </div>
+          <div class="param-row">
+            <span class="param-label">Rapid Feed</span>
+            <div class="param-controls">
+              <input class="param-input" type="number" id="c-rapid" value="1000" min="50" step="50">
               <span class="param-unit">mm/min</span>
             </div>
           </div>
@@ -319,12 +327,27 @@ function markActiveError(prefix, steps) {
 async function startCircle() {
   if (!state.toolPos) { toast('Waiting for machine position…', 'warn'); return }
 
-  const precise = document.getElementById('probe-mode').value === 'precise'
-  const CIRCLE_STEPS = precise ? [
+  const mode      = document.getElementById('probe-mode').value
+  const precise   = mode !== 'fast'
+  const preciseXY = mode === 'precise-xy'
+  const CIRCLE_STEPS = preciseXY ? [
     { id: 'plunge',    label: 'Plunge to depth' },
-    { id: 'probe-xl',  label: 'Probe X− (rough pass)' },
-    { id: 'probe-xr',  label: 'Probe X+ (rough pass)' },
+    { id: 'probe-xl',  label: 'Probe X− (rough)' },
+    { id: 'probe-xr',  label: 'Probe X+ (rough)' },
     { id: 'centre-x',  label: 'Move to rough centre X' },
+    { id: 'probe-yb',  label: 'Probe Y− (rough)' },
+    { id: 'probe-yt',  label: 'Probe Y+ (rough)' },
+    { id: 'probe-xl2', label: 'Refine X− at centre Y' },
+    { id: 'probe-xr2', label: 'Refine X+ at centre Y' },
+    { id: 'probe-yb2', label: 'Refine Y− at refined X' },
+    { id: 'probe-yt2', label: 'Refine Y+ at refined X' },
+    { id: 'centre',    label: 'Move to bore centre' },
+  ] : precise ? [
+    { id: 'plunge',    label: 'Plunge to depth' },
+    { id: 'probe-xl',  label: 'Probe X− (rough)' },
+    { id: 'probe-xr',  label: 'Probe X+ (rough)' },
+    { id: 'centre-x',  label: 'Move to rough centre X' },
+    { id: 'probe-yb',  label: 'Probe Y− (bottom wall)' },
     { id: 'probe-yt',  label: 'Probe Y+ (top wall)' },
     { id: 'probe-xl2', label: 'Refine X− at centre Y' },
     { id: 'probe-xr2', label: 'Refine X+ at centre Y' },
@@ -334,14 +357,16 @@ async function startCircle() {
     { id: 'probe-xl', label: 'Probe X−' },
     { id: 'probe-xr', label: 'Probe X+' },
     { id: 'centre-x', label: 'Move to centre X' },
+    { id: 'probe-yb', label: 'Probe Y− (bottom wall)' },
     { id: 'probe-yt', label: 'Probe Y+ (top wall)' },
     { id: 'centre',   label: 'Move to bore centre' },
   ]
 
-  const plunge = parseFloat(document.getElementById('c-plunge').value) || 10
-  const dist   = parseFloat(document.getElementById('c-dist').value)   || 30
-  const feed   = parseFloat(document.getElementById('c-feed').value)   || 100
-  const safeZ  = parseFloat(document.getElementById('c-safez').value)  || 5
+  const plunge    = parseFloat(document.getElementById('c-plunge').value) || 10
+  const dist      = parseFloat(document.getElementById('c-dist').value)   || 30
+  const feed      = parseFloat(document.getElementById('c-feed').value)   || 100
+  const rapidFeed = parseFloat(document.getElementById('c-rapid').value)  || 1000
+  const safeZ     = parseFloat(document.getElementById('c-safez').value)  || 5
 
   const startX = state.toolPos.x
   const startY = state.toolPos.y
@@ -407,38 +432,55 @@ async function startCircle() {
 
     if (state.abort) throw new Error('Aborted')
 
+    // ── Probe bottom (Y−) ────────────────────────────────────────────
+    setStep('c', 'probe-yb', 'active')
+    const prb_yb = await doProbe('Y', startY - dist, feed)
+    if (!prb_yb.ok) throw new Error('Bottom wall: probe did not trigger')
+    const wy_bottom = prb_yb.my - state.wco.y
+    setStep('c', 'probe-yb', 'done', `Y = ${wy_bottom.toFixed(3)}`)
+    state.diagram.contacts.push({ x: centreX, y: wy_bottom, label: 'B' })
+    drawDiagram()
+
+    call('sendCommand', { command: `G0 Y${f3(startY)}` })    // retract from bottom wall
+    if (state.abort) throw new Error('Aborted')
+
     // ── Probe top (Y+) ───────────────────────────────────────────────
     setStep('c', 'probe-yt', 'active')
     const prb_yt = await doProbe('Y', startY + dist, feed)
     if (!prb_yt.ok) throw new Error('Top wall: probe did not trigger')
     const wy_top = prb_yt.my - state.wco.y
     setStep('c', 'probe-yt', 'done', `Y = ${wy_top.toFixed(3)}`)
+    state.diagram.contacts.push({ x: centreX, y: wy_top, label: 'T' })
 
-    const centreY = wy_top - radius
+    const centreY = (wy_bottom + wy_top) / 2
     state.diagram.centreY = centreY
     drawDiagram()
 
     let centreXFinal = centreX
+    let centreYFinal = centreY
     let radiusFinal  = radius
 
     if (precise) {
       if (state.abort) throw new Error('Aborted')
 
       // ── Refine X− at centre Y ─────────────────────────────────────
+      // Rapid to 1 mm from estimated wall, then probe just that last distance
       setStep('c', 'probe-xl2', 'active')
-      call('sendCommand', { command: `G0 Y${f3(startY)}` })                  // clear top wall
-      call('sendCommand', { command: `G0 X${f3(startX)} Y${f3(centreY)}` })  // startX at centreY
-      const prb_xl2 = await doProbe('X', startX - dist, feed)
+      call('sendCommand', { command: `G0 Y${f3(startY)}` })                      // clear top wall
+      call('sendCommand', { command: `G0 X${f3(startX)} Y${f3(centreY)}` })      // startX at centreY
+      call('sendCommand', { command: `G1 X${f3(wx_left + 1)} F${rapidFeed}` })   // rapid to 1 mm from wall
+      const prb_xl2 = await doProbe('X', wx_left - 5, feed)
       if (!prb_xl2.ok) throw new Error('Left wall (refined): probe did not trigger')
       const wx_left2 = prb_xl2.mx - state.wco.x
       setStep('c', 'probe-xl2', 'done', `X = ${wx_left2.toFixed(3)}`)
-      call('sendCommand', { command: `G0 X${f3(startX)}` })                  // retract from left wall
+      call('sendCommand', { command: `G0 X${f3(startX)}` })                      // retract from left wall
 
       if (state.abort) throw new Error('Aborted')
 
       // ── Refine X+ at centre Y ─────────────────────────────────────
       setStep('c', 'probe-xr2', 'active')
-      const prb_xr2 = await doProbe('X', startX + dist, feed)
+      call('sendCommand', { command: `G1 X${f3(wx_right - 1)} F${rapidFeed}` })  // rapid to 1 mm from wall
+      const prb_xr2 = await doProbe('X', wx_right + 5, feed)
       if (!prb_xr2.ok) throw new Error('Right wall (refined): probe did not trigger')
       const wx_right2 = prb_xr2.mx - state.wco.x
       setStep('c', 'probe-xr2', 'done', `X = ${wx_right2.toFixed(3)}`)
@@ -447,36 +489,73 @@ async function startCircle() {
       radiusFinal  = (wx_right2 - wx_left2) / 2
 
       state.diagram.contacts = [
-        { x: wx_left2,     y: centreY, label: 'L' },
-        { x: wx_right2,    y: centreY, label: 'R' },
-        { x: centreXFinal, y: wy_top,  label: 'T' },
+        { x: wx_left2,     y: centreY,   label: 'L' },
+        { x: wx_right2,    y: centreY,   label: 'R' },
+        { x: centreXFinal, y: wy_bottom, label: 'B' },
+        { x: centreXFinal, y: wy_top,    label: 'T' },
       ]
       state.diagram.centreX = centreXFinal
       state.diagram.radius  = radiusFinal
       drawDiagram()
 
-      call('sendCommand', { command: `G0 X${f3(startX)}` })                  // clear right wall
+      if (preciseXY) {
+        if (state.abort) throw new Error('Aborted')
+
+        // ── Refine Y− at refined centreX ──────────────────────────────
+        setStep('c', 'probe-yb2', 'active')
+        call('sendCommand', { command: `G0 X${f3(startX)}` })                       // clear right wall
+        call('sendCommand', { command: `G0 X${f3(centreXFinal)} Y${f3(startY)}` })  // centreX at startY
+        call('sendCommand', { command: `G1 Y${f3(wy_bottom + 1)} F${rapidFeed}` })  // rapid to 1 mm from bottom
+        const prb_yb2 = await doProbe('Y', wy_bottom - 5, feed)
+        if (!prb_yb2.ok) throw new Error('Bottom wall (refined): probe did not trigger')
+        const wy_bottom2 = prb_yb2.my - state.wco.y
+        setStep('c', 'probe-yb2', 'done', `Y = ${wy_bottom2.toFixed(3)}`)
+        call('sendCommand', { command: `G0 Y${f3(startY)}` })                       // retract from bottom wall
+
+        if (state.abort) throw new Error('Aborted')
+
+        // ── Refine Y+ at refined centreX ──────────────────────────────
+        setStep('c', 'probe-yt2', 'active')
+        call('sendCommand', { command: `G1 Y${f3(wy_top - 1)} F${rapidFeed}` })     // rapid to 1 mm from top
+        const prb_yt2 = await doProbe('Y', wy_top + 5, feed)
+        if (!prb_yt2.ok) throw new Error('Top wall (refined): probe did not trigger')
+        const wy_top2 = prb_yt2.my - state.wco.y
+        setStep('c', 'probe-yt2', 'done', `Y = ${wy_top2.toFixed(3)}`)
+
+        centreYFinal = (wy_bottom2 + wy_top2) / 2
+
+        state.diagram.contacts = [
+          { x: wx_left2,     y: centreYFinal, label: 'L' },
+          { x: wx_right2,    y: centreYFinal, label: 'R' },
+          { x: centreXFinal, y: wy_bottom2,   label: 'B' },
+          { x: centreXFinal, y: wy_top2,      label: 'T' },
+        ]
+        state.diagram.centreY = centreYFinal
+        drawDiagram()
+
+        call('sendCommand', { command: `G0 Y${f3(startY)}` })                       // clear top wall
+      } else {
+        call('sendCommand', { command: `G0 X${f3(startX)}` })                       // clear right wall
+      }
     } else {
-      // Fast: add top contact, retract from top wall
-      state.diagram.contacts.push({ x: centreX, y: wy_top, label: 'T' })
-      drawDiagram()
-      call('sendCommand', { command: `G0 Y${f3(startY)}` })                  // clear top wall
+      // Fast: retract from top wall
+      call('sendCommand', { command: `G0 Y${f3(startY)}` })                         // clear top wall
     }
 
     // ── Move to bore centre ───────────────────────────────────────────
     setStep('c', 'centre', 'active')
-    call('sendCommand', { command: `G0 X${f3(centreXFinal)} Y${f3(centreY)}` })
+    call('sendCommand', { command: `G0 X${f3(centreXFinal)} Y${f3(centreYFinal)}` })
     call('sendCommand', { command: `G0 Z${f3(safeZ)}` })                   // clear workpiece
     call('sendCommand', { command: 'G0 Z0' })                              // descend to Z=0 — visual verification at surface
-    setStep('c', 'centre', 'done', `(${centreXFinal.toFixed(3)}, ${centreY.toFixed(3)})`)
+    setStep('c', 'centre', 'done', `(${centreXFinal.toFixed(3)}, ${centreYFinal.toFixed(3)})`)
 
     drawDiagram()
 
-    state.result = { centreX: centreXFinal, centreY }
+    state.result = { centreX: centreXFinal, centreY: centreYFinal }
 
     document.getElementById('c-results-body').innerHTML =
       resultLine('Centre X',  centreXFinal.toFixed(4) + ' mm') +
-      resultLine('Centre Y',  centreY.toFixed(4) + ' mm') +
+      resultLine('Centre Y',  centreYFinal.toFixed(4) + ' mm') +
       resultLine('Diameter',  (radiusFinal * 2).toFixed(4) + ' mm') +
       resultLine('Radius',    radiusFinal.toFixed(4) + ' mm')
 
@@ -775,6 +854,7 @@ function drawDiagram() {
       arrow(cx - r - aLen - aGap, cy,       cx - r - aGap, cy)
       arrow(cx + r + aLen + aGap, cy,       cx + r + aGap, cy)
       arrow(cx, cy - r - aLen - aGap,       cx, cy - r - aGap)
+      arrow(cx, cy + r + aLen + aGap,       cx, cy + r + aGap)
     } else {
       const hw = idleRef * idleScale
       const hh = idleRef * 0.7 * idleScale
