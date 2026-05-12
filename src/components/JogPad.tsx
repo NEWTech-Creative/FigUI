@@ -587,20 +587,7 @@ function FeedButton({
   )
 }
 
-
-export function JogPad() {
-  const status = useMachineStore(s => s.status)
-  const axes = useMachineStore(s => s.axes)
-  const units = useMachineStore(s => s.units)
-  const controllerSettings = useMachineStore(s => s.controllerSettings)
-  const setActiveStepJog = useMachineStore(s => s.setActiveStepJog)
-  const [spindleTarget, setSpindleTarget] = useState(24000)
-  const [spindleOverrideState, setSpindleOverrideState] = useState<'on' | 'off' | null>(null)
-  const [xyFeed, setXyFeed] = useState(() => loadPersistedJogFeed('jog.xyFeed', 1000))
-  const [zFeed, setZFeed]   = useState(() => loadPersistedJogFeed('jog.zFeed', 200))
-  const [abcFeed, setAbcFeed] = useState(() => loadPersistedJogFeed('jog.abcFeed', 500))
-  const [continuous, setContinuous] = useState(false)
-  const [compact, setCompact] = useState(() => localStorage.getItem('jog.desktopStyle') === 'compact')
+function useKeyboardJog(continuous: boolean, canJog: boolean, xyFeed: number, zFeed: number) {
   const [keyboardJog, setKeyboardJog] = useState(false)
   const [activeKeys, setActiveKeys] = useState<Set<string>>(new Set())
   const pressedKeysRef = useRef<Set<string>>(new Set())
@@ -608,91 +595,10 @@ export function JogPad() {
   const xyFeedRef = useRef(xyFeed)
   const zFeedRef = useRef(zFeed)
   const canJogRef = useRef(false)
-  const prevUnitsRef = useRef(units)
-
-  const canJog = status.state === 'Idle' || status.state === 'Jog'
-  const jobRunning = useJobRunningWithLinger(status.state)
-  const zSteps = linearBarSteps(units)
-  const xyFeedMax = controllerSettings.maxRateX != null && controllerSettings.maxRateY != null
-    ? Math.min(controllerSettings.maxRateX, controllerSettings.maxRateY)
-    : controllerSettings.maxRateX ?? controllerSettings.maxRateY
-  const zFeedMax = controllerSettings.maxRateZ
-  const spindleMin = controllerSettings.spindleMin ?? 0
-  const spindleMax = controllerSettings.spindleMax
-  const linearFeedPresetValues = linearFeedPresets(units)
-  const xyFeedPresetValues = buildLimitedFeedPresets(linearFeedPresetValues, xyFeedMax)
-  const zFeedPresetValues = buildLimitedFeedPresets(linearFeedPresetValues, zFeedMax)
-  const spindlePresetValues = buildSpindlePresets(spindleMin, spindleMax)
-  const controllerSpindleActive = status.spindleRunning ?? status.spindle > 0
-  const spindleActive = spindleOverrideState === 'off'
-    ? false
-    : spindleOverrideState === 'on'
-      ? true
-      : controllerSpindleActive
-  const linearFeedFormatter = useCallback(
-    (value: number) => formatDisplayNumber(mmToDisplay(value, units), 0),
-    [units],
-  )
-  const rotaryFeedFormatter = useCallback(
-    (value: number) => formatDisplayNumber(value, 0),
-    [],
-  )
 
   useEffect(() => { xyFeedRef.current = xyFeed }, [xyFeed])
   useEffect(() => { zFeedRef.current = zFeed }, [zFeed])
   useEffect(() => { canJogRef.current = canJog }, [canJog])
-  useEffect(() => { localStorage.setItem('jog.xyFeed', JSON.stringify(xyFeed)) }, [xyFeed])
-  useEffect(() => { localStorage.setItem('jog.zFeed', JSON.stringify(zFeed)) }, [zFeed])
-  useEffect(() => { localStorage.setItem('jog.abcFeed', JSON.stringify(abcFeed)) }, [abcFeed])
-
-  useEffect(() => {
-    if (prevUnitsRef.current === units) return
-    const presets = linearFeedPresets(units)
-    setXyFeed((prev: number) => snapToNearestPreset(prev, presets))
-    setZFeed((prev: number) => snapToNearestPreset(prev, presets))
-    prevUnitsRef.current = units
-  }, [units])
-
-  useEffect(() => {
-    if (xyFeedMax == null || !Number.isFinite(xyFeedMax) || xyFeedMax <= 0) return
-    setXyFeed(prev => Math.min(prev, xyFeedMax))
-  }, [xyFeedMax])
-
-  useEffect(() => {
-    if (zFeedMax == null || !Number.isFinite(zFeedMax) || zFeedMax <= 0) return
-    setZFeed(prev => Math.min(prev, zFeedMax))
-  }, [zFeedMax])
-
-  useEffect(() => {
-    if (spindleMax == null || !Number.isFinite(spindleMax) || spindleMax < spindleMin) return
-    setSpindleTarget(prev => {
-      if (prev === 24000 && spindleMax !== 24000) return spindleMax
-      return clamp(prev, spindleMin, spindleMax)
-    })
-  }, [spindleMin, spindleMax])
-
-  useEffect(() => {
-    if (status.spindle <= 0) return
-    setSpindleTarget(prev => {
-      const next = spindleMax != null
-        ? clamp(status.spindle, spindleMin, spindleMax)
-        : Math.max(spindleMin, status.spindle)
-      return prev === next ? prev : next
-    })
-    setSpindleOverrideState(null)
-  }, [status.spindle, spindleMin, spindleMax])
-
-  useEffect(() => {
-    if (status.spindle <= 0 || status.spindleRunning === false) {
-      setSpindleOverrideState(null)
-    }
-  }, [status.spindle, status.spindleRunning])
-
-  useEffect(() => {
-    if (status.state !== 'Jog') {
-      setActiveStepJog(null)
-    }
-  }, [status.state, setActiveStepJog])
 
   const resetKeyboardJog = useCallback(() => {
     if (fireTimerRef.current) { clearTimeout(fireTimerRef.current); fireTimerRef.current = null }
@@ -807,6 +713,106 @@ export function JogPad() {
       resetKeyboardJog()
     }
   }, [continuous, keyboardJog, resetKeyboardJog])
+
+  return { keyboardJog, setKeyboardJog, activeKeys }
+}
+
+export function JogPad() {
+  const status = useMachineStore(s => s.status)
+  const axes = useMachineStore(s => s.axes)
+  const units = useMachineStore(s => s.units)
+  const controllerSettings = useMachineStore(s => s.controllerSettings)
+  const setActiveStepJog = useMachineStore(s => s.setActiveStepJog)
+  const [spindleTarget, setSpindleTarget] = useState(24000)
+  const [spindleOverrideState, setSpindleOverrideState] = useState<'on' | 'off' | null>(null)
+  const [xyFeed, setXyFeed] = useState(() => loadPersistedJogFeed('jog.xyFeed', 1000))
+  const [zFeed, setZFeed]   = useState(() => loadPersistedJogFeed('jog.zFeed', 200))
+  const [abcFeed, setAbcFeed] = useState(() => loadPersistedJogFeed('jog.abcFeed', 500))
+  const [continuous, setContinuous] = useState(false)
+  const [compact, setCompact] = useState(() => localStorage.getItem('jog.desktopStyle') === 'compact')
+  const prevUnitsRef = useRef(units)
+
+  const canJog = status.state === 'Idle' || status.state === 'Jog'
+  const jobRunning = useJobRunningWithLinger(status.state)
+  const { keyboardJog, setKeyboardJog, activeKeys } = useKeyboardJog(continuous, canJog, xyFeed, zFeed)
+  const zSteps = linearBarSteps(units)
+  const xyFeedMax = controllerSettings.maxRateX != null && controllerSettings.maxRateY != null
+    ? Math.min(controllerSettings.maxRateX, controllerSettings.maxRateY)
+    : controllerSettings.maxRateX ?? controllerSettings.maxRateY
+  const zFeedMax = controllerSettings.maxRateZ
+  const spindleMin = controllerSettings.spindleMin ?? 0
+  const spindleMax = controllerSettings.spindleMax
+  const linearFeedPresetValues = linearFeedPresets(units)
+  const xyFeedPresetValues = buildLimitedFeedPresets(linearFeedPresetValues, xyFeedMax)
+  const zFeedPresetValues = buildLimitedFeedPresets(linearFeedPresetValues, zFeedMax)
+  const spindlePresetValues = buildSpindlePresets(spindleMin, spindleMax)
+  const controllerSpindleActive = status.spindleRunning ?? status.spindle > 0
+  const spindleActive = spindleOverrideState === 'off'
+    ? false
+    : spindleOverrideState === 'on'
+      ? true
+      : controllerSpindleActive
+  const linearFeedFormatter = useCallback(
+    (value: number) => formatDisplayNumber(mmToDisplay(value, units), 0),
+    [units],
+  )
+  const rotaryFeedFormatter = useCallback(
+    (value: number) => formatDisplayNumber(value, 0),
+    [],
+  )
+
+  useEffect(() => { localStorage.setItem('jog.xyFeed', JSON.stringify(xyFeed)) }, [xyFeed])
+  useEffect(() => { localStorage.setItem('jog.zFeed', JSON.stringify(zFeed)) }, [zFeed])
+  useEffect(() => { localStorage.setItem('jog.abcFeed', JSON.stringify(abcFeed)) }, [abcFeed])
+
+  useEffect(() => {
+    if (prevUnitsRef.current === units) return
+    const presets = linearFeedPresets(units)
+    setXyFeed((prev: number) => snapToNearestPreset(prev, presets))
+    setZFeed((prev: number) => snapToNearestPreset(prev, presets))
+    prevUnitsRef.current = units
+  }, [units])
+
+  useEffect(() => {
+    if (xyFeedMax == null || !Number.isFinite(xyFeedMax) || xyFeedMax <= 0) return
+    setXyFeed(prev => Math.min(prev, xyFeedMax))
+  }, [xyFeedMax])
+
+  useEffect(() => {
+    if (zFeedMax == null || !Number.isFinite(zFeedMax) || zFeedMax <= 0) return
+    setZFeed(prev => Math.min(prev, zFeedMax))
+  }, [zFeedMax])
+
+  useEffect(() => {
+    if (spindleMax == null || !Number.isFinite(spindleMax) || spindleMax < spindleMin) return
+    setSpindleTarget(prev => {
+      if (prev === 24000 && spindleMax !== 24000) return spindleMax
+      return clamp(prev, spindleMin, spindleMax)
+    })
+  }, [spindleMin, spindleMax])
+
+  useEffect(() => {
+    if (status.spindle <= 0) return
+    setSpindleTarget(prev => {
+      const next = spindleMax != null
+        ? clamp(status.spindle, spindleMin, spindleMax)
+        : Math.max(spindleMin, status.spindle)
+      return prev === next ? prev : next
+    })
+    setSpindleOverrideState(null)
+  }, [status.spindle, spindleMin, spindleMax])
+
+  useEffect(() => {
+    if (status.spindle <= 0 || status.spindleRunning === false) {
+      setSpindleOverrideState(null)
+    }
+  }, [status.spindle, status.spindleRunning])
+
+  useEffect(() => {
+    if (status.state !== 'Jog') {
+      setActiveStepJog(null)
+    }
+  }, [status.state, setActiveStepJog])
 
   return (
     <>
