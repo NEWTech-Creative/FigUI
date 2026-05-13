@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { ArrowRightToLine, Home, Power, Square, TriangleAlert } from 'lucide-react'
 import { useMachineStore, activePosition } from '../store'
 import { sendRaw, sendRealtime, sendSilentAlarmQuery } from '../lib/ws'
@@ -46,6 +46,7 @@ type PendingAxisAction = {
 const MOTION_STATES = new Set(['Jog', 'Hold', 'Home'])
 const E_STOP_HIDE_DELAY_MS = 700
 const HOME_ALL_ACTION_AXIS = 'all'
+const WORK_ORIGINS = ['G54', 'G55', 'G56', 'G57', 'G58', 'G59'] as const
 
 function useIsPortrait() {
   const [portrait, setPortrait] = useState(() =>
@@ -84,11 +85,16 @@ export function DRO({ isTablet = false }: { isTablet?: boolean }) {
   const units = useMachineStore(s => s.units)
   const [pendingAxisAction, setPendingAxisAction] = useState<PendingAxisAction | null>(null)
   const [pendingAxisActionStarted, setPendingAxisActionStarted] = useState(false)
+  const [workOriginOpen, setWorkOriginOpen] = useState(false)
+  const workOriginRef = useRef<HTMLDivElement>(null)
   const pos = activePosition(status, positionMode)
   const isPortrait = useIsPortrait()
   const tabletBtnSize = isTablet && isPortrait ? 'w-20 h-20' : isTablet ? 'w-14 h-14' : 'w-8 h-8'
   const tabletIconSize = isTablet && isPortrait ? 22 : isTablet ? 16 : 11
   const tabletHomeIconSize = isTablet && isPortrait ? 30 : isTablet ? 22 : 13
+  const activeWorkOrigin = WORK_ORIGINS.includes(status.gcodeModes?.wcs as (typeof WORK_ORIGINS)[number])
+    ? status.gcodeModes?.wcs as (typeof WORK_ORIGINS)[number]
+    : null
 
   const wCoords: Record<string, number> = {
     X: status.wpos.x, Y: status.wpos.y, Z: status.wpos.z,
@@ -142,6 +148,19 @@ export function DRO({ isTablet = false }: { isTablet?: boolean }) {
     return () => window.clearTimeout(timeoutId)
   }, [pendingAxisAction, pendingAxisActionStarted])
 
+  useEffect(() => {
+    if (!workOriginOpen) return
+
+    function handleOutsideClick(event: MouseEvent) {
+      if (workOriginRef.current && !workOriginRef.current.contains(event.target as Node)) {
+        setWorkOriginOpen(false)
+      }
+    }
+
+    document.addEventListener('mousedown', handleOutsideClick)
+    return () => document.removeEventListener('mousedown', handleOutsideClick)
+  }, [workOriginOpen])
+
 
   function zeroAxis(axis: string) { sendRaw(`G10 L20 P0 ${axis}0`) }
   function zeroAll() { sendRaw(`G10 L20 P0 ${visibleAxes.map(a => `${a}0`).join(' ')}`) }
@@ -174,30 +193,74 @@ export function DRO({ isTablet = false }: { isTablet?: boolean }) {
     <div className="panel flex flex-col">
       <div className="panel-header justify-between">
         <span className='text-lg font-bold'>Position</span>
-        <div className="flex items-center gap-0.5 bg-elevated rounded-sm border border-border p-0.5">
-          {(['WPos', 'MPos'] as const).map(m => {
-            const active = positionMode === m || positionMode === 'Both'
-            return (
-              <button
-                key={m}
-                onClick={() => {
-                  if (m === 'WPos') {
-                    if (positionMode === 'WPos') return
-                    setPositionMode(positionMode === 'Both' ? 'MPos' : 'Both')
-                  } else {
-                    if (positionMode === 'MPos') return
-                    setPositionMode(positionMode === 'Both' ? 'WPos' : 'Both')
-                  }
-                }}
-                className={`px-2.5 py-0.5 text-base rounded-sm transition-colors ${active
-                  ? 'bg-surface border border-border text-text-primary shadow-sm'
-                  : 'text-text-muted hover:text-text-primary'
-                }`}
+        <div className="flex items-center gap-1.5">
+          <div className="flex items-center gap-0.5 bg-elevated rounded-sm border border-border p-0.5">
+            {(['WPos', 'MPos'] as const).map(m => {
+              const active = positionMode === m || positionMode === 'Both'
+              return (
+                <button
+                  key={m}
+                  onClick={() => {
+                    if (m === 'WPos') {
+                      if (positionMode === 'WPos') return
+                      setPositionMode(positionMode === 'Both' ? 'MPos' : 'Both')
+                    } else {
+                      if (positionMode === 'MPos') return
+                      setPositionMode(positionMode === 'Both' ? 'WPos' : 'Both')
+                    }
+                  }}
+                  className={`px-2.5 py-0.5 text-base rounded-sm transition-colors ${active
+                    ? 'bg-surface border border-border text-text-primary shadow-sm'
+                    : 'text-text-muted hover:text-text-primary'
+                  }`}
+                >
+                  {m}
+                </button>
+              )
+            })}
+          </div>
+          <div ref={workOriginRef} className="relative">
+            <button
+              onClick={() => setWorkOriginOpen(open => !open)}
+              className={`flex items-center gap-1 px-2.5 py-1 text-base rounded-sm border transition-colors ${
+                workOriginOpen
+                  ? 'bg-accent/10 border-accent/50 text-accent'
+                  : 'bg-elevated border-border text-text-primary hover:border-border-strong'
+              }`}
+              title="Select work origin"
+            >
+              <span className="font-mono">{activeWorkOrigin ?? 'WCS'}</span>
+              <svg
+                className={`w-3 h-3 transition-transform ${workOriginOpen ? 'rotate-180' : ''}`}
+                viewBox="0 0 12 12" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round"
               >
-                {m}
-              </button>
-            )
-          })}
+                <path d="M2 4l4 4 4-4" />
+              </svg>
+            </button>
+            {workOriginOpen && (
+              <div className="absolute right-0 top-full mt-1 min-w-[5.5rem] overflow-hidden rounded-sm border border-border bg-surface shadow-lg z-20 py-1">
+                {WORK_ORIGINS.map(origin => {
+                  const isActive = origin === activeWorkOrigin
+                  return (
+                    <button
+                      key={origin}
+                      onClick={() => {
+                        sendRaw(origin)
+                        setWorkOriginOpen(false)
+                      }}
+                      className={`w-full px-3 py-1.5 text-left text-base font-mono transition-colors ${
+                        isActive
+                          ? 'bg-accent/10 text-accent font-semibold'
+                          : 'text-text-primary hover:bg-elevated'
+                      }`}
+                    >
+                      {origin}
+                    </button>
+                  )
+                })}
+              </div>
+            )}
+          </div>
         </div>
       </div>
 
