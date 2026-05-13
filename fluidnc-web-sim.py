@@ -3,13 +3,12 @@
 # Usage: python3 fluidnc-web-sim.py [FluidNC_IP]
 # Then browse to http://localhost:8080
 #
-# proxy=False  Simulates a FluidNC machine locally. No hardware needed.
-# proxy=True   Forwards HTTP to a real FluidNC device and bridges WebSocket.
+# No FluidNC_IP: Simulates a FluidNC machine locally. No hardware needed.
+# With FluidNC_IP: Forwards HTTP to a real FluidNC device and bridges WebSocket.
 #
 # Dependencies: pip install flask websockets requests zeroconf
 
-proxy = False
-
+import argparse
 import asyncio, json, os, re, shutil, sys, threading, random
 
 import requests
@@ -20,7 +19,17 @@ try:
 except ImportError:
     print("websockets missing; pip install websockets"); sys.exit(1)
 
-fluidnc_ip     = ''
+parser = argparse.ArgumentParser(description='FluidNC web simulator and proxy')
+parser.add_argument(
+    'fluidnc_ip',
+    nargs='?',
+    default='',
+    help='Real FluidNC IP or host. If provided, the simulator runs in proxy mode.',
+)
+args = parser.parse_args()
+
+fluidnc_ip     = args.fluidnc_ip
+proxy          = bool(fluidnc_ip)
 fluidnc_ws_url = ''   # resolved from real ESP800 in proxy mode
 http_port  = 8080
 ws_port    = 8081
@@ -62,9 +71,6 @@ def _resolve_ws_url(ip: str) -> str:
     return url
 
 if proxy:
-    if len(sys.argv) < 2:
-        print("proxy=True requires FluidNC IP as argument"); sys.exit(1)
-    fluidnc_ip = sys.argv[1]
     print(f"Proxying to FluidNC at {fluidnc_ip}")
     fluidnc_ws_url = _resolve_ws_url(fluidnc_ip)
     print()

@@ -816,13 +816,12 @@ export function JogPad() {
 
   return (
     <>
-      {!jobRunning && (
-        compact
-          ? <TabletJogPad onSwitchStyle={() => {
-              setCompact(false)
-              localStorage.setItem('jog.desktopStyle', 'rose')
-            }} />
-          : <div className="panel flex flex-col">
+      {compact
+        ? <TabletJogPad onSwitchStyle={() => {
+            setCompact(false)
+            localStorage.setItem('jog.desktopStyle', 'rose')
+          }} />
+        : !jobRunning && <div className="panel flex flex-col">
               <div className="panel-header flex items-center justify-between text-lg font-bold">
                 <span>Jog</span>
                 <div className="inline-flex rounded border border-border overflow-hidden">
@@ -895,7 +894,7 @@ export function JogPad() {
 
               </div>
             </div>
-      )}
+  }
 
       <div className="panel flex flex-col">
         <div className="panel-header text-lg font-bold">Overrides</div>
@@ -1217,21 +1216,21 @@ export function TabletJogPad({ onSwitchStyle }: { onSwitchStyle?: () => void } =
 
   const canJog = status.state === 'Idle' || status.state === 'Jog'
   const jobRunning = useJobRunningWithLinger(status.state)
+  const jogDisabled = !canJog || jobRunning
+  const { keyboardJog, setKeyboardJog } = useKeyboardJog(continuous, canJog, xyFeed, zFeed)
 
-  const { start: startYp, stop: stopYp } = useHoldJog('Y', 1, xyFeed, stepSize, continuous, !canJog)
-  const { start: startYm, stop: stopYm } = useHoldJog('Y', -1, xyFeed, stepSize, continuous, !canJog)
-  const { start: startXp, stop: stopXp } = useHoldJog('X', 1, xyFeed, stepSize, continuous, !canJog)
-  const { start: startXm, stop: stopXm } = useHoldJog('X', -1, xyFeed, stepSize, continuous, !canJog)
-  const { start: startZp, stop: stopZp } = useHoldJog('Z', 1, zFeed, stepSize, continuous, !canJog)
-  const { start: startZm, stop: stopZm } = useHoldJog('Z', -1, zFeed, stepSize, continuous, !canJog)
+  const { start: startYp, stop: stopYp } = useHoldJog('Y', 1, xyFeed, stepSize, continuous, jogDisabled)
+  const { start: startYm, stop: stopYm } = useHoldJog('Y', -1, xyFeed, stepSize, continuous, jogDisabled)
+  const { start: startXp, stop: stopXp } = useHoldJog('X', 1, xyFeed, stepSize, continuous, jogDisabled)
+  const { start: startXm, stop: stopXm } = useHoldJog('X', -1, xyFeed, stepSize, continuous, jogDisabled)
+  const { start: startZp, stop: stopZp } = useHoldJog('Z', 1, zFeed, stepSize, continuous, jogDisabled)
+  const { start: startZm, stop: stopZm } = useHoldJog('Z', -1, zFeed, stepSize, continuous, jogDisabled)
 
   const steps = units === 'in' ? [0.001, 0.01, 0.1, 1] : [0.1, 1, 10, 100]
 
   useEffect(() => {
     if (!steps.includes(stepSize)) setStepSize(steps[1])
   }, [units])
-
-  if (jobRunning) return null
 
   return (
     <>
@@ -1310,8 +1309,30 @@ export function TabletJogPad({ onSwitchStyle }: { onSwitchStyle?: () => void } =
         </div>
 
         {/* Jog controls */}
-        <div className="p-2 sm:p-4 portrait:p-5 landscape:p-6 max-sm:portrait:p-2 flex-1 min-h-0 flex justify-center items-center overflow-hidden">
-          <div className="flex flex-row items-stretch justify-center portrait:h-[320px] portrait:gap-6 landscape:gap-5 landscape:w-full landscape:aspect-[7/5] landscape:max-h-full max-sm:portrait:w-full max-sm:portrait:h-[52vw] max-sm:portrait:gap-2 select-none [-webkit-touch-callout:none]">
+        <div className={`relative p-2 sm:p-4 portrait:p-5 landscape:p-6 max-sm:portrait:p-2 flex-1 min-h-0 flex justify-center items-center overflow-hidden ${jogDisabled ? 'opacity-40' : ''}`}>
+          {onSwitchStyle && continuous && (
+            <button
+              title={keyboardJog ? 'Keyboard jog ON — Arrows: X/Y · −/+: Z' : 'Enable keyboard jogging'}
+              onClick={() => setKeyboardJog(k => !k)}
+              className={`absolute left-2 top-2 z-10 flex items-center justify-center w-8 h-8 rounded border transition-all ${
+                keyboardJog
+                  ? 'bg-accent/15 border-accent/50 text-accent'
+                  : 'border-border bg-surface/90 text-text-muted hover:text-text-primary'
+              }`}
+              disabled={jogDisabled}
+            >
+              <svg viewBox="0 0 16 16" width="14" height="14" fill="currentColor">
+                <rect x="1" y="3" width="14" height="10" rx="2" fill="none" stroke="currentColor" strokeWidth="1.3"/>
+                <rect x="3" y="5.5" width="2" height="2" rx="0.4"/>
+                <rect x="6.5" y="5.5" width="2" height="2" rx="0.4"/>
+                <rect x="10" y="5.5" width="2" height="2" rx="0.4"/>
+                <rect x="3" y="9" width="2" height="2" rx="0.4"/>
+                <rect x="6.5" y="9" width="3" height="2" rx="0.4"/>
+                <rect x="10" y="9" width="2" height="2" rx="0.4"/>
+              </svg>
+            </button>
+          )}
+          <div className={`relative flex flex-row items-stretch justify-center portrait:h-[320px] portrait:gap-6 landscape:gap-5 landscape:w-full landscape:aspect-[7/5] landscape:max-h-full max-sm:portrait:w-full max-sm:portrait:h-[52vw] max-sm:portrait:gap-2 select-none [-webkit-touch-callout:none] ${jogDisabled ? 'pointer-events-none' : ''}`}>
           <div className="grid grid-cols-3 grid-rows-3 gap-2 sm:gap-4 portrait:gap-4 max-sm:portrait:gap-2 landscape:shrink-0 aspect-square">
             <div />
             <button
