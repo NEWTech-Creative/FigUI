@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { ArrowRightToLine, Home, Power, TriangleAlert } from 'lucide-react'
+import { ArrowRightToLine, Home, Power, Square, TriangleAlert } from 'lucide-react'
 import { useMachineStore, activePosition } from '../store'
 import { sendRaw, sendRealtime, sendSilentAlarmQuery } from '../lib/ws'
 import { jogFeedKeyForAxis, loadPersistedJogFeed } from '../lib/jog'
@@ -45,6 +45,7 @@ type PendingAxisAction = {
 
 const MOTION_STATES = new Set(['Jog', 'Hold', 'Home'])
 const E_STOP_HIDE_DELAY_MS = 700
+const HOME_ALL_ACTION_AXIS = 'all'
 
 function useIsPortrait() {
   const [portrait, setPortrait] = useState(() =>
@@ -104,7 +105,7 @@ export function DRO({ isTablet = false }: { isTablet?: boolean }) {
 
   const visibleAxes = AXES.slice(0, axes)
   const isJobActive = useMotionControlLock(status.state)
-  const isPendingAxisActionInMotion = pendingAxisAction !== null && (pendingAxisActionStarted || status.state === 'Home')
+  const isHomeAllPending = pendingAxisAction?.kind === 'home' && pendingAxisAction.axis === HOME_ALL_ACTION_AXIS
   const shouldHideMotionControls = isJobActive && pendingAxisAction === null
   const areAxisButtonsDisabled = pendingAxisAction !== null
 
@@ -156,7 +157,11 @@ export function DRO({ isTablet = false }: { isTablet?: boolean }) {
     setPendingAxisActionStarted(false)
     sendRaw(`$H${axis}`)
   }
-  function homeAll() { sendRaw('$H') }
+  function homeAll() {
+    setPendingAxisAction({ kind: 'home', axis: HOME_ALL_ACTION_AXIS })
+    setPendingAxisActionStarted(false)
+    sendRaw('$H')
+  }
   function cancelPendingAxisAction() {
     if (pendingAxisAction?.kind === 'go-to-zero') {
       sendRealtime(0x85)
@@ -261,34 +266,58 @@ export function DRO({ isTablet = false }: { isTablet?: boolean }) {
               </button>
             )}
             {!shouldHideMotionControls && (
-              <button
-                className={`shrink-0 flex items-center justify-center gap-0.5 rounded-sm
-                           border border-border text-text-muted
-                           hover:text-accent hover:border-accent/50 hover:bg-accent/5
-                           disabled:opacity-45 disabled:cursor-not-allowed disabled:hover:text-text-muted disabled:hover:border-border disabled:hover:bg-transparent
-                           transition-all duration-100 ${tabletBtnSize}`}
-                onClick={() => goToZero(ax)}
-                title={`Go to ${ax} zero`}
-                disabled={areAxisButtonsDisabled}
-              >
-                <ArrowRightToLine size={tabletIconSize} />
-                <span className={`font-mono ${isTablet ? 'text-lg' : 'text-[11px]'}`}>0</span>
-              </button>
+              pendingAxisAction?.axis === ax && pendingAxisAction.kind === 'go-to-zero' ? (
+                <button
+                  className={`shrink-0 flex items-center justify-center rounded-sm
+                             border border-danger/50 text-danger bg-danger/10
+                             hover:bg-danger/15 transition-all duration-100 ${tabletBtnSize}`}
+                  onClick={cancelPendingAxisAction}
+                  title={`Cancel ${ax} move`}
+                >
+                  <Square size={tabletIconSize} className="fill-current" />
+                </button>
+              ) : (
+                <button
+                  className={`shrink-0 flex items-center justify-center gap-0.5 rounded-sm
+                             border border-border text-text-muted
+                             hover:text-accent hover:border-accent/50 hover:bg-accent/5
+                             disabled:opacity-45 disabled:cursor-not-allowed disabled:hover:text-text-muted disabled:hover:border-border disabled:hover:bg-transparent
+                             transition-all duration-100 ${tabletBtnSize}`}
+                  onClick={() => goToZero(ax)}
+                  title={`Go to ${ax} zero`}
+                  disabled={areAxisButtonsDisabled}
+                >
+                  <ArrowRightToLine size={tabletIconSize} />
+                  <span className={`font-mono ${isTablet ? 'text-lg' : 'text-[11px]'}`}>0</span>
+                </button>
+              )
             )}
             {!shouldHideMotionControls && (
-              <button
-                className={`shrink-0 flex items-center justify-center rounded-sm
-                           border border-border text-text-muted
-                           disabled:opacity-45 disabled:cursor-not-allowed disabled:hover:border-border disabled:hover:bg-transparent
-                           hover:border-current hover:bg-current/5
-                           transition-all duration-100 ${tabletBtnSize}`}
-                style={{ ['--tw-text-opacity' as string]: '1' } as React.CSSProperties}
-                onClick={() => homeAxis(ax)}
-                title={`Home ${ax}`}
-                disabled={areAxisButtonsDisabled}
-              >
-                <Home size={tabletHomeIconSize} style={{ color: AXIS_COLOR[ax] ?? 'var(--text-muted)' }} />
-              </button>
+              pendingAxisAction?.axis === ax && pendingAxisAction.kind === 'home' ? (
+                <button
+                  className={`shrink-0 flex items-center justify-center rounded-sm
+                             border border-danger/50 text-danger bg-danger/10
+                             hover:bg-danger/15 transition-all duration-100 ${tabletBtnSize}`}
+                  onClick={cancelPendingAxisAction}
+                  title={`Abort ${ax} homing`}
+                >
+                  <Square size={tabletIconSize} className="fill-current" />
+                </button>
+              ) : (
+                <button
+                  className={`shrink-0 flex items-center justify-center rounded-sm
+                             border border-border text-text-muted
+                             disabled:opacity-45 disabled:cursor-not-allowed disabled:hover:border-border disabled:hover:bg-transparent
+                             hover:border-current hover:bg-current/5
+                             transition-all duration-100 ${tabletBtnSize}`}
+                  style={{ ['--tw-text-opacity' as string]: '1' } as React.CSSProperties}
+                  onClick={() => homeAxis(ax)}
+                  title={`Home ${ax}`}
+                  disabled={areAxisButtonsDisabled}
+                >
+                  <Home size={tabletHomeIconSize} style={{ color: AXIS_COLOR[ax] ?? 'var(--text-muted)' }} />
+                </button>
+              )
             )}
           </div>
         ))}
@@ -296,7 +325,7 @@ export function DRO({ isTablet = false }: { isTablet?: boolean }) {
 
       {/* Action buttons */}
       <div className="border-t border-border px-3 py-2 flex gap-2">
-        {!shouldHideMotionControls && !isPendingAxisActionInMotion && (
+        {!shouldHideMotionControls && !isHomeAllPending && (
           <button
             className={`btn btn-warn flex-1 font-bold ${isTablet && isPortrait ? 'h-20 text-xl' : isTablet ? 'h-14 text-lg' : 'h-7 text-base'}`}
             onClick={zeroAll}
@@ -306,7 +335,7 @@ export function DRO({ isTablet = false }: { isTablet?: boolean }) {
             ⊙ Zero All
           </button>
         )}
-        {!shouldHideMotionControls && !isPendingAxisActionInMotion && (
+        {!shouldHideMotionControls && !isHomeAllPending && (
           <button
             className={`btn btn-ghost flex-1 font-bold flex items-center justify-center gap-1.5 ${isTablet && isPortrait ? 'h-20 text-xl' : isTablet ? 'h-14 text-lg' : 'h-7 text-base'}`}
             onClick={homeAll}
@@ -317,15 +346,14 @@ export function DRO({ isTablet = false }: { isTablet?: boolean }) {
             Home All
           </button>
         )}
-        {isPendingAxisActionInMotion && (
+        {!shouldHideMotionControls && isHomeAllPending && (
           <button
-            className={`btn btn-warn flex-1 font-bold ${isTablet && isPortrait ? 'h-20 text-xl' : isTablet ? 'h-14 text-lg' : 'h-7 text-sm'}`}
+            className={`btn btn-warn flex-1 font-bold flex items-center justify-center gap-1.5 ${isTablet && isPortrait ? 'h-20 text-xl' : isTablet ? 'h-14 text-lg' : 'h-7 text-sm'}`}
             onClick={cancelPendingAxisAction}
-            title={pendingAxisAction?.kind === 'home'
-              ? 'Cancel homing (soft reset controller)'
-              : 'Cancel axis move (jog cancel)'}
+            title="Abort homing (soft reset controller)"
           >
-            Cancel
+            <Square size={isTablet && isPortrait ? 24 : isTablet ? 20 : 12} className="fill-current" />
+            Abort Homing
           </button>
         )}
         {shouldHideMotionControls && (
