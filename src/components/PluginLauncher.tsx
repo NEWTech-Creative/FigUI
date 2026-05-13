@@ -385,17 +385,19 @@ export function PluginLauncher({ isTablet, onLaunchPanel, activeLayout }: { isTa
                           <PluginIcon src={entry.base + 'icon.png'} />
                         </div>
                         <div className="flex-1 min-w-0">
-                          <p className="font-medium text-text-primary text-base truncate">
+                          <p className="font-medium text-text-primary text-base truncate" title={entry.name}>
                             {entry.name}
                           </p>
-                          <div className="flex items-center gap-2 mt-0.5">
+                          <div className="flex items-center gap-2 mt-0.5 min-w-0">
                             {entry.version && (
                               <span className="text-sm text-text-dim font-mono shrink-0">
                                 v{entry.version}
                               </span>
                             )}
                             {entry.author && (
-                              <span className="text-sm text-text-dim shrink-0">by {entry.author}</span>
+                              <span className="text-sm text-text-dim truncate min-w-0" title={`by ${entry.author}`}>
+                                by {entry.author}
+                              </span>
                             )}
                           </div>
                         </div>
