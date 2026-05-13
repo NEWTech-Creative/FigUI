@@ -9,17 +9,22 @@ import type { MachineState } from '../types'
 const ALARM_MESSAGES: Record<number, string> = {
   1: 'Hard limit triggered',
   2: 'Soft limit exceeded',
-  3: 'Reset while in motion',
+  3: 'Abort Cycle',
   4: 'Probe fail — initial state',
   5: 'Probe fail — no contact',
   6: 'Homing fail — reset',
   7: 'Homing fail — door open',
   8: 'Homing fail — pull-off',
   9: 'Homing fail — approach',
-  10: 'Homing fail — dual axis',
-  11: 'Spindle control fault',
-  12: 'Control pin high at start',
-  13: 'Homing required',
+  10: 'Spindle control fault',
+  11: 'Input Pin Initially On',
+  12: 'Ambiguous Switch',
+  13: 'Hard stop',
+  14: 'Machine is unhomed',
+  15: 'Initialization failure',
+  16: 'Expander reset',
+  17: 'G-code command error',
+  18: 'Probe hard limit',
 }
 
 const AXES = ['X', 'Y', 'Z', 'A', 'B', 'C'] as const
@@ -342,7 +347,7 @@ export function DRO({ isTablet = false }: { isTablet?: boolean }) {
             <div className="flex flex-col gap-2 flex-1 min-w-0">
               <div className="flex flex-col gap-1 min-w-0">
                 <span className="text-2xl font-black text-danger uppercase tracking-widest leading-none">
-                  {status.alarmCode != null ? `Alarm ${status.alarmCode}` : 'Alarm'}
+                  Alarm
                 </span>
 
                 <span className="text-2xl font-semibold text-text-primary leading-snug">

@@ -423,11 +423,13 @@ function handleLine(line: string) {
     }
   }
 
-  if (isSilentLine) return
-
   const alarmMatch = line.match(/^Active alarm:\s*(\d+)\s*\(([^)]+)\)/)
   if (alarmMatch) {
-    useMachineStore.getState().updateStatus({ alarmName: alarmMatch[2] })
+    useMachineStore.getState().updateStatus({
+      alarmCode: parseInt(alarmMatch[1], 10),
+      alarmName: alarmMatch[2],
+    })
+    if (isSilentLine) return
     lineHandlers.forEach(fn => fn(line))
     return
   }
@@ -435,6 +437,7 @@ function handleLine(line: string) {
   const alarmCodeMatch = line.match(/^ALARM:(\d+)$/)
   if (alarmCodeMatch) {
     useMachineStore.getState().updateStatus({ alarmCode: parseInt(alarmCodeMatch[1], 10) })
+    if (isSilentLine) return
     lineHandlers.forEach(fn => fn(line))
     return
   }
@@ -442,9 +445,12 @@ function handleLine(line: string) {
   const msgAlarmMatch = line.match(/\[MSG:INFO:\s*ALARM:\s*(.+?)\]/)
   if (msgAlarmMatch) {
     useMachineStore.getState().updateStatus({ alarmName: msgAlarmMatch[1].trim() })
+    if (isSilentLine) return
     lineHandlers.forEach(fn => fn(line))
     return
   }
+
+  if (isSilentLine) return
 
   if (line.startsWith('{"EEPROM":') || line.startsWith('{"cmd":"400"')) return
 

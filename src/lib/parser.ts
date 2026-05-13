@@ -9,7 +9,7 @@ export function parseStatusReport(raw: string): Partial<MachineStatus> | null {
   status.state = stateParts[0] as MachineState
   if (stateParts[0] === 'Alarm' && stateParts[1]) {
     status.alarmCode = parseInt(stateParts[1], 10)
-  } else {
+  } else if (stateParts[0] !== 'Alarm') {
     status.alarmCode = undefined
   }
 
