@@ -1,0 +1,3543 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>3D CNC Visualizer</title>
+<script>
+(() => {
+  class Color {
+    constructor(v = 0xffffff) {
+      if (v instanceof Color) { this.r = v.r; this.g = v.g; this.b = v.b; return }
+      if (typeof v === 'number') {
+        this.r = ((v >> 16) & 255) / 255; this.g = ((v >> 8) & 255) / 255; this.b = (v & 255) / 255; return
+      }
+      const s = String(v).trim()
+      if (s.startsWith('#')) {
+        const n = parseInt(s.slice(1).length === 3 ? s.slice(1).split('').map(c => c + c).join('') : s.slice(1), 16)
+        this.r = ((n >> 16) & 255) / 255; this.g = ((n >> 8) & 255) / 255; this.b = (n & 255) / 255; return
+      }
+      const m = s.match(/rgba?\(([^)]+)\)/)
+      if (m) {
+        const p = m[1].split(',').map(x => parseFloat(x))
+        this.r = (p[0] || 0) / 255; this.g = (p[1] || 0) / 255; this.b = (p[2] || 0) / 255; return
+      }
+      this.r = this.g = this.b = 1
+    }
+    clone() { return new Color(this) }
+    lerp(c, a) { this.r += (c.r - this.r) * a; this.g += (c.g - this.g) * a; this.b += (c.b - this.b) * a; return this }
+    getHexString() {
+      const n = (Math.round(this.r * 255) << 16) | (Math.round(this.g * 255) << 8) | Math.round(this.b * 255)
+      return n.toString(16).padStart(6, '0')
+    }
+    toStyle(alpha = 1) { return `rgba(${Math.round(this.r*255)},${Math.round(this.g*255)},${Math.round(this.b*255)},${alpha})` }
+  }
+  class Vector2 { constructor(x = 0, y = 0) { this.x = x; this.y = y } }
+  class Vector3 {
+    constructor(x = 0, y = 0, z = 0) { this.x = x; this.y = y; this.z = z }
+    set(x, y, z) { this.x = x; this.y = y; this.z = z; return this }
+    copy(v) { this.x = v.x; this.y = v.y; this.z = v.z; return this }
+    clone() { return new Vector3(this.x, this.y, this.z) }
+    add(v) { this.x += v.x; this.y += v.y; this.z += v.z; return this }
+    sub(v) { this.x -= v.x; this.y -= v.y; this.z -= v.z; return this }
+    addScaledVector(v, s) { this.x += v.x*s; this.y += v.y*s; this.z += v.z*s; return this }
+    subVectors(a, b) { this.x = a.x - b.x; this.y = a.y - b.y; this.z = a.z - b.z; return this }
+    crossVectors(a, b) { this.x = a.y*b.z - a.z*b.y; this.y = a.z*b.x - a.x*b.z; this.z = a.x*b.y - a.y*b.x; return this }
+    dot(v) { return this.x*v.x + this.y*v.y + this.z*v.z }
+    multiplyScalar(s) { this.x *= s; this.y *= s; this.z *= s; return this }
+    length() { return Math.hypot(this.x, this.y, this.z) }
+    normalize() { const l = this.length() || 1; return this.multiplyScalar(1 / l) }
+  }
+  class Quaternion {
+    constructor(){ this.x=0; this.y=0; this.z=0; this.w=1 }
+    setFromUnitVectors(from, to) {
+      const d=from.dot(to)
+      if(d>=1-1e-6){this.x=0;this.y=0;this.z=0;this.w=1;return this}
+      if(d<=-1+1e-6){
+        let perp=new Vector3(1,0,0)
+        if(Math.abs(from.x)>0.9) perp=new Vector3(0,1,0)
+        const ax=new Vector3().crossVectors(from,perp).normalize()
+        this.x=ax.x;this.y=ax.y;this.z=ax.z;this.w=0;return this
+      }
+      const ax=new Vector3().crossVectors(from,to)
+      const s=Math.sqrt((1+d)*2)
+      this.x=ax.x/s;this.y=ax.y/s;this.z=ax.z/s;this.w=s/2;return this
+    }
+    apply(v){
+      const qx=this.x,qy=this.y,qz=this.z,qw=this.w
+      const tx=2*(qy*v.z-qz*v.y),ty=2*(qz*v.x-qx*v.z),tz=2*(qx*v.y-qy*v.x)
+      return new Vector3(v.x+qw*tx+qy*tz-qz*ty, v.y+qw*ty+qz*tx-qx*tz, v.z+qw*tz+qx*ty-qy*tx)
+    }
+    isIdentity(){ return Math.abs(this.w-1)<1e-6 }
+  }
+  class Object3D {
+    constructor() {
+      this.children = []; this.position = new Vector3(); this.rotation = { x:0, y:0, z:0 }
+      this.scale = new Vector3(1,1,1); this.visible = true; this.userData = {}
+      this.quaternion = new Quaternion()
+    }
+    add(...items) { this.children.push(...items); return this }
+    remove(item) { this.children = this.children.filter(c => c !== item); return this }
+  }
+  class Group extends Object3D {}
+  class Scene extends Group { constructor(){ super(); this.background = new Color(0) } }
+  class Camera extends Object3D {
+    constructor(){ super(); this.up = new Vector3(0,1,0); this._target = new Vector3() }
+    lookAt(v){ this._target.copy(v); return this }
+    getWorldDirection(out = new Vector3()){ return out.subVectors(this._target, this.position).normalize() }
+    updateProjectionMatrix(){}
+  }
+  class PerspectiveCamera extends Camera { constructor(fov=45, aspect=1, near=.1, far=1e5){ super(); this.fov=fov*Math.PI/180; this.aspect=aspect; this.near=near; this.far=far } }
+  class OrthographicCamera extends Camera { constructor(l,r,t,b,n=.1,f=1e5){ super(); this.left=l; this.right=r; this.top=t; this.bottom=b; this.near=n; this.far=f } }
+  class Geometry { constructor(type, data = {}){ this.type=type; Object.assign(this, data) } dispose(){} }
+  class BoxGeometry extends Geometry { constructor(w,h,d){ super('box', { w,h,d }) } }
+  class CylinderGeometry extends Geometry { constructor(r1,r2,h){ super('cylinder', { r:Math.max(r1,r2), h }) } }
+  class ConeGeometry extends Geometry { constructor(r,h){ super('cone', { r,h }) } }
+  class TorusGeometry extends Geometry { constructor(r,t){ super('torus', { r:r+t, h:t*2 }) } }
+  class EdgesGeometry extends Geometry { constructor(base){ super('edges', { base }) } }
+  class BufferAttribute { constructor(array, itemSize){ this.array=array; this.itemSize=itemSize; this.needsUpdate=false } }
+  class BufferGeometry extends Geometry {
+    constructor(){ super('buffer'); this.points=[]; this.attributes={}; this.drawRange={ start:0, count:Infinity } }
+    setFromPoints(points){ this.points = points.map(p => p.clone ? p.clone() : new Vector3(p.x,p.y,p.z)); return this }
+    setAttribute(name, attr){ this.attributes[name]=attr; return this }
+    setDrawRange(start, count){ this.drawRange = { start, count }; return this }
+  }
+  class Material { constructor(o={}){ this.color = o.color instanceof Color ? o.color : new Color(o.color ?? 0xffffff); this.transparent=!!o.transparent; this.opacity=o.opacity ?? 1; this.vertexColors=!!o.vertexColors; this.type=this.constructor.name } dispose(){} }
+  class MeshLambertMaterial extends Material {}
+  class MeshBasicMaterial extends Material {}
+  class LineBasicMaterial extends Material { constructor(o={}){ super(o); this.linewidth=o.linewidth ?? 1 } }
+  class SpriteMaterial extends Material { constructor(o={}){ super(o); this.map=o.map } }
+  class Mesh extends Object3D { constructor(geometry, material){ super(); this.geometry=geometry; this.material=material } }
+  class LineSegments extends Mesh {}
+  class Line extends Mesh {}
+  class Sprite extends Mesh { constructor(material){ super(new Geometry('sprite'), material) } }
+  class CanvasTexture { constructor(canvas){ this.canvas = canvas } dispose(){} }
+  class AmbientLight extends Object3D {}
+  class DirectionalLight extends Object3D { constructor(){ super(); this.castShadow=false } }
+  class Plane { constructor(normal, constant){ this.normal=normal; this.constant=constant } }
+  class Ray { constructor(origin, direction){ this.origin=origin; this.direction=direction } intersectPlane(plane, out){ const d = plane.normal.dot(this.direction); if (Math.abs(d) < 1e-6) return null; const t = -(this.origin.dot(plane.normal) + plane.constant) / d; if (t < 0) return null; out.copy(this.origin).addScaledVector(this.direction, t); return out } }
+  class Raycaster {
+    setFromCamera(ndc, camera) {
+      const basis = cameraBasis(camera)
+      if (camera instanceof OrthographicCamera) {
+        const ox = ndc.x * (camera.right - camera.left) / 2
+        const oy = ndc.y * (camera.top - camera.bottom) / 2
+        const origin = camera.position.clone().addScaledVector(basis.right, ox).addScaledVector(basis.up, oy)
+        this.ray = new Ray(origin, basis.forward.clone())
+        return
+      }
+      const aspect = camera.aspect || 1
+      const tan = Math.tan(camera.fov || Math.PI / 4)
+      const dir = basis.forward.clone().addScaledVector(basis.right, ndc.x * tan * aspect).addScaledVector(basis.up, ndc.y * tan).normalize()
+      this.ray = new Ray(camera.position.clone(), dir)
+    }
+  }
+  function cameraBasis(camera) {
+    const forward = camera.getWorldDirection(new Vector3()).normalize()
+    const right = new Vector3().crossVectors(forward, camera.up).normalize()
+    const up = new Vector3().crossVectors(right, forward).normalize()
+    return { forward, right, up }
+  }
+  function worldPos(obj, parent = new Vector3()) { return parent.clone().add(obj.position || new Vector3()) }
+  function boxEdges(w,h,d) {
+    const x=w/2,y=h/2,z=d/2, p=[new Vector3(-x,-y,-z),new Vector3(x,-y,-z),new Vector3(x,y,-z),new Vector3(-x,y,-z),new Vector3(-x,-y,z),new Vector3(x,-y,z),new Vector3(x,y,z),new Vector3(-x,y,z)]
+    return [[0,1],[1,2],[2,3],[3,0],[4,5],[5,6],[6,7],[7,4],[0,4],[1,5],[2,6],[3,7]].map(([a,b])=>[p[a],p[b]])
+  }
+  function boxFaces(w,h,d) {
+    const x=w/2,y=h/2,z=d/2
+    return [
+      {v:[new Vector3(-x,-y, z),new Vector3( x,-y, z),new Vector3( x, y, z),new Vector3(-x, y, z)],n:new Vector3( 0, 0, 1)},
+      {v:[new Vector3( x,-y,-z),new Vector3(-x,-y,-z),new Vector3(-x, y,-z),new Vector3( x, y,-z)],n:new Vector3( 0, 0,-1)},
+      {v:[new Vector3(-x,-y,-z),new Vector3(-x,-y, z),new Vector3(-x, y, z),new Vector3(-x, y,-z)],n:new Vector3(-1, 0, 0)},
+      {v:[new Vector3( x,-y, z),new Vector3( x,-y,-z),new Vector3( x, y,-z),new Vector3( x, y, z)],n:new Vector3( 1, 0, 0)},
+      {v:[new Vector3(-x, y, z),new Vector3( x, y, z),new Vector3( x, y,-z),new Vector3(-x, y,-z)],n:new Vector3( 0, 1, 0)},
+      {v:[new Vector3(-x,-y,-z),new Vector3( x,-y,-z),new Vector3( x,-y, z),new Vector3(-x,-y, z)],n:new Vector3( 0,-1, 0)},
+    ]
+  }
+  function cylinderFaces(r,h,segs=12) {
+    const faces=[],y0=-h/2,y1=h/2
+    for(let i=0;i<segs;i++){
+      const a0=(i/segs)*Math.PI*2,a1=((i+1)/segs)*Math.PI*2
+      const c0=Math.cos(a0),s0=Math.sin(a0),c1=Math.cos(a1),s1=Math.sin(a1),am=(a0+a1)/2
+      faces.push({v:[new Vector3(c0*r,y0,s0*r),new Vector3(c1*r,y0,s1*r),new Vector3(c1*r,y1,s1*r),new Vector3(c0*r,y1,s0*r)],n:new Vector3(Math.cos(am),0,Math.sin(am))})
+      faces.push({v:[new Vector3(0,y0,0),new Vector3(c1*r,y0,s1*r),new Vector3(c0*r,y0,s0*r)],n:new Vector3(0,-1,0)})
+      faces.push({v:[new Vector3(0,y1,0),new Vector3(c0*r,y1,s0*r),new Vector3(c1*r,y1,s1*r)],n:new Vector3(0,1,0)})
+    }
+    return faces
+  }
+  function coneFaces(r,h,segs=10) {
+    const faces=[],y0=-h/2,y1=h/2,apex=new Vector3(0,y1,0),sl=Math.sqrt(h*h+r*r)||1
+    for(let i=0;i<segs;i++){
+      const a0=(i/segs)*Math.PI*2,a1=((i+1)/segs)*Math.PI*2
+      const c0=Math.cos(a0),s0=Math.sin(a0),c1=Math.cos(a1),s1=Math.sin(a1),am=(a0+a1)/2
+      faces.push({v:[new Vector3(c0*r,y0,s0*r),new Vector3(c1*r,y0,s1*r),apex.clone()],n:new Vector3(Math.cos(am)*h/sl,r/sl,Math.sin(am)*h/sl)})
+      faces.push({v:[new Vector3(0,y0,0),new Vector3(c1*r,y0,s1*r),new Vector3(c0*r,y0,s0*r)],n:new Vector3(0,-1,0)})
+    }
+    return faces
+  }
+  function rotX(v,a){ if(!a) return v.clone(); const cy=Math.cos(a),sy=Math.sin(a); return new Vector3(v.x,v.y*cy-v.z*sy,v.y*sy+v.z*cy) }
+
+  class WebGLRenderer {
+    constructor({ canvas }) { this.canvas=canvas; this.ctx=canvas.getContext('2d'); this.shadowMap={}; this.pixelRatio=1 }
+    setPixelRatio(r){ this.pixelRatio=r }
+    setSize(w,h){ const d=this.pixelRatio||1; this.canvas.width=Math.max(1,w*d); this.canvas.height=Math.max(1,h*d); this.canvas.style.width=w+'px'; this.canvas.style.height=h+'px'; this.ctx.setTransform(d,0,0,d,0,0) }
+    render(scene, camera) {
+      const ctx=this.ctx, w=this.canvas.clientWidth||this.canvas.width, h=this.canvas.clientHeight||this.canvas.height
+      ctx.clearRect(0,0,w,h); ctx.fillStyle=(scene.background||new Color(0)).toStyle(1); ctx.fillRect(0,0,w,h)
+      const basis=cameraBasis(camera)
+      const lightDir=new Vector3(0.55,0.82,0.35).normalize()
+
+      const project=(p)=>{
+        const rel=p.clone().sub(camera.position),x=rel.dot(basis.right),y=rel.dot(basis.up),z=rel.dot(basis.forward)
+        if(camera instanceof OrthographicCamera){const s=h/Math.max(1,(camera.top-camera.bottom));return{x:w/2+x*s,y:h/2-y*s,z}}
+        const f=(h*0.5)/Math.tan((camera.fov||Math.PI/4)/2),zz=Math.max(1,z)
+        return{x:w/2+x*f/zz,y:h/2-y*f/zz,z}
+      }
+      const viewDir=camera.getWorldDirection(new Vector3())
+      const lineBatch=[],spriteBatch=[]; let faceBatch=[]
+
+      const collect=(obj,pos=new Vector3(),rx=0)=>{
+        if(!obj.visible) return
+        const wp=pos.clone().add(obj.position||new Vector3())
+        const nrx=rx+(obj.rotation?.x||0)
+        if(obj instanceof Sprite){
+          // XYZ labels and other sprites
+          const proj=project(wp)
+          if(proj.z>0&&obj.material?.map?.canvas) spriteBatch.push({canvas:obj.material.map.canvas,x:proj.x,y:proj.y})
+        } else if(obj instanceof Line||obj instanceof LineSegments){
+          const g=obj.geometry,mat=obj.material
+          if(g.type==='edges'&&g.base?.type==='box') {
+            if(obj.userData.alwaysOnTop) {
+              // Bed boundary — always drawn on top so working area extents stay visible
+              boxEdges(g.base.w,g.base.h,g.base.d).forEach(([a,b])=>lineBatch.push({a:wp.clone().add(a),b:wp.clone().add(b),mat}))
+            } else {
+              // Structure outlines — depth-sorted so they hide behind closer solid faces
+              // Subtract 1 from depth so each edge sorts just in front of its parent face (prevents z-fighting)
+              boxEdges(g.base.w,g.base.h,g.base.d).forEach(([a,b])=>{
+                const wa=wp.clone().add(a),wb=wp.clone().add(b)
+                const depth=wa.clone().add(wb).multiplyScalar(0.5).sub(camera.position).dot(basis.forward) - 1.0
+                faceBatch.push({type:'line',a:wa,b:wb,mat,depth,transp:false})
+              })
+            }
+          }
+          else if(g.points?.length) for(let i=0;i<g.points.length-1;i+=(obj instanceof LineSegments?2:1)) lineBatch.push({a:wp.clone().add(g.points[i]),b:wp.clone().add(g.points[i+1]),mat})
+          else if(g.attributes.position){
+            const arr=g.attributes.position.array,cols=g.attributes.color?.array,count=Math.min(g.drawRange.count,arr.length/3)
+            for(let i=0;i<count-1;i+=2){const c=cols?new Color():null;if(cols){c.r=cols[i*3];c.g=cols[i*3+1];c.b=cols[i*3+2]}lineBatch.push({a:new Vector3(arr[i*3],arr[i*3+1],arr[i*3+2]),b:new Vector3(arr[(i+1)*3],arr[(i+1)*3+1],arr[(i+1)*3+2]),mat,col:c})}
+          }
+        } else if(obj instanceof Mesh&&obj.geometry){
+          const mat=obj.material,g=obj.geometry
+          if(g.type==='sprite'){/* skip — handled above */}
+          else {
+            let faces
+            if(g.type==='box') faces=boxFaces(g.w,g.h,g.d)
+            else if(g.type==='cylinder') faces=cylinderFaces(g.r,g.h)
+            else if(g.type==='cone') faces=coneFaces(g.r,g.h)
+            else if(g.type==='torus') faces=cylinderFaces(g.r,g.h,16)
+            else faces=[]
+            const alpha=mat.opacity??1, transp=mat.transparent&&alpha<0.99
+            // Apply own quaternion first (for cones oriented by setFromUnitVectors), then parent Euler
+            const hasQ=!obj.quaternion.isIdentity()
+            const lq=(v)=> hasQ ? obj.quaternion.apply(v) : v
+            for(const f of faces){
+              const wn=rotX(lq(f.n.clone()),nrx)
+              if(wn.dot(viewDir)>0.02) continue
+              const wv=f.v.map(v=>wp.clone().add(rotX(lq(v.clone()),nrx)))
+              let depth=0; for(const v of wv) depth+=v.clone().sub(camera.position).dot(basis.forward); depth/=wv.length
+              // Ambient 0.55 + diffuse 0.45; gamma lift raises dark theme colours to solid fills
+              const diff=Math.max(0,wn.dot(lightDir))*0.45, bright=0.55+diff
+              const c=mat.color
+              // Gamma lift: pow(0.45) strongly raises near-black values while barely affecting bright colours
+              const gm=0.45
+              const rr=Math.pow(Math.max(c.r,0.01),gm), gg=Math.pow(Math.max(c.g,0.01),gm), bb=Math.pow(Math.max(c.b,0.01),gm)
+              const col=`rgba(${Math.round(rr*255*bright)},${Math.round(gg*255*bright)},${Math.round(bb*255*bright)},${alpha})`
+              faceBatch.push({verts:wv,col,alpha,depth,transp})
+            }
+          }
+        }
+        obj.children?.forEach(c=>collect(c,wp,nrx))
+      }
+      // drawFaceBatch — sorts and renders current faceBatch, then clears it
+      const drawFaceBatch=()=>{
+        faceBatch.sort((a,b)=>b.depth-a.depth)
+        for(const pass of [false,true]){
+          for(const f of faceBatch){
+            if(f.transp!==pass) continue
+            if(f.type==='line'){
+              const A=project(f.a),B=project(f.b)
+              ctx.globalAlpha=f.mat?.opacity??1
+              ctx.strokeStyle=(f.mat?.color??new Color(0xffffff)).toStyle(1)
+              ctx.lineWidth=f.mat?.linewidth||1
+              ctx.beginPath(); ctx.moveTo(A.x,A.y); ctx.lineTo(B.x,B.y); ctx.stroke()
+              ctx.globalAlpha=1
+            } else {
+              const proj=f.verts.map(project)
+              ctx.beginPath(); ctx.moveTo(proj[0].x,proj[0].y)
+              for(let i=1;i<proj.length;i++) ctx.lineTo(proj[i].x,proj[i].y)
+              ctx.closePath()
+              ctx.globalAlpha=f.alpha; ctx.fillStyle=f.col; ctx.fill()
+              ctx.strokeStyle='rgba(255,255,255,0.07)'; ctx.lineWidth=0.6; ctx.stroke()
+              ctx.globalAlpha=1
+            }
+          }
+        }
+      }
+      // Render each top-level group as an independent painter layer — prevents inter-group z-fighting
+      for(const child of scene.children){
+        if(!child.visible) continue
+        faceBatch=[]
+        collect(child)
+        drawFaceBatch()
+      }
+      // Always-on-top lines (grid, gcode paths, axis arrows, bed boundary) drawn last
+      for(const l of lineBatch){
+        const A=project(l.a),B=project(l.b)
+        ctx.globalAlpha=l.mat?.opacity??1; ctx.strokeStyle=(l.col||l.mat?.color||new Color(1)).toStyle(ctx.globalAlpha)
+        ctx.lineWidth=l.mat?.linewidth||1; ctx.beginPath(); ctx.moveTo(A.x,A.y); ctx.lineTo(B.x,B.y); ctx.stroke(); ctx.globalAlpha=1
+      }
+      // Axis labels (sprites) always on top
+      for(const s of spriteBatch){
+        try{ ctx.drawImage(s.canvas,s.x-14,s.y-14,28,28) }catch{}
+      }
+    }
+  }
+  window.THREE = { Color, Vector2, Vector3, Group, Scene, PerspectiveCamera, OrthographicCamera, WebGLRenderer, AmbientLight, DirectionalLight, MeshLambertMaterial, MeshBasicMaterial, LineBasicMaterial, SpriteMaterial, BoxGeometry, CylinderGeometry, ConeGeometry, TorusGeometry, EdgesGeometry, BufferGeometry, BufferAttribute, Mesh, LineSegments, Line, Sprite, CanvasTexture, Raycaster, Plane, DoubleSide:2, PCFSoftShadowMap:1 }
+})()
+</script>
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+  :root {
+    --bg: #0c1018;
+    --surface: #131924;
+    --elevated: #1a2233;
+    --border: #2a3448;
+    --border-strong: #3d4f6e;
+    --accent: #f0a030;
+    --accent-hover: #ffb84d;
+    --text-primary: #e2e6f4;
+    --text-muted: #8896b0;
+    --text-dim: #4a5870;
+    --ok: #34c97a;
+    --warn: #f5c542;
+    --danger: #e84040;
+    --info: #4a90d9;
+    font-family: 'JetBrains Mono', 'Fira Code', 'Cascadia Code', ui-monospace, monospace;
+  }
+
+  html, body {
+    width: 100%; height: 100%;
+    background: var(--bg);
+    color: var(--text-primary);
+    overflow: hidden;
+  }
+
+  #app {
+    display: flex;
+    flex-direction: column;
+    height: 100vh;
+    width: 100%;
+  }
+
+  /* ── Header ── */
+  #header {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 8px 14px;
+    background: var(--surface);
+    border-bottom: 1px solid var(--border);
+    flex-shrink: 0;
+    flex-wrap: wrap;
+    row-gap: 6px;
+  }
+
+  .header-title {
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    color: var(--accent);
+    margin-right: 6px;
+  }
+
+  .header-sep {
+    width: 1px;
+    height: 18px;
+    background: var(--border);
+  }
+
+  .hbtn {
+    display: flex;
+    align-items: center;
+    gap: 5px;
+    padding: 4px 10px;
+    border-radius: 4px;
+    border: 1px solid var(--border);
+    background: var(--elevated);
+    color: var(--text-primary);
+    font: inherit;
+    font-size: 11px;
+    cursor: pointer;
+    transition: border-color 0.15s, background 0.15s;
+    white-space: nowrap;
+  }
+  .hbtn:hover { border-color: var(--accent); background: #1e2d42; }
+  .hbtn.active { border-color: var(--accent); color: var(--accent); }
+  .hbtn.danger:hover { border-color: var(--danger); color: var(--danger); }
+  .hbtn.ok.active { border-color: var(--ok); color: var(--ok); background: rgba(52,201,122,0.1); }
+  .hbtn.info.active { border-color: var(--info); color: var(--info); background: rgba(74,144,217,0.1); }
+  .hbtn.warn.active { border-color: var(--warn); color: var(--warn); background: rgba(245,197,66,0.1); }
+  .hbtn.danger.active { border-color: var(--danger); color: var(--danger); background: rgba(232,64,64,0.1); }
+  .hbtn:disabled { opacity: 0.45; cursor: not-allowed; }
+
+  .hbtn svg { width: 12px; height: 12px; stroke: currentColor; fill: none; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+
+  .status-pill {
+    display: flex; align-items: center; gap: 5px;
+    padding: 3px 9px;
+    border-radius: 99px;
+    font-size: 10px;
+    font-weight: 700;
+    letter-spacing: 0.1em;
+    border: 1px solid;
+    text-transform: uppercase;
+  }
+  .status-pill.idle { color: var(--ok); border-color: var(--ok); background: rgba(52,201,122,0.08); }
+  .status-pill.run  { color: var(--accent); border-color: var(--accent); background: rgba(240,160,48,0.1); }
+  .status-pill.alarm { color: var(--danger); border-color: var(--danger); background: rgba(232,64,64,0.1); }
+  .status-pill.hold { color: var(--warn); border-color: var(--warn); background: rgba(245,197,66,0.08); }
+  .status-pill.disconnected { color: var(--text-dim); border-color: var(--border); background: transparent; }
+  .status-dot { width: 6px; height: 6px; border-radius: 50%; background: currentColor; }
+
+  .pos-display {
+    display: flex; gap: 12px;
+    font-size: 11px;
+    color: var(--text-muted);
+  }
+  .pos-display span { color: var(--text-primary); }
+  .pos-display .axis { color: var(--accent); font-weight: 700; }
+
+  .spacer { flex: 1; }
+
+  /* ── Main layout ── */
+  #main {
+    display: flex;
+    flex: 1;
+    overflow: hidden;
+  }
+
+  /* ── 3D Viewport ── */
+  #viewport {
+    flex: 1;
+    position: relative;
+    overflow: hidden;
+    background: var(--bg);
+  }
+
+  #canvas3d {
+    display: block;
+    width: 100% !important;
+    height: 100% !important;
+    position: relative;
+    z-index: 1;
+  }
+
+  #camera-feed {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    opacity: 0;
+    pointer-events: none;
+    transform-origin: center;
+    z-index: 2;
+    transition: opacity 0.15s;
+  }
+  #camera-feed.visible { opacity: var(--camera-opacity, 0.45); }
+  #viewport.camera-on #canvas3d { background: transparent; }
+  #viewport.placing-stock { cursor: crosshair; }
+  #viewport.placing-stock #canvas3d { cursor: grab; }
+  #viewport.placing-stock.dragging-stock #canvas3d { cursor: grabbing; }
+  }
+
+  .viewport-overlay {
+    position: absolute;
+    bottom: 58px;
+    left: 12px;
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    pointer-events: none;
+  }
+
+  .vp-hint {
+    font-size: 10px;
+    color: var(--text-dim);
+    background: rgba(8,13,20,0.7);
+    padding: 3px 8px;
+    border-radius: 4px;
+    border: 1px solid var(--border);
+    width: fit-content;
+  }
+
+  .legend-box {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    background: rgba(8,13,20,0.8);
+    border: 1px solid var(--border);
+    border-radius: 5px;
+    padding: 7px 10px;
+    pointer-events: none;
+  }
+  .legend-item {
+    display: flex; align-items: center; gap: 7px;
+    font-size: 10px; color: var(--text-muted);
+  }
+  .legend-swatch {
+    width: 22px; height: 3px; border-radius: 2px;
+  }
+
+  .progress-bar-wrap {
+    position: absolute;
+    top: 0; left: 0; right: 0;
+    height: 2px;
+    background: var(--border);
+  }
+  .progress-bar-fill {
+    height: 100%;
+    background: var(--accent);
+    transition: width 0.3s;
+    width: 0%;
+  }
+
+  /* ── Side Panel ── */
+  #side-panel {
+    width: 260px;
+    flex-shrink: 0;
+    background: var(--surface);
+    border-left: 1px solid var(--border);
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+  }
+
+  .tabs {
+    display: flex;
+    border-bottom: 1px solid var(--border);
+    flex-shrink: 0;
+  }
+  .tab {
+    flex: 1;
+    padding: 8px 6px;
+    font: inherit;
+    font-size: 10px;
+    font-weight: 700;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--text-muted);
+    background: none;
+    border: none;
+    border-bottom: 2px solid transparent;
+    cursor: pointer;
+    transition: color 0.15s, border-color 0.15s;
+  }
+  .tab:hover { color: var(--text-primary); }
+  .tab.active { color: var(--accent); border-bottom-color: var(--accent); }
+
+  .panel-body {
+    flex: 1;
+    overflow-y: auto;
+    padding: 12px;
+    display: flex;
+    flex-direction: column;
+    gap: 14px;
+  }
+  .panel-body::-webkit-scrollbar { width: 4px; }
+  .panel-body::-webkit-scrollbar-track { background: transparent; }
+  .panel-body::-webkit-scrollbar-thumb { background: var(--border); border-radius: 2px; }
+
+  .panel-section {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+  }
+
+  .section-label {
+    font-size: 9px;
+    font-weight: 700;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+    color: var(--text-dim);
+    padding-bottom: 4px;
+    border-bottom: 1px solid var(--border);
+  }
+
+  .field-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    justify-content: space-between;
+  }
+  .field-label {
+    font-size: 11px;
+    color: var(--text-muted);
+    flex-shrink: 0;
+    min-width: 60px;
+  }
+  .field-value {
+    font-size: 11px;
+    color: var(--text-primary);
+    text-align: right;
+    font-weight: 600;
+  }
+  .field-accent { color: var(--accent); }
+
+  .input-row {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+  }
+  .input-label {
+    font-size: 10px;
+    color: var(--text-muted);
+    min-width: 28px;
+    flex-shrink: 0;
+  }
+  input[type="number"], input[type="text"] {
+    background: var(--elevated);
+    border: 1px solid var(--border);
+    color: var(--text-primary);
+    font: inherit;
+    font-size: 11px;
+    padding: 4px 7px;
+    border-radius: 4px;
+    width: 100%;
+    transition: border-color 0.15s;
+    -moz-appearance: textfield;
+  }
+  input[type="number"]::-webkit-inner-spin-button { display: none; }
+  input:focus { outline: none; border-color: var(--accent); }
+
+  .grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; }
+  .grid-3 { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 6px; }
+
+  .btn {
+    display: flex; align-items: center; justify-content: center; gap: 5px;
+    padding: 6px 10px;
+    border-radius: 4px;
+    border: 1px solid var(--border);
+    background: var(--elevated);
+    color: var(--text-primary);
+    font: inherit;
+    font-size: 11px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.15s;
+    width: 100%;
+  }
+  .btn:hover { border-color: var(--accent); color: var(--accent); }
+  .btn.primary { background: var(--accent); color: #0c1018; border-color: var(--accent); font-weight: 700; }
+  .btn.primary:hover { background: var(--accent-hover); border-color: var(--accent-hover); }
+  .btn svg { width: 11px; height: 11px; stroke: currentColor; fill: none; stroke-width: 2.5; stroke-linecap: round; stroke-linejoin: round; }
+
+  .checkbox-row {
+    display: flex; align-items: center; gap: 8px;
+    font-size: 11px; color: var(--text-muted);
+    cursor: pointer;
+    user-select: none;
+  }
+  .checkbox-row input[type="checkbox"] { accent-color: var(--accent); width: 13px; height: 13px; cursor: pointer; }
+
+  .gcode-stats {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 6px;
+  }
+  .stat-card {
+    background: var(--elevated);
+    border: 1px solid var(--border);
+    border-radius: 5px;
+    padding: 7px 9px;
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+  }
+  .stat-card .s-val { font-size: 14px; font-weight: 700; color: var(--text-primary); }
+  .stat-card .s-lbl { font-size: 9px; color: var(--text-dim); text-transform: uppercase; letter-spacing: 0.1em; }
+  .stat-card.accent .s-val { color: var(--accent); }
+
+  .gcode-list {
+    display: flex;
+    flex-direction: column;
+    gap: 3px;
+    max-height: 280px;
+    overflow: auto;
+  }
+  .gcode-list::-webkit-scrollbar { width: 3px; }
+  .gcode-list::-webkit-scrollbar-thumb { background: var(--border); border-radius: 2px; }
+  .gcode-line {
+    font-family: Consolas, 'Courier New', monospace;
+    font-size: 13px;
+    line-height: 1.2;
+    padding: 2px 6px;
+    border-radius: 3px;
+    color: var(--text-muted);
+    white-space: nowrap;
+    transition: background 0.1s;
+    cursor: default;
+  }
+  .gcode-line:hover { background: var(--elevated); color: var(--text-primary); }
+  .gcode-line.active { background: rgba(240,160,48,0.12); color: var(--accent); }
+  .gcode-line.rapid { color: var(--info); }
+  .gcode-line.cut { color: var(--ok); }
+
+  .file-drop {
+    border: 2px dashed var(--border);
+    border-radius: 6px;
+    padding: 20px 12px;
+    text-align: center;
+    font-size: 11px;
+    color: var(--text-dim);
+    cursor: pointer;
+    transition: border-color 0.15s, color 0.15s;
+    position: relative;
+  }
+  .file-drop:hover, .file-drop.dragging {
+    border-color: var(--accent);
+    color: var(--accent);
+  }
+  .file-drop input { position: absolute; inset: 0; opacity: 0; cursor: pointer; }
+  .file-drop .drop-icon { font-size: 22px; margin-bottom: 6px; }
+
+  .machine-setting {
+    display: flex;
+    flex-direction: column;
+    gap: 3px;
+  }
+  .ms-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 3px 0;
+    border-bottom: 1px solid rgba(42,52,72,0.4);
+    font-size: 10px;
+  }
+  .ms-key { color: var(--text-dim); font-weight: 600; }
+  .ms-val { color: var(--text-primary); }
+
+  .color-preview {
+    width: 10px; height: 10px; border-radius: 2px; flex-shrink: 0;
+  }
+
+  textarea {
+    background: var(--elevated);
+    border: 1px solid var(--border);
+    color: var(--text-primary);
+    font: inherit;
+    font-family: Consolas, 'Courier New', monospace;
+    font-size: 16px;
+    padding: 7px;
+    border-radius: 4px;
+    width: 100%;
+    resize: vertical;
+    min-height: 80px;
+    transition: border-color 0.15s;
+    line-height: 1.5;
+  }
+  textarea:focus { outline: none; border-color: var(--accent); }
+
+  #tab-gcode, #tab-stock, #tab-machine { display: none; }
+  #tab-gcode.visible, #tab-stock.visible, #tab-machine.visible { display: flex; }
+
+  .warning-box {
+    background: rgba(245,197,66,0.06);
+    border: 1px solid rgba(245,197,66,0.25);
+    border-radius: 5px;
+    padding: 8px 10px;
+    font-size: 10px;
+    color: var(--warn);
+    line-height: 1.5;
+  }
+
+  .slider-row {
+    display: flex; align-items: center; gap: 8px;
+  }
+  input[type=range] {
+    -webkit-appearance: none;
+    flex: 1; height: 4px;
+    background: var(--elevated);
+    border-radius: 2px;
+    outline: none;
+    cursor: pointer;
+  }
+  input[type=range]::-webkit-slider-thumb {
+    -webkit-appearance: none;
+    width: 12px; height: 12px;
+    background: var(--accent);
+    border-radius: 50%;
+  }
+  .slider-val { font-size: 10px; color: var(--text-muted); min-width: 30px; text-align: right; }
+
+  .mini-note {
+    font-size: 10px;
+    color: var(--text-dim);
+    line-height: 1.45;
+  }
+
+  .canvas-toolbar {
+    position: absolute;
+    top: 8px;
+    right: 10px;
+    display: flex;
+    align-items: center;
+    gap: 5px;
+    flex-wrap: wrap;
+    justify-content: flex-end;
+    max-width: calc(100% - 20px);
+    z-index: 5;
+  }
+
+  .canvas-bottom-strip {
+    position: absolute;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    z-index: 5;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 8px 10px;
+    border-top: 1px solid var(--border);
+    background: rgba(19,25,36,0.92);
+    backdrop-filter: blur(8px);
+  }
+
+  .strip-group { display: flex; align-items: center; gap: 5px; min-width: 0; }
+  .strip-group.primary { margin-left: auto; }
+  .strip-sep { width: 1px; align-self: stretch; background: var(--border); }
+
+  @media (max-width: 760px) {
+    .canvas-toolbar { left: 10px; justify-content: flex-start; }
+    .canvas-bottom-strip { flex-wrap: wrap; }
+    .strip-group.primary { margin-left: 0; width: 100%; }
+  }
+</style>
+</head>
+<body>
+<div id="app">
+
+  <!-- ── Header ── -->
+  <div id="header">
+    <span class="header-title">⬡ 3D Viz</span>
+    <div class="header-sep"></div>
+
+    <div id="machine-status" class="status-pill disconnected">
+      <div class="status-dot"></div>
+      <span>Disconnected</span>
+    </div>
+
+    <div class="pos-display">
+      <span class="axis">X</span><span id="hdr-x">0.000</span>
+      <span class="axis">Y</span><span id="hdr-y">0.000</span>
+      <span class="axis">Z</span><span id="hdr-z">0.000</span>
+    </div>
+
+    <div class="spacer"></div>
+
+    <button class="hbtn" id="btn-fit" title="Fit view to content">
+      <svg viewBox="0 0 24 24"><path d="M8 3H5a2 2 0 00-2 2v3m18 0V5a2 2 0 00-2-2h-3m0 18h3a2 2 0 002-2v-3M3 16v3a2 2 0 002 2h3"/></svg>
+      Fit
+    </button>
+    <button class="hbtn" id="btn-top" title="Top view">Top</button>
+    <button class="hbtn" id="btn-front" title="Front view">Front</button>
+    <button class="hbtn" id="btn-iso" title="Isometric view">Iso</button>
+
+    <div class="header-sep"></div>
+
+    <div class="header-sep"></div>
+
+    <button class="hbtn" id="btn-sim-play" title="Play simulation" disabled>
+      <svg id="sim-icon-play" viewBox="0 0 24 24"><polygon points="5 3 19 12 5 21 5 3" fill="currentColor" stroke="none"/></svg>
+      <svg id="sim-icon-pause" viewBox="0 0 24 24" style="display:none"><rect x="6" y="4" width="4" height="16" fill="currentColor" stroke="none"/><rect x="14" y="4" width="4" height="16" fill="currentColor" stroke="none"/></svg>
+      <span id="sim-btn-label">Simulate</span>
+    </button>
+    <button class="hbtn" id="btn-sim-reset" title="Reset simulation" disabled>
+      <svg viewBox="0 0 24 24"><polyline points="1 4 1 10 7 10"/><path d="M3.51 15a9 9 0 102.13-9.36L1 10"/></svg>
+    </button>
+    <div style="display:flex;align-items:center;gap:5px;font-size:10px;color:var(--text-muted)">
+      Spd
+      <input type="range" id="sim-speed" min="1" max="20" value="5" style="width:60px">
+      <span id="sim-speed-val" style="min-width:22px;color:var(--text-primary);font-size:10px">5×</span>
+    </div>
+
+    <div class="header-sep"></div>
+
+    <label class="checkbox-row">
+      <input type="checkbox" id="toggle-machine" checked> Frame
+    </label>
+    <label class="checkbox-row">
+      <input type="checkbox" id="toggle-toolhead" checked> Head
+    </label>
+    <label class="checkbox-row">
+      <input type="checkbox" id="toggle-paths" checked> Paths
+    </label>
+    <label class="checkbox-row">
+      <input type="checkbox" id="toggle-stock" checked> Stock
+    </label>
+  </div>
+
+  <!-- ── Main ── -->
+  <div id="main">
+
+    <!-- 3D Viewport -->
+    <div id="viewport">
+      <div class="progress-bar-wrap"><div class="progress-bar-fill" id="job-progress"></div></div>
+      <video id="camera-feed" autoplay muted playsinline></video>
+      <canvas id="canvas3d"></canvas>
+
+      <div class="canvas-toolbar">
+        <button class="hbtn ok active" id="btn-view-3d" title="3D preview is active">
+          <svg viewBox="0 0 24 24"><path d="M21 16V8a2 2 0 00-1-1.73l-7-4a2 2 0 00-2 0l-7 4A2 2 0 003 8v8a2 2 0 001 1.73l7 4a2 2 0 002 0l7-4A2 2 0 0021 16z"/><polyline points="3.27 6.96 12 12.01 20.73 6.96"/><line x1="12" y1="22.08" x2="12" y2="12"/></svg>
+          3D
+        </button>
+        <button class="hbtn info" id="btn-projection" title="Switch to orthographic projection">
+          <svg viewBox="0 0 24 24"><path d="M4 4h16v16H4z"/><path d="M9 4v16M15 4v16M4 9h16M4 15h16"/></svg>
+          <span id="projection-label">Persp</span>
+        </button>
+        <button class="hbtn active" id="btn-rapids" title="Toggle rapid moves">
+          <svg viewBox="0 0 24 24"><path d="M2 12h4m4 0h4m4 0h4"/></svg>
+          Rapids
+        </button>
+        <button class="hbtn danger active" id="btn-tool" title="Toggle tool position marker">
+          <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M12 2v5M12 17v5M2 12h5M17 12h5"/></svg>
+          Tool
+        </button>
+        <button class="hbtn info active" id="btn-follow" title="Keep the live tool near the center of the canvas">
+          <svg viewBox="0 0 24 24"><path d="M12 2l4 8-4-2-4 2 4-8z"/><path d="M12 22V8"/></svg>
+          Follow
+        </button>
+        <button class="hbtn" id="btn-fit-canvas" title="Fit entire path to view">
+          <svg viewBox="0 0 24 24"><path d="M8 3H5a2 2 0 00-2 2v3m18 0V5a2 2 0 00-2-2h-3m0 18h3a2 2 0 002-2v-3M3 16v3a2 2 0 002 2h3"/></svg>
+          Fit
+        </button>
+      </div>
+
+      <div class="viewport-overlay">
+        <div class="legend-box">
+          <div class="legend-item"><div class="legend-swatch" style="background:#4a90d9"></div>Rapid (G0)</div>
+          <div class="legend-item"><div class="legend-swatch" style="background:#34c97a"></div>Cut (G1)</div>
+          <div class="legend-item"><div class="legend-swatch" style="background:#e06030"></div>Arc (G2/G3)</div>
+          <div class="legend-item"><div class="legend-swatch" style="background:#888"></div>Machine bed</div>
+        </div>
+        <div id="sim-progress-display" style="display:none;background:rgba(8,13,20,0.85);border:1px solid var(--accent);border-radius:5px;padding:6px 10px;font-size:10px;color:var(--accent)">
+          ▶ <span id="sim-pct">0%</span> &nbsp;·&nbsp; Move <span id="sim-move-cur">0</span>/<span id="sim-move-tot">0</span>
+        </div>
+        <div class="vp-hint">Drag: orbit · Scroll: zoom · 2-finger: pan/zoom</div>
+      </div>
+
+      <div class="canvas-bottom-strip">
+        <div class="strip-group">
+          <button class="hbtn" id="btn-mist" title="Mist coolant">
+            <svg viewBox="0 0 24 24"><path d="M8 19a4 4 0 110-8 5 5 0 019.9-1"/></svg>
+            Mist
+          </button>
+          <button class="hbtn" id="btn-flood" title="Flood coolant">
+            <svg viewBox="0 0 24 24"><path d="M2 16c3 0 3-2 6-2s3 2 6 2 3-2 6-2 3 2 6 2"/><path d="M2 20c3 0 3-2 6-2s3 2 6 2 3-2 6-2 3 2 6 2"/></svg>
+            Flood
+          </button>
+          <button class="hbtn danger active" id="btn-coolant-off" title="Coolant off">
+            <svg viewBox="0 0 24 24"><path d="M18.36 6.64A9 9 0 115.64 6.64"/><path d="M12 2v10"/></svg>
+            Off
+          </button>
+        </div>
+        <div class="strip-sep"></div>
+        <div class="strip-group primary">
+          <button class="hbtn ok" id="btn-job-start" title="Start loaded SD job" disabled>
+            <svg viewBox="0 0 24 24"><polygon points="5 3 19 12 5 21 5 3" fill="currentColor" stroke="none"/></svg>
+            Start
+          </button>
+          <button class="hbtn warn" id="btn-job-pause" title="Pause running job" style="display:none">
+            <svg viewBox="0 0 24 24"><rect x="6" y="4" width="4" height="16" fill="currentColor" stroke="none"/><rect x="14" y="4" width="4" height="16" fill="currentColor" stroke="none"/></svg>
+            Pause
+          </button>
+          <button class="hbtn ok" id="btn-job-resume" title="Resume held job" style="display:none">
+            <svg viewBox="0 0 24 24"><polygon points="5 3 19 12 5 21 5 3" fill="currentColor" stroke="none"/></svg>
+            Resume
+          </button>
+          <button class="hbtn danger" id="btn-job-abort" title="Abort job" style="display:none">
+            <svg viewBox="0 0 24 24"><rect x="5" y="5" width="14" height="14"/></svg>
+            Abort
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Side Panel -->
+    <div id="side-panel">
+      <div class="tabs">
+        <button class="tab active" data-tab="gcode">GCode</button>
+        <button class="tab" data-tab="stock">Stock</button>
+        <button class="tab" data-tab="machine">Machine</button>
+      </div>
+
+      <!-- GCode Tab -->
+      <div id="tab-gcode" class="panel-body visible">
+        <div class="panel-section">
+          <div class="section-label">Load GCode</div>
+          <button class="btn primary" id="btn-load-machine" style="border-color:var(--info);background:rgba(74,144,217,0.12);color:var(--info)">
+            <svg viewBox="0 0 24 24" style="stroke:var(--info)"><path d="M21 16V8a2 2 0 00-1-1.73l-7-4a2 2 0 00-2 0l-7 4A2 2 0 003 8v8a2 2 0 001 1.73l7 4a2 2 0 002 0l7-4A2 2 0 0021 16z"/><polyline points="3.27 6.96 12 12.01 20.73 6.96"/><line x1="12" y1="22.08" x2="12" y2="12"/></svg>
+            Load from Machine
+          </button>
+          <div id="machine-file-info" style="font-size:10px;color:var(--text-dim);display:none;padding:4px 0"></div>
+          <div class="file-drop" id="file-drop">
+            <input type="file" id="file-input" accept=".nc,.gcode,.cnc,.tap,.gc,.ngc">
+            <div class="drop-icon">📁</div>
+            <div>Drop .nc / .gcode here</div>
+            <div style="font-size:9px;margin-top:3px;color:var(--text-dim)">or click to browse</div>
+          </div>
+          <textarea id="gcode-paste" placeholder="Or paste G-code here…" rows="4"></textarea>
+          <button class="btn" id="btn-load-paste">
+            <svg viewBox="0 0 24 24"><polyline points="16 16 12 12 8 16"/><line x1="12" y1="12" x2="12" y2="21"/><path d="M20.39 18.39A5 5 0 0018 9h-1.26A8 8 0 103 16.3"/></svg>
+            Parse & Render
+          </button>
+        </div>
+
+        <div class="panel-section" id="gcode-stats-section" style="display:none">
+          <div class="section-label">File Stats</div>
+          <div class="gcode-stats">
+            <div class="stat-card accent"><div class="s-val" id="stat-lines">0</div><div class="s-lbl">Lines</div></div>
+            <div class="stat-card"><div class="s-val" id="stat-dist">0 mm</div><div class="s-lbl">Distance</div></div>
+            <div class="stat-card"><div class="s-val" id="stat-rapids">0</div><div class="s-lbl">Rapids</div></div>
+            <div class="stat-card"><div class="s-val" id="stat-cuts">0</div><div class="s-lbl">Cuts</div></div>
+          </div>
+        </div>
+
+        <div class="panel-section" id="gcode-preview-section" style="display:none">
+          <div class="section-label">Path Preview</div>
+          <div class="section-label" style="border:none;padding:0;font-size:9px;color:var(--text-dim)">Bounding box</div>
+          <div class="machine-setting">
+            <div class="ms-row"><span class="ms-key">X</span><span class="ms-val" id="bb-x">—</span></div>
+            <div class="ms-row"><span class="ms-key">Y</span><span class="ms-val" id="bb-y">—</span></div>
+            <div class="ms-row"><span class="ms-key">Z</span><span class="ms-val" id="bb-z">—</span></div>
+          </div>
+        </div>
+
+        <div class="panel-section" id="gcode-list-section" style="display:none">
+          <div class="section-label">Code Lines</div>
+          <div class="gcode-list" id="gcode-list"></div>
+        </div>
+      </div>
+
+      <!-- Stock Tab -->
+      <div id="tab-stock" class="panel-body">
+        <div class="panel-section">
+          <div class="section-label">Stock Dimensions</div>
+          <div class="grid-3">
+            <div>
+              <div class="input-label" style="margin-bottom:3px">Width X</div>
+              <input type="number" id="stock-x" value="100" min="1" max="2000">
+            </div>
+            <div>
+              <div class="input-label" style="margin-bottom:3px">Depth Y</div>
+              <input type="number" id="stock-y" value="100" min="1" max="2000">
+            </div>
+            <div>
+              <div class="input-label" style="margin-bottom:3px">Height Z</div>
+              <input type="number" id="stock-z" value="20" min="0.1" max="500">
+            </div>
+          </div>
+        </div>
+
+        <div class="panel-section">
+          <div class="section-label">Stock Position on Bed</div>
+          <button class="btn" id="btn-place-stock">
+            <svg viewBox="0 0 24 24"><path d="M12 2v20M2 12h20"/><circle cx="12" cy="12" r="4"/></svg>
+            Place Stock on Bed
+          </button>
+          <div class="mini-note" id="stock-place-hint" style="display:none">Top view is active. Drag the stock on the bed, then click Place Stock again to finish.</div>
+          <div class="grid-2">
+            <div>
+              <div class="input-label" style="margin-bottom:3px">Offset X</div>
+              <input type="number" id="stock-ox" value="0">
+            </div>
+            <div>
+              <div class="input-label" style="margin-bottom:3px">Offset Y</div>
+              <input type="number" id="stock-oy" value="0">
+            </div>
+          </div>
+          <div>
+            <div class="input-label" style="margin-bottom:3px">Z Top (work zero)</div>
+            <input type="number" id="stock-oz" value="0">
+          </div>
+        </div>
+
+        <div class="panel-section">
+          <div class="section-label">Work Zero Origin</div>
+          <div class="grid-3" style="gap:4px">
+            <button class="btn" id="origin-corner" style="font-size:9px;padding:5px">Corner</button>
+            <button class="btn" id="origin-center" style="font-size:9px;padding:5px">Center</button>
+            <button class="btn" id="origin-custom" style="font-size:9px;padding:5px">Custom</button>
+          </div>
+          <div id="custom-origin-fields" style="display:none">
+            <div class="grid-2" style="margin-top:6px">
+              <div>
+                <div class="input-label" style="margin-bottom:3px">Origin X</div>
+                <input type="number" id="origin-x" value="0">
+              </div>
+              <div>
+                <div class="input-label" style="margin-bottom:3px">Origin Y</div>
+                <input type="number" id="origin-y" value="0">
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div class="panel-section">
+          <div class="section-label">Stock Opacity</div>
+          <div class="slider-row">
+            <input type="range" id="stock-opacity" min="0" max="100" value="25">
+            <span class="slider-val" id="stock-opacity-val">25%</span>
+          </div>
+        </div>
+
+        <div class="panel-section">
+          <div class="section-label">Camera Bed Overlay</div>
+          <button class="btn" id="btn-camera-overlay">
+            <svg viewBox="0 0 24 24"><path d="M23 7l-7 5 7 5V7z"/><rect x="1" y="5" width="15" height="14" rx="2"/></svg>
+            Camera Overlay
+          </button>
+          <div class="slider-row">
+            <span class="input-label">Opacity</span>
+            <input type="range" id="camera-opacity" min="0" max="100" value="45">
+            <span class="slider-val" id="camera-opacity-val">45%</span>
+          </div>
+          <div class="slider-row">
+            <span class="input-label">Zoom</span>
+            <input type="range" id="camera-scale" min="50" max="200" value="100">
+            <span class="slider-val" id="camera-scale-val">100%</span>
+          </div>
+          <div class="grid-2">
+            <label class="checkbox-row"><input type="checkbox" id="camera-flip-x"> Flip X</label>
+            <label class="checkbox-row"><input type="checkbox" id="camera-flip-y"> Flip Y</label>
+          </div>
+          <div class="mini-note">For testing, this uses the browser camera as a live visual reference under the virtual bed. Browser permission is required.</div>
+        </div>
+
+        <button class="btn primary" id="btn-apply-stock">
+          <svg viewBox="0 0 24 24"><polyline points="20 6 9 17 4 12"/></svg>
+          Apply Stock
+        </button>
+      </div>
+
+      <!-- Machine Tab -->
+      <div id="tab-machine" class="panel-body">
+        <div class="panel-section">
+          <div class="section-label">Machine Size</div>
+          <div class="warning-box" id="machine-warn" style="display:none">
+            ⚠ Not connected to FluidNC. Using manual values.
+          </div>
+          <div class="machine-setting" id="machine-settings-list">
+            <div class="ms-row"><span class="ms-key">$130 Travel X</span><span class="ms-val" id="ms-130">—</span></div>
+            <div class="ms-row"><span class="ms-key">$131 Travel Y</span><span class="ms-val" id="ms-131">—</span></div>
+            <div class="ms-row"><span class="ms-key">$132 Travel Z</span><span class="ms-val" id="ms-132">—</span></div>
+            <div class="ms-row"><span class="ms-key">$110 Max Rate X</span><span class="ms-val" id="ms-110">—</span></div>
+            <div class="ms-row"><span class="ms-key">$111 Max Rate Y</span><span class="ms-val" id="ms-111">—</span></div>
+            <div class="ms-row"><span class="ms-key">$112 Max Rate Z</span><span class="ms-val" id="ms-112">—</span></div>
+            <div class="ms-row"><span class="ms-key">$120 Accel X</span><span class="ms-val" id="ms-120">—</span></div>
+            <div class="ms-row"><span class="ms-key">$121 Accel Y</span><span class="ms-val" id="ms-121">—</span></div>
+            <div class="ms-row"><span class="ms-key">$122 Accel Z</span><span class="ms-val" id="ms-122">—</span></div>
+            <div class="ms-row"><span class="ms-key">$23 Homing Dir</span><span class="ms-val" id="ms-23">—</span></div>
+          </div>
+        </div>
+
+        <div class="panel-section">
+          <div class="section-label">Manual Override</div>
+          <div class="grid-3">
+            <div>
+              <div class="input-label" style="margin-bottom:3px">Bed X mm</div>
+              <input type="number" id="bed-x" value="300" min="10">
+            </div>
+            <div>
+              <div class="input-label" style="margin-bottom:3px">Bed Y mm</div>
+              <input type="number" id="bed-y" value="300" min="10">
+            </div>
+            <div>
+              <div class="input-label" style="margin-bottom:3px">Z Travel</div>
+              <input type="number" id="bed-z" value="100" min="10">
+            </div>
+          </div>
+          <button class="btn primary" id="btn-apply-machine">
+            <svg viewBox="0 0 24 24"><polyline points="20 6 9 17 4 12"/></svg>
+            Rebuild Machine
+          </button>
+        </div>
+
+        <div class="panel-section">
+          <div class="section-label">Machine Home</div>
+          <div style="font-size:9px;color:var(--text-dim);margin-bottom:6px">Where MPos X0 Y0 is after homing. This controls live jog placement.</div>
+          <div>
+            <div class="input-label" style="margin-bottom:3px">MPos 0,0 corner</div>
+            <select id="home-corner">
+              <option value="front-left">Front left</option>
+              <option value="front-right">Front right</option>
+              <option value="back-left">Back left</option>
+              <option value="back-right">Back right</option>
+            </select>
+          </div>
+          <label class="checkbox-row"><input type="checkbox" id="flip-machine-x" checked> Invert X jog direction</label>
+        </div>
+
+        <div class="panel-section">
+          <div class="section-label">Work Zero (Home Position)</div>
+          <div style="font-size:9px;color:var(--text-dim);margin-bottom:6px">Machine coords where GCode X=0, Y=0 lands. Auto-set when GCode is loaded.</div>
+          <div class="grid-2">
+            <div>
+              <div class="input-label" style="margin-bottom:3px">WZ X mm</div>
+              <input type="number" id="wz-x" value="0">
+            </div>
+            <div>
+              <div class="input-label" style="margin-bottom:3px">WZ Y mm</div>
+              <input type="number" id="wz-y" value="0">
+            </div>
+          </div>
+          <button class="btn" id="wz-center" style="margin-top:6px;font-size:9px;padding:5px">⊕ Center bed</button>
+          <button class="btn" id="btn-apply-wz" style="margin-top:6px">
+            <svg viewBox="0 0 24 24"><polyline points="20 6 9 17 4 12"/></svg>
+            Apply Work Zero
+          </button>
+        </div>
+
+        <div class="panel-section">
+          <div class="section-label">Auto-Load from $$</div>
+          <button class="btn" id="btn-load-settings">
+            <svg viewBox="0 0 24 24"><polyline points="1 4 1 10 7 10"/><path d="M3.51 15a9 9 0 102.13-9.36L1 10"/></svg>
+            Fetch $$ Settings
+          </button>
+        </div>
+
+        <div class="panel-section">
+          <div class="section-label">Display</div>
+          <label class="checkbox-row"><input type="checkbox" id="show-grid" checked> Show grid</label>
+          <label class="checkbox-row"><input type="checkbox" id="show-axes" checked> Show axis markers</label>
+          <label class="checkbox-row"><input type="checkbox" id="show-limits" checked> Show travel limits</label>
+        </div>
+      </div>
+
+    </div>
+  </div>
+</div>
+
+<script>
+// ═══════════════════════════════════════════════════════
+// FigUI Plugin Bridge
+// ═══════════════════════════════════════════════════════
+let msgId = 0
+const pending = {}
+
+function call(method, params) {
+  return new Promise((resolve, reject) => {
+    const id = String(++msgId)
+    pending[id] = { resolve, reject }
+    window.parent.postMessage({ type: 'fluid-request', id, method, params: params ?? {} }, '*')
+    // Timeout after 5s
+    setTimeout(() => {
+      if (pending[id]) {
+        delete pending[id]
+        reject(new Error('timeout'))
+      }
+    }, 5000)
+  })
+}
+
+window.addEventListener('message', e => {
+  if (e.data?.type === 'fluid-response') {
+    const p = pending[e.data.id]
+    if (p) {
+      delete pending[e.data.id]
+      e.data.error ? p.reject(new Error(e.data.error)) : p.resolve(e.data.result)
+    }
+  }
+  if (e.data?.type === 'fluid-event') {
+    if (e.data.event === 'status') onMachineStatus(e.data.data)
+  }
+  // Theme injection from FigUI
+  if (e.data?.type === 'theme') applyTheme(e.data.vars)
+})
+
+function applyTheme(vars) {
+  if (!vars) return
+  const root = document.documentElement
+  for (const [k, v] of Object.entries(vars)) root.style.setProperty(k, v)
+  refreshSceneTheme()
+  lastThemeSignature = getThemeSignature()
+}
+
+// ═══════════════════════════════════════════════════════
+// State
+// ═══════════════════════════════════════════════════════
+const state = {
+  machine: { x: 300, y: 300, z: 100 },
+  stock: { x: 100, y: 100, z: 20, ox: 0, oy: 0, oz: 0, opacity: 0.25, originMode: 'corner', customOX: 0, customOY: 0 },
+  toolPos: { x: 0, y: 0, z: 0 },
+  visualToolPos: { x: 0, y: 0, z: 0 },
+  machinePos: { x: 0, y: 0, z: 0 },
+  visualMachinePos: { x: 0, y: 0, z: 0 },
+  _lastToolAnimTime: 0,
+  _hasMachinePosition: false,
+  _hasMachineMpos: false,
+  machineHomeCorner: 'front-left',
+  machineFlipX: true,
+  // workZero: machine coords (world X,Z) where GCode X=0,Y=0 sits (default: bottom-left = 0,0)
+  workZero: { x: 0, y: 0 },
+  gcodeLines: [],
+  connected: false,
+  currentMachineFile: null,
+  showGrid: true, showAxes: true, showLimits: true, showToolhead: true, showPaths: true, showStock: true,
+  showRapids: true,
+  autoFollow: true,
+  projectionMode: 'perspective',
+  coolantState: 'off',
+  loadedPath: null,
+  placingStock: false,
+  draggingStock: false,
+  cameraOverlay: { enabled: false, opacity: 0.45, scale: 1, flipX: false, flipY: false },
+  jobProgress: 0,
+}
+
+const STORAGE_KEY = 'figui.3dVisualiser.v2'
+
+function machineYToSceneZ(machineY) {
+  return state.machine.y - machineY
+}
+
+function syncVisualToolPosition() {
+  state.visualToolPos = { ...state.toolPos }
+  if (state._hasMachineMpos) state.visualMachinePos = { ...state.machinePos }
+  updateToolheadPosition()
+}
+
+function savePersistentState() {
+  const payload = {
+    machine: state.machine,
+    stock: state.stock,
+    workZero: state.workZero,
+    machineHomeCorner: state.machineHomeCorner,
+    machineFlipX: state.machineFlipX,
+    showGrid: state.showGrid,
+    showAxes: state.showAxes,
+    showLimits: state.showLimits,
+    showToolhead: state.showToolhead,
+    showPaths: state.showPaths,
+    showStock: state.showStock,
+    showRapids: state.showRapids,
+    autoFollow: state.autoFollow,
+    projectionMode: state.projectionMode,
+    cameraOverlay: state.cameraOverlay,
+    gcodeText: document.getElementById('gcode-paste')?.value || '',
+  }
+  try { localStorage.setItem(STORAGE_KEY, JSON.stringify(payload)) } catch {}
+}
+
+function loadPersistentState() {
+  try {
+    const raw = localStorage.getItem(STORAGE_KEY)
+    if (!raw) return
+    const saved = JSON.parse(raw)
+    if (saved.machine) state.machine = { ...state.machine, ...saved.machine }
+    if (saved.stock) state.stock = { ...state.stock, ...saved.stock }
+    if (saved.workZero) state.workZero = { ...state.workZero, ...saved.workZero }
+    if (['front-left','front-right','back-left','back-right'].includes(saved.machineHomeCorner)) state.machineHomeCorner = saved.machineHomeCorner
+    if (typeof saved.machineFlipX === 'boolean') state.machineFlipX = saved.machineFlipX
+    for (const key of ['showGrid','showAxes','showLimits','showToolhead','showPaths','showStock','showRapids','autoFollow']) {
+      if (typeof saved[key] === 'boolean') state[key] = saved[key]
+    }
+    if (saved.projectionMode === 'orthographic' || saved.projectionMode === 'perspective') state.projectionMode = saved.projectionMode
+    if (saved.cameraOverlay) state.cameraOverlay = { ...state.cameraOverlay, ...saved.cameraOverlay, enabled: false }
+    if (typeof saved.gcodeText === 'string') state._savedGcodeText = saved.gcodeText
+  } catch {}
+}
+
+function cssVar(name, fallback) {
+  const value = getComputedStyle(document.documentElement).getPropertyValue(name).trim()
+  return value || fallback
+}
+
+function cssColor(name, fallback) {
+  try { return new THREE.Color(cssVar(name, fallback)) }
+  catch { return new THREE.Color(fallback) }
+}
+
+function mixColor(a, b, amount) {
+  return a.clone().lerp(b, amount)
+}
+
+function getThemePalette() {
+  const bg = cssColor('--bg', '#0c1018')
+  const surface = cssColor('--surface', '#131924')
+  const elevated = cssColor('--elevated', '#1a2233')
+  const border = cssColor('--border', '#2a3448')
+  const textMuted = cssColor('--text-muted', '#8896b0')
+  const accent = cssColor('--accent', '#f0a030')
+  const ok = cssColor('--ok', '#34c97a')
+  const danger = cssColor('--danger', '#e84040')
+  const info = cssColor('--info', '#4a90d9')
+
+  return {
+    bg,
+    border,
+    bed: mixColor(surface, bg, 0.45),
+    slot: mixColor(bg, border, 0.35),
+    frame: mixColor(elevated, border, 0.35),
+    rail: mixColor(border, textMuted, 0.35),
+    anod: mixColor(elevated, info, 0.18),
+    carriage: mixColor(border, info, 0.25),
+    spindle: mixColor(textMuted, border, 0.25),
+    grid: mixColor(border, bg, 0.2),
+    limit: mixColor(info, bg, 0.15),
+    stock: mixColor(accent, surface, 0.15),
+    stockEdge: accent,
+    toolBit: mixColor(textMuted, cssColor('--text-primary', '#e2e6f4'), 0.65),
+    rapid: info,
+    cut: ok,
+    arc: danger,
+    axisX: danger,
+    axisY: ok,
+    axisZ: info,
+  }
+}
+
+const THEME_WATCH_VARS = [
+  '--bg', '--surface', '--elevated', '--border', '--text-primary',
+  '--text-muted', '--accent', '--ok', '--danger', '--info',
+]
+let lastThemeSignature = ''
+let themeRefreshTimer = null
+
+function getThemeSignature() {
+  return THEME_WATCH_VARS.map(name => `${name}:${cssVar(name, '')}`).join('|')
+}
+
+function scheduleSceneThemeRefresh() {
+  if (themeRefreshTimer) return
+  themeRefreshTimer = setTimeout(() => {
+    themeRefreshTimer = null
+    const signature = getThemeSignature()
+    if (signature === lastThemeSignature) return
+    lastThemeSignature = signature
+    refreshSceneTheme()
+  }, 50)
+}
+
+function installLiveThemeSync() {
+  lastThemeSignature = getThemeSignature()
+  const observer = new MutationObserver(scheduleSceneThemeRefresh)
+  observer.observe(document.documentElement, {
+    attributes: true,
+    attributeFilter: ['class', 'style', 'data-theme', 'data-color-mode'],
+  })
+  if (document.body) {
+    observer.observe(document.body, {
+      attributes: true,
+      attributeFilter: ['class', 'style', 'data-theme', 'data-color-mode'],
+    })
+  }
+  if (document.head) {
+    observer.observe(document.head, { childList: true, subtree: true, characterData: true })
+  }
+  window.addEventListener('storage', scheduleSceneThemeRefresh)
+  window.matchMedia?.('(prefers-color-scheme: dark)')?.addEventListener?.('change', scheduleSceneThemeRefresh)
+  setInterval(scheduleSceneThemeRefresh, 600)
+}
+
+// ═══════════════════════════════════════════════════════
+// Three.js Setup
+// ═══════════════════════════════════════════════════════
+const canvas = document.getElementById('canvas3d')
+const renderer = new THREE.WebGLRenderer({ canvas, antialias: true, alpha: true })
+renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2))
+renderer.shadowMap.enabled = true
+renderer.shadowMap.type = THREE.PCFSoftShadowMap
+
+const scene = new THREE.Scene()
+scene.background = getThemePalette().bg
+
+const perspectiveCamera = new THREE.PerspectiveCamera(45, 1, 0.1, 50000)
+const orthographicCamera = new THREE.OrthographicCamera(-500, 500, 500, -500, 0.1, 50000)
+let camera = perspectiveCamera
+
+function syncProjectionCamera() {
+  const vp = document.getElementById('viewport')
+  const w = Math.max(vp?.clientWidth || 1, 1)
+  const h = Math.max(vp?.clientHeight || 1, 1)
+  const aspect = w / h
+  perspectiveCamera.aspect = aspect
+  perspectiveCamera.updateProjectionMatrix()
+
+  const halfH = Math.max(10, orbit?.radius || 500) * 0.45
+  const halfW = halfH * aspect
+  orthographicCamera.left = -halfW
+  orthographicCamera.right = halfW
+  orthographicCamera.top = halfH
+  orthographicCamera.bottom = -halfH
+  orthographicCamera.updateProjectionMatrix()
+}
+
+// Orbit Controls (manual implementation — no import needed)
+const orbit = (() => {
+  let isDown = false, isMiddle = false, isShift = false
+  let startX = 0, startY = 0
+  let phi = 0.8, theta = 0.6
+  let radius = 500
+  let target = new THREE.Vector3()
+  let pTarget = new THREE.Vector3()
+
+  function updateCamera() {
+    const x = target.x + radius * Math.sin(phi) * Math.cos(theta)
+    const y = target.y + radius * Math.cos(phi)
+    const z = target.z + radius * Math.sin(phi) * Math.sin(theta)
+    const vp = document.getElementById('viewport')
+    const aspect = Math.max((vp?.clientWidth || 1) / Math.max(vp?.clientHeight || 1, 1), 1e-6)
+    const halfH = Math.max(10, radius) * 0.45
+    const halfW = halfH * aspect
+    orthographicCamera.left = -halfW
+    orthographicCamera.right = halfW
+    orthographicCamera.top = halfH
+    orthographicCamera.bottom = -halfH
+    orthographicCamera.updateProjectionMatrix()
+    camera.position.set(x, y, z)
+    camera.lookAt(target)
+  }
+
+  canvas.addEventListener('mousedown', e => {
+    if (state.placingStock) {
+      state.draggingStock = true
+      syncPlacementUi()
+      setStockOffsetFromBedPoint(screenToBedPoint(e.clientX, e.clientY))
+      e.preventDefault()
+      return
+    }
+    isDown = true; isMiddle = e.button === 1; isShift = e.shiftKey
+    startX = e.clientX; startY = e.clientY
+    e.preventDefault()
+  })
+  window.addEventListener('mouseup', () => { isDown = false })
+  window.addEventListener('mousemove', e => {
+    if (state.placingStock && state.draggingStock) {
+      setStockOffsetFromBedPoint(screenToBedPoint(e.clientX, e.clientY))
+      return
+    }
+    if (!isDown) return
+    const dx = e.clientX - startX, dy = e.clientY - startY
+    startX = e.clientX; startY = e.clientY
+
+    if (isMiddle || isShift) {
+      // Pan
+      const right = new THREE.Vector3()
+      const up = new THREE.Vector3()
+      right.crossVectors(camera.getWorldDirection(new THREE.Vector3()), camera.up).normalize()
+      up.copy(camera.up).normalize()
+      const panSpeed = radius * 0.001
+      target.addScaledVector(right, -dx * panSpeed)
+      target.addScaledVector(up, dy * panSpeed)
+    } else {
+      // Orbit — drag right orbits right; drag up raises camera
+      theta += dx * 0.008
+      phi = Math.max(0.05, Math.min(Math.PI - 0.05, phi - dy * 0.008))
+    }
+    updateCamera()
+  })
+  canvas.addEventListener('wheel', e => {
+    e.preventDefault()
+    radius = Math.max(10, Math.min(10000, radius * (1 + e.deltaY * 0.001)))
+    updateCamera()
+  }, { passive: false })
+
+  window.addEventListener('mouseup', () => {
+    if (state.draggingStock) {
+      state.draggingStock = false
+      syncPlacementUi()
+    }
+  })
+
+  // Touch support — note: theta increases left→right to match mouse orbit direction
+  let touches = []
+  canvas.addEventListener('touchstart', e => { touches = [...e.touches]; isDown = true })
+  canvas.addEventListener('touchend', () => { touches = []; isDown = false })
+  canvas.addEventListener('touchmove', e => {
+    if (e.touches.length === 1 && touches.length >= 1) {
+      const dx = e.touches[0].clientX - touches[0].clientX
+      const dy = e.touches[0].clientY - touches[0].clientY
+      theta += dx * 0.008
+      phi = Math.max(0.05, Math.min(Math.PI - 0.05, phi - dy * 0.008))
+      touches = [...e.touches]
+      updateCamera()
+    } else if (e.touches.length === 2 && touches.length >= 2) {
+      // Pinch-zoom
+      const d0 = Math.hypot(touches[0].clientX - touches[1].clientX, touches[0].clientY - touches[1].clientY)
+      const d1 = Math.hypot(e.touches[0].clientX - e.touches[1].clientX, e.touches[0].clientY - e.touches[1].clientY)
+      if (d0 > 1) radius = Math.max(10, Math.min(10000, radius * (d0 / d1)))
+      // Two-finger pan — midpoint delta
+      const mx0 = (touches[0].clientX + touches[1].clientX) / 2
+      const my0 = (touches[0].clientY + touches[1].clientY) / 2
+      const mx1 = (e.touches[0].clientX + e.touches[1].clientX) / 2
+      const my1 = (e.touches[0].clientY + e.touches[1].clientY) / 2
+      const pdx = mx1 - mx0, pdy = my1 - my0
+      const right = new THREE.Vector3()
+      const up = new THREE.Vector3()
+      right.crossVectors(camera.getWorldDirection(new THREE.Vector3()), camera.up).normalize()
+      up.copy(camera.up).normalize()
+      const panSpeed = radius * 0.001
+      target.addScaledVector(right, pdx * panSpeed)
+      target.addScaledVector(up, -pdy * panSpeed)
+      touches = [...e.touches]
+      updateCamera()
+    }
+    e.preventDefault()
+  }, { passive: false })
+
+  updateCamera()
+
+  return {
+    setTarget(x, y, z) { target.set(x, y, z); updateCamera() },
+    setRadius(r) { radius = r; updateCamera() },
+    setAngles(p, t) { phi = p; theta = t; updateCamera() },
+    get target() { return target },
+    get radius() { return radius },
+  }
+})()
+
+// Lights
+const ambient = new THREE.AmbientLight(0xffffff, 0.5)
+scene.add(ambient)
+const dirLight = new THREE.DirectionalLight(0xffffff, 0.8)
+dirLight.position.set(500, 1000, 500)
+dirLight.castShadow = true
+scene.add(dirLight)
+const fillLight = new THREE.DirectionalLight(0x4466aa, 0.3)
+fillLight.position.set(-200, -200, -200)
+scene.add(fillLight)
+
+// ── Scene groups ──
+const groups = {
+  bed: new THREE.Group(),       // static: bed surface, grid, legs, side rails
+  frame: new THREE.Group(),     // static: gantry uprights, top cross-rail housing
+  gantry: new THREE.Group(),    // moves in Y — the cross-beam
+  carriage: new THREE.Group(),  // moves in X along the gantry
+  zSlide: new THREE.Group(),    // moves in Z — spindle plate + spindle
+  paths: new THREE.Group(),
+  toolhead: new THREE.Group(),  // just the tool bit tip (parented to zSlide logically)
+  stock: new THREE.Group(),
+  axes: new THREE.Group(),
+  limits: new THREE.Group(),
+}
+Object.values(groups).forEach(g => scene.add(g))
+
+function refreshSceneTheme() {
+  if (!scene || !groups) return
+  scene.background = getThemePalette().bg
+  buildMachine()
+  buildStock()
+  installEditedVisualizerGeometry()
+  try { if (parsedGCode) renderPaths() } catch {}
+}
+
+// ═══════════════════════════════════════════════════════
+// Machine Frame Builder — full CNC geometry
+// ═══════════════════════════════════════════════════════
+function buildMachine() {
+  clearGroup(groups.bed)
+  clearGroup(groups.frame)
+  clearGroup(groups.gantry)
+  clearGroup(groups.carriage)
+  clearGroup(groups.zSlide)
+  clearGroup(groups.toolhead)
+  clearGroup(groups.axes)
+  clearGroup(groups.limits)
+
+  const { x: bx, y: by, z: bz } = state.machine
+  const theme = getThemePalette()
+
+  // ── proportional sizing ──────────────────────────────
+  const wallT  = Math.max(8,  Math.min(20, bx * 0.04))   // extrusion / wall thickness
+  const legH   = Math.max(40, Math.min(120, bz * 0.35))  // leg height below bed
+  const railH  = wallT * 0.7                              // linear rail height on sides
+  const bedThk = Math.max(6, wallT * 0.8)                // bed surface thickness
+  const bedY   = legH                                     // Y (up) position of bed top surface
+  // gantryH: enough to house the spindle but kept proportionally lower
+  const spindleHpre = Math.max(40, Math.min(90, bz * 0.3))
+  const zColHpre    = bz * 0.4
+  const minGantryH  = spindleHpre * 1.15 + zColHpre * 0.2
+  const gantryH = Math.max(minGantryH, Math.min(bz * 0.5, 130))
+  const gantryBeamH = Math.max(14, wallT * 1.2)          // cross-beam profile height
+  const gantryBeamD = gantryBeamH                        // cross-beam depth
+  const surrX = 50, surrBack = 100                       // boundary zone extensions (sides, back)
+  const gantryFaceOffsetZ = 30                          // fixed spindle-side gantry face offset
+  const bedFrontExtra = gantryFaceOffsetZ + 10           // extra visual bed so offset gantry stays on rails
+  const bedMinZ = -bedFrontExtra
+  const bedDepth = by + bedFrontExtra
+  const bedCenterZ = bedMinZ + bedDepth / 2
+  state._bedMinZ = bedMinZ
+  state._bedDepth = bedDepth
+  state._bedCenterZ = bedCenterZ
+
+  // Materials
+  const matFrame  = new THREE.MeshLambertMaterial({ color: theme.frame })
+  const matRail   = new THREE.MeshLambertMaterial({ color: theme.rail })
+  const matAnod   = new THREE.MeshLambertMaterial({ color: theme.anod })
+  const matCarr   = new THREE.MeshLambertMaterial({ color: theme.carriage })
+  const matSpindle= new THREE.MeshLambertMaterial({ color: theme.spindle })
+  const matBed    = new THREE.MeshLambertMaterial({ color: theme.bed })
+  const matSlot   = new THREE.MeshLambertMaterial({ color: theme.slot })
+
+  // helper: add box mesh to group
+  function box(grp, w, h, d, mat, px, py, pz) {
+    const m = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), mat)
+    m.position.set(px, py, pz)
+    m.castShadow = true; m.receiveShadow = true
+    grp.add(m)
+    return m
+  }
+  // helper: add edge outline to a mesh
+  function outline(grp, mesh, color, alwaysOnTop = false) {
+    const e = new THREE.LineSegments(new THREE.EdgesGeometry(mesh.geometry), new THREE.LineBasicMaterial({ color }))
+    e.position.copy(mesh.position)
+    if (alwaysOnTop) e.userData.alwaysOnTop = true
+    grp.add(e)
+  }
+
+  // ── 1. BED SURFACE + T-SLOT TABLE ──────────────────────
+  const bedMesh = box(groups.bed, bx, bedThk, bedDepth, matBed, bx/2, bedY - bedThk/2, bedCenterZ)
+  // Bed boundary stays always-on-top so working area extents are always readable
+  const bedBorderColor = mixColor(theme.rail, new THREE.Color(0xffffff), 0.55)
+  outline(groups.bed, bedMesh, bedBorderColor, true)
+
+  // ── 1b. EXTENDED BOUNDARY ZONES (darker) — 50mm each side, 100mm back (gantry side) ──
+  const surrMinZ = bedMinZ - surrBack              // full back edge including extension
+  const surrPanelDepth = by - surrMinZ             // side panels span working area + back ext
+  const surrPanelCenterZ = (surrMinZ + by) / 2    // centre of side panels
+  // Back panel (gantry side)
+  box(groups.bed, bx, bedThk, surrBack, matSlot, bx/2, bedY - bedThk/2, bedMinZ - surrBack/2)
+  // Left and right side panels
+  box(groups.bed, surrX, bedThk, surrPanelDepth, matSlot, -surrX/2, bedY - bedThk/2, surrPanelCenterZ)
+  box(groups.bed, surrX, bedThk, surrPanelDepth, matSlot, bx + surrX/2, bedY - bedThk/2, surrPanelCenterZ)
+
+  // ── 2. MACHINE BASE FRAME / LEGS ───────────────────────
+  // Subtract 1mm from cross-section and stop 0.5mm below bed bottom to prevent Z-fighting
+  const legW = wallT * 1.4 - .1, legD = wallT * 1.4 - .1
+  const legRenderH = Math.max(4, legH - bedThk - 0.5)
+  const machineMinX = -surrX
+  const machineMaxX = bx + surrX
+  const machineMinZ = surrMinZ
+  const machineMaxZ = by
+  const legPositions = [
+    [machineMinX + legW/2, legRenderH/2, machineMinZ + legD/2],
+    [machineMaxX - legW/2, legRenderH/2, machineMinZ + legD/2],
+    [machineMinX + legW/2, legRenderH/2, machineMaxZ - legD/2],
+    [machineMaxX - legW/2, legRenderH/2, machineMaxZ - legD/2],
+  ]
+  for (const [px, py, pz] of legPositions) {
+    const leg = box(groups.bed, legW, legRenderH, legD, matFrame, px, py, pz)
+    outline(groups.bed, leg, theme.rail)
+  }
+
+  // Side rails — span full gantry width including boundary zones
+  const railW = bx + surrX * 2 - 2
+  const frontRailMesh = box(groups.bed, railW, railH - 1, wallT - 1, matRail, bx/2, bedY - railH/2, bedMinZ + wallT/2)
+  outline(groups.bed, frontRailMesh, theme.rail)
+  const backRailMesh  = box(groups.bed, railW, railH - 1, wallT - 1, matRail, bx/2, bedY - railH/2, by - wallT/2)
+  outline(groups.bed, backRailMesh, theme.rail)
+
+  // ── 3. Y-AXIS LINEAR RAILS on top of side rails ────────
+  // Left rail (X=0 side) — the Y axis slides on these
+  const yRailH = railH * 0.5, yRailD = wallT * 0.4
+  // Y-rails extend to outer edges of boundary zones so gantry uprights have full travel
+  const leftYRail = box(groups.bed, yRailD, yRailH, bedDepth, matRail, -surrX + yRailD/2, bedY + yRailH/2, bedCenterZ)
+  const rightYRail = box(groups.bed, yRailD, yRailH, bedDepth, matRail, bx + surrX - yRailD/2, bedY + yRailH/2, bedCenterZ)
+  outline(groups.bed, leftYRail,  theme.rail)
+  outline(groups.bed, rightYRail, theme.rail)
+
+  // ── 4. GANTRY UPRIGHTS — offset to the opposite side of the spindle ──
+  // Uprights are 1mm thinner to avoid edge Z-fighting; height clears bed surface
+  const upW = wallT * 1.6 - 1, upD = wallT * 1.0 - 1
+  const beamLocalZ = -gantryFaceOffsetZ - gantryBeamD * 0.5 // keep spindle-side face at a fixed offset
+  const spindleLocalZ = 0                               // spindle at front (local Z=0)
+  // Uprights start at bedY, span gantryH upward — avoids Z-fighting with bed surface
+  const upL = box(groups.gantry, upW, gantryH, upD, matFrame, -surrX + upW/2, bedY + gantryH/2, beamLocalZ)
+  outline(groups.gantry, upL, theme.rail)
+  const upR = box(groups.gantry, upW, gantryH, upD, matFrame, bx + surrX - upW/2, bedY + gantryH/2, beamLocalZ)
+  outline(groups.gantry, upR, theme.rail)
+
+  // ── 5. GANTRY CROSS-BEAM at back ──
+  const beamY = bedY + gantryH
+  const beam = box(groups.gantry, bx + surrX*2 - 2, gantryBeamH, gantryBeamD, matAnod, bx/2, beamY, beamLocalZ)
+  outline(groups.gantry, beam, theme.rail)
+
+  // X-axis linear rails on spindle-side/front face of cross-beam
+  const xRailH = gantryBeamH * 0.15, xRailW = bx + surrX*2 - 2
+  const beamFaceZ = beamLocalZ + gantryBeamD * 0.5 + 2
+  const xRailTop = box(groups.gantry, xRailW, xRailH, xRailH, matRail,
+    bx/2, beamY + gantryBeamH * 0.3, beamFaceZ - xRailH * 0.5)
+  const xRailBot = box(groups.gantry, xRailW, xRailH, xRailH, matRail,
+    bx/2, beamY - gantryBeamH * 0.3, beamFaceZ - xRailH * 0.5)
+  outline(groups.gantry, xRailTop, theme.rail)
+  outline(groups.gantry, xRailBot, theme.rail)
+
+  // Ball-screw housing on top of beam
+  const screwH = gantryBeamH * 0.25
+  const screw = box(groups.gantry, (bx + surrX*2) * 0.83, screwH, screwH, matRail,
+    bx/2, beamY + gantryBeamH/2 + screwH/2, beamLocalZ)
+  outline(groups.gantry, screw, theme.rail)
+
+  // ── 6. X-AXIS CARRIAGE — reduced height, rides on beam front face ──
+  const carrW = wallT * 2, carrH = gantryBeamH * 0.65, carrD = gantryBeamD * 1.4
+
+  // Carriage rail-grip blocks
+  const cgW = carrW * 1.1, cgH = xRailH * 2.5, cgD = xRailH * 3
+  for (const oy_ of [gantryBeamH * 0.28, -gantryBeamH * 0.28]) {
+    const cg = box(groups.carriage, cgW, cgH, cgD, matRail, 0, beamY + oy_, beamFaceZ - xRailH * 0.5 + cgD * 0.5)
+    outline(groups.carriage, cg, theme.rail)
+  }
+
+  // ── 7. Z-AXIS COLUMN — at front of gantry, reduced height ──
+  const spindleR  = Math.max(8, Math.min(20, bx * 0.035))
+  const spindleH  = Math.max(40, Math.min(90, bz * 0.3))
+  const zColW = carrW * 0.9, zColH = bz * 0.4, zColD = carrD * 0.55
+  const zColumnLocalZ = spindleLocalZ - spindleR - zColD / 2 - 2
+  const zCol = box(groups.zSlide, zColW, zColH, zColD, matAnod,
+    0, beamY - zColH * 0.35, zColumnLocalZ)
+  outline(groups.zSlide, zCol, theme.rail)
+
+  // Z linear rails
+  const zRailW = zColW * 0.12
+  for (const ox_ of [-zColW * 0.28, zColW * 0.28]) {
+    const zr = box(groups.zSlide, zRailW, zColH * 0.88, zRailW, matRail,
+      ox_, beamY - zColH * 0.35, zColumnLocalZ - zColD * 0.3)
+    outline(groups.zSlide, zr, theme.rail)
+  }
+
+  // ── 8. SPINDLE MOUNT PLATE — slim collar at top of spindle only ──
+  const plateW = zColW * 1.15, plateH = zColH * 0.13, plateD = zColD * 0.35
+  const plate = box(groups.zSlide, plateW, plateH, plateD, matCarr,
+    0, beamY - zColH * 0.15, spindleLocalZ)
+  outline(groups.zSlide, plate, theme.rail)
+
+  // ── 9. SPINDLE / ROUTER BODY — at front of gantry ──
+  const spindleGeo = new THREE.CylinderGeometry(spindleR, spindleR * 0.85, spindleH, 16)
+  const spindleMesh = new THREE.Mesh(spindleGeo, matSpindle)
+  spindleMesh.position.set(0, beamY - zColH * 0.2 - spindleH * 0.25, spindleLocalZ)
+  spindleMesh.castShadow = true
+  groups.zSlide.add(spindleMesh)
+
+  // Spindle collet / nut ring
+  const colletGeo = new THREE.CylinderGeometry(spindleR * 0.6, spindleR * 0.55, spindleH * 0.12, 12)
+  const colletMesh = new THREE.Mesh(colletGeo, matRail)
+  colletMesh.position.set(0, beamY - zColH * 0.2 - spindleH * 0.78, spindleLocalZ)
+  colletMesh.castShadow = true
+  groups.zSlide.add(colletMesh)
+
+  // ── 10. Store reference positions BEFORE buildToolhead so it reads correct values ──
+  state._bedY = bedY
+  state._beamY = beamY
+  state._spindleBaseY = beamY - zColH * 0.35
+  state._spindleR = spindleR
+  state._spindleH = spindleH
+  state._plateD = plateD
+  state._upD = upD
+  state._spindleLocalZ = spindleLocalZ
+  const _tipGroupY = beamY - zColH * 0.2 - spindleH * 0.78
+  state._tipGroupY = _tipGroupY
+  state._tipYBuilt = _tipGroupY - spindleH * 0.41
+
+  // ── 10b. TOOL BIT (separate group, tip is the tool point) ──
+  buildToolhead()
+
+  // ── 11. GRID ──────────────────────────────────────────────
+  if (state.showGrid) {
+    const gridStep = 100
+    const gridY = bedY + 0.8
+    const points = []
+    // Start from homed corner (machine X=0,Y=0 → scene X=0,Z=by), stay within working area
+    for (let x = 0; x <= bx + 0.001; x += gridStep) {
+      points.push(new THREE.Vector3(x, gridY, 0), new THREE.Vector3(x, gridY, by))
+    }
+    for (let z = by; z >= -0.001; z -= gridStep) {
+      points.push(new THREE.Vector3(0, gridY, z), new THREE.Vector3(bx, gridY, z))
+    }
+    const gridGeo = new THREE.BufferGeometry().setFromPoints(points)
+    const gridCol = mixColor(theme.border, new THREE.Color(0xffffff), 0.32)
+    const gridMat = new THREE.LineBasicMaterial({ color: gridCol, transparent: true, opacity: 0.55 })
+    groups.bed.add(new THREE.LineSegments(gridGeo, gridMat))
+  }
+
+  // ── 12. AXIS ARROWS ──────────────────────────────────────
+  if (state.showAxes) {
+    const arrowLen = Math.max(bx, by) * 0.13
+    const axisY = bedY + (state.stock.oz || 0) + (state.stock.z || 20) + 4
+    const axisZ = machineYToSceneZ(0)
+    const axisOrigin = new THREE.Vector3(0, axisY, axisZ)
+    addArrow(groups.axes, axisOrigin, new THREE.Vector3(1,0,0), arrowLen, theme.axisX)
+    addArrow(groups.axes, axisOrigin, new THREE.Vector3(0,0,-1), arrowLen, theme.axisY)
+    addArrow(groups.axes, axisOrigin, new THREE.Vector3(0,1,0), arrowLen * 0.7, theme.axisZ)
+    addText(groups.axes, 'X', new THREE.Vector3(arrowLen + 10, axisY, axisZ), theme.axisX)
+    addText(groups.axes, 'Y', new THREE.Vector3(0, axisY, axisZ - arrowLen - 10), theme.axisY)
+    addText(groups.axes, 'Z', new THREE.Vector3(0, axisY + arrowLen * 0.7 + 10, axisZ), theme.axisZ)
+  }
+
+  // ── 13. TRAVEL LIMIT WIREFRAME ────────────────────────────
+  if (state.showLimits) {
+    const limitEdges = new THREE.LineSegments(
+      new THREE.EdgesGeometry(new THREE.BoxGeometry(bx, bz, by)),
+      new THREE.LineBasicMaterial({ color: theme.limit, transparent: true, opacity: 0.4 })
+    )
+    limitEdges.position.set(bx/2, bedY + bz/2, by/2)
+    groups.limits.add(limitEdges)
+  }
+
+  // Update carriage/gantry to current tool position
+  updateToolheadPosition()
+  fitCamera()
+}
+
+function addArrow(group, origin, direction, length, color) {
+  const mat = new THREE.LineBasicMaterial({ color })
+  const points = [origin.clone(), origin.clone().addScaledVector(direction, length)]
+  const geo = new THREE.BufferGeometry().setFromPoints(points)
+  group.add(new THREE.Line(geo, mat))
+  // Cone tip
+  const coneGeo = new THREE.ConeGeometry(3, 10, 6)
+  const coneMat = new THREE.MeshBasicMaterial({ color })
+  const cone = new THREE.Mesh(coneGeo, coneMat)
+  cone.position.copy(origin.clone().addScaledVector(direction, length))
+  // Orient cone along direction
+  cone.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), direction)
+  group.add(cone)
+}
+
+function addText(group, label, pos, color) {
+  // Sprite-based label
+  const canvas2d = document.createElement('canvas')
+  canvas2d.width = 64; canvas2d.height = 64
+  const ctx = canvas2d.getContext('2d')
+  const c = color instanceof THREE.Color ? color : new THREE.Color(color)
+  ctx.fillStyle = '#' + c.getHexString()
+  ctx.font = 'bold 40px monospace'
+  ctx.textAlign = 'center'; ctx.textBaseline = 'middle'
+  ctx.fillText(label, 32, 32)
+  const tex = new THREE.CanvasTexture(canvas2d)
+  const mat = new THREE.SpriteMaterial({ map: tex, transparent: true })
+  const sprite = new THREE.Sprite(mat)
+  sprite.position.copy(pos)
+  sprite.scale.set(16, 16, 1)
+  group.add(sprite)
+}
+
+// ═══════════════════════════════════════════════════════
+// Stock Builder
+// ═══════════════════════════════════════════════════════
+function buildStock() {
+  clearGroup(groups.stock)
+  if (!state.showStock) return
+
+  const s = state.stock
+  const bedY = state._bedY || 80
+  const theme = getThemePalette()
+  let ox = s.ox, oy = s.oy
+
+  if (s.originMode === 'center') {
+    ox = s.ox - s.x / 2
+    oy = s.oy - s.y / 2
+  } else if (s.originMode === 'custom') {
+    ox = s.customOX
+    oy = s.customOY
+  }
+
+  // Stock sits ON the bed — bedY is the bed surface Y, oz is Z offset (work zero height)
+  const stockBaseY = bedY + s.oz
+  const stockGeo = new THREE.BoxGeometry(s.x, s.z, s.y)
+  const stockMat = new THREE.MeshLambertMaterial({
+    color: theme.stock,
+    transparent: true,
+    opacity: s.opacity,
+    side: THREE.DoubleSide,
+  })
+  const stockMesh = new THREE.Mesh(stockGeo, stockMat)
+  stockMesh.position.set(ox + s.x / 2, stockBaseY + s.z / 2, machineYToSceneZ(oy + s.y / 2))
+  stockMesh.castShadow = true
+  stockMesh.receiveShadow = true
+  groups.stock.add(stockMesh)
+
+  // Stock outline
+  const edgesGeo = new THREE.EdgesGeometry(stockGeo)
+  const edgesMat = new THREE.LineBasicMaterial({ color: theme.stockEdge, transparent: true, opacity: 0.8 })
+  const edges = new THREE.LineSegments(edgesGeo, edgesMat)
+  edges.position.copy(stockMesh.position)
+  groups.stock.add(edges)
+}
+
+// ═══════════════════════════════════════════════════════
+// Toolhead (tool bit tip) — built inside zSlide context
+// ═══════════════════════════════════════════════════════
+let toolheadGroup = null
+function buildToolhead() {
+  clearGroup(groups.toolhead)
+  if (!state.showToolhead) return
+
+  const { x: bx, y: by, z: bz } = state.machine
+  const spindleR = state._spindleR || Math.max(8, Math.min(20, bx * 0.035))
+  const spindleH = state._spindleH || Math.max(40, Math.min(90, bz * 0.3))
+  const plateD   = state._plateD   || 12
+  const beamY    = state._beamY    || 160
+  const theme = getThemePalette()
+
+  const g = new THREE.Group()
+
+  // Tool shank (above collet)
+  const shankGeo = new THREE.CylinderGeometry(spindleR * 0.25, spindleR * 0.25, spindleH * 0.2, 8)
+  const shankMat = new THREE.MeshLambertMaterial({ color: theme.spindle })
+  const shank = new THREE.Mesh(shankGeo, shankMat)
+  shank.position.set(0, -spindleH * 0.03, 0)
+  g.add(shank)
+
+  // Fluted tool bit
+  const bitGeo = new THREE.CylinderGeometry(spindleR * 0.18, spindleR * 0.08, spindleH * 0.35, 4)
+  const bitMat = new THREE.MeshLambertMaterial({ color: theme.toolBit })
+  const bit = new THREE.Mesh(bitGeo, bitMat)
+  bit.position.set(0, -spindleH * 0.23, 0)
+  g.add(bit)
+
+  // Tip glow ring
+  const ringGeo = new THREE.TorusGeometry(spindleR * 0.22, 1.2, 8, 16)
+  const ringMat = new THREE.MeshBasicMaterial({ color: theme.stockEdge, transparent: true, opacity: 0.9 })
+  const ring = new THREE.Mesh(ringGeo, ringMat)
+  ring.position.set(0, -spindleH * 0.41, 0)
+  g.add(ring)
+
+  // Use stored exact positions so tip Y matches _tipYBuilt used by tip correction
+  const tipGroupY = state._tipGroupY || (beamY - bz * 0.08 - spindleH * 0.78)
+  const spindleZ  = state._spindleLocalZ !== undefined ? state._spindleLocalZ : 0
+  g.position.set(0, tipGroupY, spindleZ)
+  groups.toolhead.add(g)
+  toolheadGroup = g
+  updateToolheadPosition()
+}
+
+function mapHomedAxis(value, size, homesAtMax) {
+  const distFromHome = Math.abs(Number(value) || 0)
+  const mapped = homesAtMax ? size - distFromHome : distFromHome
+  return Math.max(0, Math.min(size, mapped))
+}
+
+function mapMposToMachineTravel(pos = state.visualMachinePos) {
+  const corner = state.machineHomeCorner || 'front-left'
+  const mappedX = mapHomedAxis(pos.x, state.machine.x, corner.endsWith('right'))
+  return {
+    x: state.machineFlipX ? state.machine.x - mappedX : mappedX,
+    y: mapHomedAxis(pos.y, state.machine.y, corner.startsWith('back')),
+    z: pos.z || 0,
+  }
+}
+
+function getMachinePlacementPos(pos = state.visualToolPos) {
+  if (state._hasMachineMpos && !sim.active) return mapMposToMachineTravel(state.visualMachinePos)
+  return {
+    x: (state.workZero.x || 0) + (pos.x || 0),
+    y: (state.workZero.y || 0) + (pos.y || 0),
+    z: pos.z || 0,
+  }
+}
+
+function getToolSceneCoords(pos = state.visualToolPos) {
+  const machinePos = getMachinePlacementPos(pos)
+  const { x: bx, y: by, z: bz } = state.machine
+  const cx = Math.max(0, Math.min(bx, machinePos.x || 0))
+  const machineCy = Math.max(0, Math.min(by, machinePos.y || 0))
+  const cy = machineYToSceneZ(machineCy)
+  const cz = Math.max(-bz, Math.min(0, machinePos.z || 0))
+  return { cx, cy, cz }
+}
+
+function updateToolheadPosition(pos = state.visualToolPos) {
+  const machinePos = getMachinePlacementPos(pos)
+  const { x: bx, y: by, z: bz } = state.machine
+  const bedY = state._bedY || 80
+
+  const cx = Math.max(0, Math.min(bx, machinePos.x || 0))
+  const machineCy = Math.max(0, Math.min(by, machinePos.y || 0))
+  const cy = machineYToSceneZ(machineCy)
+  const cz = Math.max(-bz, Math.min(0, machinePos.z || 0))
+
+  // Work zero (machine Z=0) = top of stock surface in world space
+  const stockTopY = bedY + (state.stock.oz || 0) + (state.stock.z || 20)
+  // Correction so the built tool-tip Y + this offset = stockTopY when cz=0
+  const tipYBuilt = state._tipYBuilt || bedY
+  const tipCorrection = stockTopY - tipYBuilt
+
+  // FluidNC axes:  X = left/right,  Y = front/back (depth),  Z = up/down
+  // Three.js axes: X = left/right,  Z = front/back,          Y = up/down
+
+  groups.gantry.position.set(0, 0, cy)
+  groups.carriage.position.set(cx, 0, cy)
+  // zSlide and toolhead shift up by tipCorrection so tool touches stock at z=0
+  groups.zSlide.position.set(cx, tipCorrection + cz, cy)
+  groups.toolhead.position.set(cx, tipCorrection + cz, cy)
+}
+
+function animateToolheadPosition(now) {
+  if (sim.running) return
+
+  if (!state._lastToolAnimTime) state._lastToolAnimTime = now
+  const dt = Math.min(0.08, Math.max(0, (now - state._lastToolAnimTime) / 1000))
+  state._lastToolAnimTime = now
+
+  const target = state.toolPos
+  const current = state.visualToolPos
+  const dx = target.x - current.x
+  const dy = target.y - current.y
+  const dz = target.z - current.z
+  const machineTarget = state.machinePos
+  const machineCurrent = state.visualMachinePos
+  const mdx = machineTarget.x - machineCurrent.x
+  const mdy = machineTarget.y - machineCurrent.y
+  const mdz = machineTarget.z - machineCurrent.z
+  const dist = Math.max(Math.hypot(dx, dy, dz), state._hasMachineMpos ? Math.hypot(mdx, mdy, mdz) : 0)
+
+  if (dist < 0.002) {
+    if (dx || dy || dz || mdx || mdy || mdz) {
+      state.visualToolPos = { ...target }
+      if (state._hasMachineMpos) state.visualMachinePos = { ...machineTarget }
+      updateToolheadPosition()
+    }
+    return
+  }
+
+  // Snap instantly for large jumps (jog step > 8mm) so rapid moves track without lag
+  const alpha = dist > 8 ? 1 : 1 - Math.exp(-dt * 40)
+  current.x += dx * alpha
+  current.y += dy * alpha
+  current.z += dz * alpha
+  if (state._hasMachineMpos) {
+    machineCurrent.x += mdx * alpha
+    machineCurrent.y += mdy * alpha
+    machineCurrent.z += mdz * alpha
+  }
+  updateToolheadPosition()
+  if (state.autoFollow && state.connected) {
+    const { cx, cy, cz } = getToolSceneCoords(current)
+    const stockTopY = (state._bedY || 80) + (state.stock.oz || 0) + (state.stock.z || 20)
+    orbit.setTarget(cx, stockTopY + cz, cy)
+  }
+}
+
+function applyPathVisibility() {
+  groups.paths.children.forEach(c => {
+    if (!c.userData) return
+    c.visible = state.showPaths && (c.userData.pathType !== 'rapid' || state.showRapids)
+  })
+}
+
+function setProjectionMode(mode) {
+  state.projectionMode = mode
+  camera = mode === 'orthographic' ? orthographicCamera : perspectiveCamera
+  syncProjectionCamera()
+  orbit.setRadius(orbit.radius)
+  const btn = document.getElementById('btn-projection')
+  const label = document.getElementById('projection-label')
+  if (btn) {
+    btn.classList.toggle('active', mode === 'orthographic')
+    btn.title = mode === 'orthographic' ? 'Switch to perspective projection' : 'Switch to orthographic projection'
+  }
+  if (label) label.textContent = mode === 'orthographic' ? 'Ortho' : 'Persp'
+  savePersistentState()
+}
+
+function setCoolantState(mode) {
+  state.coolantState = mode
+  document.getElementById('btn-mist')?.classList.toggle('active', mode === 'mist')
+  document.getElementById('btn-flood')?.classList.toggle('active', mode === 'flood')
+  document.getElementById('btn-coolant-off')?.classList.toggle('active', mode === 'off')
+}
+
+function syncStockInputs() {
+  document.getElementById('stock-x').value = state.stock.x
+  document.getElementById('stock-y').value = state.stock.y
+  document.getElementById('stock-z').value = state.stock.z
+  document.getElementById('stock-ox').value = state.stock.ox
+  document.getElementById('stock-oy').value = state.stock.oy
+  document.getElementById('stock-oz').value = state.stock.oz
+  document.getElementById('stock-opacity').value = Math.round(state.stock.opacity * 100)
+  document.getElementById('stock-opacity-val').textContent = Math.round(state.stock.opacity * 100) + '%'
+  document.getElementById('wz-x').value = state.workZero.x
+  document.getElementById('wz-y').value = state.workZero.y
+  document.getElementById('bed-x').value = state.machine.x
+  document.getElementById('bed-y').value = state.machine.y
+  document.getElementById('bed-z').value = state.machine.z
+  const homeCorner = document.getElementById('home-corner')
+  if (homeCorner) homeCorner.value = state.machineHomeCorner
+  const flipMachineX = document.getElementById('flip-machine-x')
+  if (flipMachineX) flipMachineX.checked = state.machineFlipX
+  document.getElementById('show-grid').checked = state.showGrid
+  document.getElementById('show-axes').checked = state.showAxes
+  document.getElementById('show-limits').checked = state.showLimits
+  document.getElementById('toggle-toolhead').checked = state.showToolhead
+  document.getElementById('toggle-paths').checked = state.showPaths
+  document.getElementById('toggle-stock').checked = state.showStock
+  groups.toolhead.visible = state.showToolhead
+  groups.paths.visible = state.showPaths
+  groups.stock.visible = state.showStock
+}
+
+function syncPlacementUi() {
+  document.getElementById('viewport')?.classList.toggle('placing-stock', state.placingStock)
+  document.getElementById('viewport')?.classList.toggle('dragging-stock', state.draggingStock)
+  document.getElementById('btn-place-stock')?.classList.toggle('active', state.placingStock)
+  const hint = document.getElementById('stock-place-hint')
+  if (hint) hint.style.display = state.placingStock ? '' : 'none'
+}
+
+function syncCameraOverlayUi() {
+  const cfg = state.cameraOverlay
+  const feed = document.getElementById('camera-feed')
+  const vp = document.getElementById('viewport')
+  if (feed) {
+    feed.classList.toggle('visible', cfg.enabled)
+    feed.style.setProperty('--camera-opacity', String(cfg.opacity))
+    feed.style.transform = `scale(${cfg.flipX ? -cfg.scale : cfg.scale}, ${cfg.flipY ? -cfg.scale : cfg.scale})`
+  }
+  vp?.classList.toggle('camera-on', cfg.enabled)
+  document.getElementById('btn-camera-overlay')?.classList.toggle('active', cfg.enabled)
+  document.getElementById('camera-opacity').value = Math.round(cfg.opacity * 100)
+  document.getElementById('camera-opacity-val').textContent = Math.round(cfg.opacity * 100) + '%'
+  document.getElementById('camera-scale').value = Math.round(cfg.scale * 100)
+  document.getElementById('camera-scale-val').textContent = Math.round(cfg.scale * 100) + '%'
+  document.getElementById('camera-flip-x').checked = cfg.flipX
+  document.getElementById('camera-flip-y').checked = cfg.flipY
+}
+
+let cameraStream = null
+
+async function toggleCameraOverlay() {
+  const feed = document.getElementById('camera-feed')
+  if (!state.cameraOverlay.enabled) {
+    if (!navigator.mediaDevices?.getUserMedia) {
+      alert('Camera overlay is not available in this browser context.')
+      return
+    }
+    try {
+      cameraStream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' }, audio: false })
+      feed.srcObject = cameraStream
+      state.cameraOverlay.enabled = true
+    } catch {
+      alert('Camera overlay could not start. Check browser camera permission.')
+      return
+    }
+  } else {
+    if (cameraStream) {
+      cameraStream.getTracks().forEach(track => track.stop())
+      cameraStream = null
+    }
+    feed.srcObject = null
+    state.cameraOverlay.enabled = false
+  }
+  syncCameraOverlayUi()
+  savePersistentState()
+}
+
+function syncCanvasControls() {
+  document.getElementById('btn-rapids')?.classList.toggle('active', state.showRapids)
+  document.getElementById('btn-tool')?.classList.toggle('active', state.showToolhead)
+  document.getElementById('btn-follow')?.classList.toggle('active', state.autoFollow)
+  const start = document.getElementById('btn-job-start')
+  if (start) start.disabled = !state.loadedPath || !state.connected
+}
+
+function syncJobControls(machineState = '') {
+  const stateName = (machineState || '').toLowerCase()
+  const running = stateName === 'run'
+  const held = stateName === 'hold'
+  const start = document.getElementById('btn-job-start')
+  const pause = document.getElementById('btn-job-pause')
+  const resume = document.getElementById('btn-job-resume')
+  const abort = document.getElementById('btn-job-abort')
+  if (start) {
+    start.style.display = running || held ? 'none' : ''
+    start.disabled = !state.loadedPath || !state.connected
+  }
+  if (pause) pause.style.display = running ? '' : 'none'
+  if (resume) resume.style.display = held ? '' : 'none'
+  if (abort) abort.style.display = running || held ? '' : 'none'
+}
+
+// ═══════════════════════════════════════════════════════
+// GCode Parser & Path Builder
+// ═══════════════════════════════════════════════════════
+function parseGCode(text) {
+  const lines = text.split('\n')
+  const result = { moves: [], stats: { lines: 0, rapids: 0, cuts: 0, totalDist: 0 }, bounds: { minX: Infinity, maxX: -Infinity, minY: Infinity, maxY: -Infinity, minZ: Infinity, maxZ: -Infinity } }
+
+  let x = 0, y = 0, z = 0
+  let absolute = true
+  let unit = 1 // 1=mm, 25.4=inches→mm
+
+  for (const rawLine of lines) {
+    const line = rawLine.replace(/;.*$/, '').replace(/\(.*?\)/g, '').trim().toUpperCase()
+    if (!line) continue
+    result.stats.lines++
+
+    if (line.includes('G20')) unit = 25.4
+    if (line.includes('G21')) unit = 1
+    if (line.includes('G90')) absolute = true
+    if (line.includes('G91')) absolute = false
+
+    const getVal = (code) => {
+      const m = line.match(new RegExp(code + '(-?[\\d.]+)'))
+      return m ? parseFloat(m[1]) * unit : null
+    }
+
+    const isRapid = /G0\b|G00\b/.test(line)
+    const isCut = /G1\b|G01\b/.test(line)
+    const isArc = /G2\b|G02\b|G3\b|G03\b/.test(line)
+
+    if (isRapid || isCut || isArc) {
+      const nx = getVal('X'), ny = getVal('Y'), nz = getVal('Z')
+      const ex = nx !== null ? (absolute ? nx : x + nx) : x
+      const ey = ny !== null ? (absolute ? ny : y + ny) : y
+      const ez = nz !== null ? (absolute ? nz : z + nz) : z
+
+      const dist = Math.hypot(ex - x, ey - y, ez - z)
+      result.stats.totalDist += dist
+
+      // Update bounds
+      result.bounds.minX = Math.min(result.bounds.minX, ex)
+      result.bounds.maxX = Math.max(result.bounds.maxX, ex)
+      result.bounds.minY = Math.min(result.bounds.minY, ey)
+      result.bounds.maxY = Math.max(result.bounds.maxY, ey)
+      result.bounds.minZ = Math.min(result.bounds.minZ, ez)
+      result.bounds.maxZ = Math.max(result.bounds.maxZ, ez)
+
+      const move = {
+        type: isRapid ? 'rapid' : isArc ? 'arc' : 'cut',
+        from: { x, y, z },
+        to: { x: ex, y: ey, z: ez },
+        lineIndex: result.stats.lines - 1,
+        raw: rawLine.trim(),
+      }
+      if (isArc) {
+        const ni = getVal('I'), nj = getVal('J')
+        move.i = ni !== null ? ni : 0  // I/J are relative offsets from start to arc center
+        move.j = nj !== null ? nj : 0
+        move.cw = /G2\b|G02\b/.test(line)
+      }
+      result.moves.push(move)
+
+      if (isRapid) result.stats.rapids++
+      if (isCut || isArc) result.stats.cuts++
+
+      x = ex; y = ey; z = ez
+    }
+  }
+
+  // Fix infinite bounds if no moves
+  const b = result.bounds
+  if (!isFinite(b.minX)) { b.minX = 0; b.maxX = 0; b.minY = 0; b.maxY = 0; b.minZ = 0; b.maxZ = 0 }
+
+  return result
+}
+
+let parsedGCode = null
+
+// Generate arc interpolation points for G2/G3 moves (XY plane, linear Z)
+function arcPoints(from, to, i, j, cw) {
+  const cx = from.x + i, cy_ = from.y + j
+  const r = Math.hypot(i, j)
+  if (r < 0.001) return [from, to]  // degenerate arc → straight line
+  const a0 = Math.atan2(from.y - cy_, from.x - cx)
+  const a1 = Math.atan2(to.y - cy_, to.x - cx)
+  let sweep = cw ? (a0 - a1) : (a1 - a0)
+  if (sweep <= 0) sweep += 2 * Math.PI
+  if (cw) sweep = -sweep
+  const n = Math.max(8, Math.ceil(Math.abs(sweep) * r / 4))  // ~4mm per segment
+  const pts = []
+  for (let k = 0; k <= n; k++) {
+    const a = a0 + (sweep * k / n)
+    pts.push({ x: cx + r * Math.cos(a), y: cy_ + r * Math.sin(a), z: from.z + (to.z - from.z) * k / n })
+  }
+  return pts
+}
+
+function renderPaths() {
+  clearGroup(groups.paths)
+  if (!parsedGCode || !state.showPaths) return
+
+  const theme = getThemePalette()
+  const colors = { rapid: theme.rapid, cut: theme.cut, arc: theme.arc }
+
+  // Group by type for efficiency
+  const byType = { rapid: [], cut: [], arc: [] }
+  for (const move of parsedGCode.moves) {
+    byType[move.type].push(move)
+  }
+
+  for (const [type, moves] of Object.entries(byType)) {
+    if (!moves.length) continue
+    const pts = []
+    const bedY = state._bedY || 80
+    // GCode Z=0 = stock top surface (work zero), matching tool position convention
+    const stockTopY = bedY + (state.stock.oz || 0) + (state.stock.z || 20)
+    const wx = state.workZero.x || 0
+    const wy = state.workZero.y || 0
+    for (const m of moves) {
+      if (type === 'arc' && m.i !== undefined) {
+        const ap = arcPoints(m.from, m.to, m.i, m.j, m.cw)
+        for (let k = 0; k < ap.length - 1; k++) {
+          pts.push(new THREE.Vector3(wx + ap[k].x,   stockTopY + ap[k].z,   machineYToSceneZ(wy + ap[k].y)))
+          pts.push(new THREE.Vector3(wx + ap[k+1].x, stockTopY + ap[k+1].z, machineYToSceneZ(wy + ap[k+1].y)))
+        }
+      } else {
+        pts.push(new THREE.Vector3(wx + m.from.x, stockTopY + m.from.z, machineYToSceneZ(wy + m.from.y)))
+        pts.push(new THREE.Vector3(wx + m.to.x,   stockTopY + m.to.z,   machineYToSceneZ(wy + m.to.y)))
+      }
+    }
+    const geo = new THREE.BufferGeometry().setFromPoints(pts)
+    const mat = new THREE.LineBasicMaterial({ color: colors[type], transparent: type === 'rapid', opacity: type === 'rapid' ? 0.5 : 1.0 })
+    const lines = new THREE.LineSegments(geo, mat)
+    lines.userData.pathType = type
+    lines.visible = state.showPaths && (type !== 'rapid' || state.showRapids)
+    groups.paths.add(lines)
+  }
+}
+
+// ═══════════════════════════════════════════════════════
+// Camera Helpers
+// ═══════════════════════════════════════════════════════
+function fitCamera() {
+  const { x: bx, y: by, z: bz } = state.machine
+  const bedY = state._bedY || 80
+  const bedDepth = state._bedDepth || by
+  const bedCenterZ = state._bedCenterZ ?? by / 2
+  const cx = bx / 2
+  const cy = bedY + bz / 2  // centre of work envelope vertically
+  const cz = bedCenterZ
+  orbit.setTarget(cx, cy * 0.5, cz)
+  orbit.setRadius(Math.max(bx, bedDepth, bz + bedY) * 1.8)
+}
+
+function setView(phi, theta) {
+  const { x: bx, y: by } = state.machine
+  const bedY = state._bedY || 80
+  const bedCenterZ = state._bedCenterZ ?? by / 2
+  orbit.setTarget(bx / 2, bedY, bedCenterZ)
+  orbit.setAngles(phi, theta)
+}
+
+function enterTopStockPlacement() {
+  state.placingStock = !state.placingStock
+  if (state.placingStock) {
+    state.autoFollow = false
+    setProjectionMode('orthographic')
+    setView(0.1, -Math.PI / 2)
+  } else {
+    // Confirm placement — sync stock and paths to the chosen position, then return to normal view
+    buildStock()
+    if (parsedGCode) renderPaths()
+    setProjectionMode('perspective')
+  }
+  syncPlacementUi()
+  syncCanvasControls()
+  savePersistentState()
+}
+
+function screenToBedPoint(clientX, clientY) {
+  const rect = canvas.getBoundingClientRect()
+  const ndc = new THREE.Vector2(
+    ((clientX - rect.left) / rect.width) * 2 - 1,
+    -((clientY - rect.top) / rect.height) * 2 + 1,
+  )
+  const raycaster = new THREE.Raycaster()
+  raycaster.setFromCamera(ndc, camera)
+  const plane = new THREE.Plane(new THREE.Vector3(0, 1, 0), -(state._bedY || 80))
+  const hit = new THREE.Vector3()
+  if (!raycaster.ray.intersectPlane(plane, hit)) return null
+  return {
+    x: Math.max(0, Math.min(state.machine.x, hit.x)),
+    y: Math.max(0, Math.min(state.machine.y, state.machine.y - hit.z)),
+  }
+}
+
+function setStockOffsetFromBedPoint(point, centered = true) {
+  if (!point) return
+  const ox = centered ? point.x - state.stock.x / 2 : point.x
+  const oy = centered ? point.y - state.stock.y / 2 : point.y
+  state.stock.ox = Math.max(0, Math.min(state.machine.x - state.stock.x, ox))
+  state.stock.oy = Math.max(0, Math.min(state.machine.y - state.stock.y, oy))
+  document.getElementById('stock-ox').value = state.stock.ox.toFixed(1)
+  document.getElementById('stock-oy').value = state.stock.oy.toFixed(1)
+
+  if (parsedGCode) {
+    const b = parsedGCode.bounds
+    const margin = 10
+    const gcW = b.maxX - b.minX, gcH = b.maxY - b.minY
+    // Expand stock symmetrically towards centre if GCode footprint doesn't fit
+    if (gcW + margin * 2 > state.stock.x) {
+      const grow = (gcW + margin * 2 - state.stock.x) / 2
+      state.stock.x = gcW + margin * 2
+      state.stock.ox = Math.max(0, state.stock.ox - grow)
+      document.getElementById('stock-x').value = state.stock.x.toFixed(1)
+      document.getElementById('stock-ox').value = state.stock.ox.toFixed(1)
+    }
+    if (gcH + margin * 2 > state.stock.y) {
+      const grow = (gcH + margin * 2 - state.stock.y) / 2
+      state.stock.y = gcH + margin * 2
+      state.stock.oy = Math.max(0, state.stock.oy - grow)
+      document.getElementById('stock-y').value = state.stock.y.toFixed(1)
+      document.getElementById('stock-oy').value = state.stock.oy.toFixed(1)
+    }
+    // Paths follow stock: workZero shifts so GCode aligns with stock corner + margin
+    state.workZero.x = state.stock.ox + margin - b.minX
+    state.workZero.y = state.stock.oy + margin - b.minY
+    document.getElementById('wz-x').value = state.workZero.x.toFixed(1)
+    document.getElementById('wz-y').value = state.workZero.y.toFixed(1)
+    renderPaths()
+    updateToolheadPosition()
+  }
+
+  buildStock()
+  savePersistentState()
+}
+
+// ═══════════════════════════════════════════════════════
+// Render Loop
+// ═══════════════════════════════════════════════════════
+function resizeRenderer() {
+  const vp = document.getElementById('viewport')
+  const w = vp.clientWidth, h = vp.clientHeight
+  renderer.setSize(w, h, false)
+  syncProjectionCamera()
+}
+
+// ═══════════════════════════════════════════════════════
+// Simulation Engine  (declared early — animate() needs it)
+// ═══════════════════════════════════════════════════════
+const sim = {
+  active: false,
+  running: false,
+  moveIndex: 0,
+  segT: 0,
+  speedMult: 5,
+  lastTime: 0,
+  revealedLines: null,
+  revealedPositions: null,
+  revealedColors: null,
+  revealedCount: 0,
+}
+
+function animate() {
+  requestAnimationFrame(animate)
+  const now = performance.now()
+  // Subtle toolhead glow pulse
+  if (toolheadGroup && toolheadGroup.children.length > 2) {
+    const ring = toolheadGroup.children[2]
+    if (ring && ring.material) ring.material.opacity = 0.5 + 0.35 * Math.sin(now * 0.004)
+  }
+  // Simulation step (guard: sim functions defined later in file but hoisted as function decls)
+  if (typeof simTick === 'function') simTick(now)
+  animateToolheadPosition(now)
+  renderer.render(scene, camera)
+}
+
+const resizeObserver = new ResizeObserver(resizeRenderer)
+resizeObserver.observe(document.getElementById('viewport'))
+resizeRenderer()
+animate()
+
+// ═══════════════════════════════════════════════════════
+// Machine Status Handler
+// ═══════════════════════════════════════════════════════
+function onMachineStatus(s) {
+  state.connected = true
+  const statusEl = document.getElementById('machine-status')
+  const stateClass = (s.state || 'idle').toLowerCase()
+  statusEl.className = 'status-pill ' + (stateClass === 'run' ? 'run' : stateClass === 'alarm' ? 'alarm' : stateClass === 'hold' ? 'hold' : 'idle')
+  statusEl.innerHTML = `<div class="status-dot"></div><span>${s.state || 'Idle'}</span>`
+  syncJobControls(s.state || 'Idle')
+  syncCanvasControls()
+
+  const wpos = s.wpos || s.WPos
+  const mpos = s.mpos || s.MPos
+
+  if (mpos) {
+    state.machinePos = { x: mpos.x || 0, y: mpos.y || 0, z: mpos.z || 0 }
+    state._hasMachineMpos = true
+  }
+
+  if (wpos) {
+    state.toolPos = { x: wpos.x || 0, y: wpos.y || 0, z: wpos.z || 0 }
+    if (!state._hasMachinePosition) {
+      state._hasMachinePosition = true
+      state._lastToolAnimTime = performance.now()
+      if (!sim.active) syncVisualToolPosition()
+    }
+    document.getElementById('hdr-x').textContent = (wpos.x || 0).toFixed(3)
+    document.getElementById('hdr-y').textContent = (wpos.y || 0).toFixed(3)
+    document.getElementById('hdr-z').textContent = (wpos.z || 0).toFixed(3)
+  } else if (mpos && !state._hasMachinePosition) {
+    state._hasMachinePosition = true
+    state._lastToolAnimTime = performance.now()
+    if (!sim.active) syncVisualToolPosition()
+  }
+}
+
+// ═══════════════════════════════════════════════════════
+// Load $$ Settings
+// ═══════════════════════════════════════════════════════
+async function loadMachineSettings() {
+  try {
+    const settings = await call('getMachineSettings')
+    const mappings = {
+      '130': settings.maxTravelX, '131': settings.maxTravelY, '132': settings.maxTravelZ,
+      '110': settings.maxRateX,  '111': settings.maxRateY,  '112': settings.maxRateZ,
+      '120': settings.accelX,    '121': settings.accelY,    '122': settings.accelZ,
+    }
+    for (const [k, v] of Object.entries(mappings)) {
+      const el = document.getElementById('ms-' + k)
+      if (el && v !== undefined) el.textContent = v + (k.startsWith('13') ? ' mm' : k.startsWith('11') ? ' mm/min' : ' mm/s²')
+    }
+
+    if (settings.maxTravelX) {
+      document.getElementById('bed-x').value = settings.maxTravelX
+      state.machine.x = settings.maxTravelX
+    }
+    if (settings.maxTravelY) {
+      document.getElementById('bed-y').value = settings.maxTravelY
+      state.machine.y = settings.maxTravelY
+    }
+    if (settings.maxTravelZ) {
+      document.getElementById('bed-z').value = settings.maxTravelZ
+      state.machine.z = settings.maxTravelZ
+    }
+
+    try {
+      const raw = await call('sendQuery', { command: '$$' })
+      parseRawSettings(raw, { rebuild: false })
+    } catch {}
+
+    buildMachine()
+    buildStock()
+    buildToolhead()
+    installEditedVisualizerGeometry()
+    document.getElementById('machine-warn').style.display = 'none'
+
+  } catch (err) {
+    // Try raw $$ query
+    try {
+      const raw = await call('sendQuery', { command: '$$' })
+      parseRawSettings(raw)
+    } catch {
+      document.getElementById('machine-warn').style.display = 'block'
+    }
+  }
+}
+
+function homeCornerFromHomingMask(mask) {
+  const xHomesMax = (mask & 1) !== 0
+  const yHomesMax = (mask & 2) !== 0
+  return `${yHomesMax ? 'back' : 'front'}-${xHomesMax ? 'right' : 'left'}`
+}
+
+function parseRawSettings(raw, options = {}) {
+  const shouldRebuild = options.rebuild !== false
+  const lines = raw.split('\n')
+  const vals = {}
+  for (const line of lines) {
+    const m = line.match(/\$(\d+)=([^\s]+)/)
+    if (m) vals[m[1]] = parseFloat(m[2])
+  }
+
+  const labelMap = { '130': 'ms-130', '131': 'ms-131', '132': 'ms-132', '110': 'ms-110', '111': 'ms-111', '112': 'ms-112', '120': 'ms-120', '121': 'ms-121', '122': 'ms-122', '23': 'ms-23' }
+  for (const [k, elId] of Object.entries(labelMap)) {
+    if (vals[k] !== undefined) {
+      const el = document.getElementById(elId)
+      if (el) el.textContent = vals[k]
+    }
+  }
+
+  if (vals['130']) { state.machine.x = vals['130']; document.getElementById('bed-x').value = vals['130'] }
+  if (vals['131']) { state.machine.y = vals['131']; document.getElementById('bed-y').value = vals['131'] }
+  if (vals['132']) { state.machine.z = vals['132']; document.getElementById('bed-z').value = vals['132'] }
+  if (Number.isFinite(vals['23'])) {
+    state.machineHomeCorner = homeCornerFromHomingMask(vals['23'])
+    const homeCorner = document.getElementById('home-corner')
+    if (homeCorner) homeCorner.value = state.machineHomeCorner
+  }
+
+  if (shouldRebuild) {
+    buildMachine(); buildStock(); buildToolhead()
+  }
+  document.getElementById('machine-warn').style.display = 'none'
+  savePersistentState()
+}
+
+// ═══════════════════════════════════════════════════════
+// UI Helpers
+// ═══════════════════════════════════════════════════════
+function clearGroup(g) {
+  while (g.children.length) {
+    const c = g.children[0]
+    if (c.geometry) c.geometry.dispose()
+    if (c.material) { if (Array.isArray(c.material)) c.material.forEach(m => m.dispose()); else c.material.dispose() }
+    g.remove(c)
+  }
+}
+
+function fmt(n) { return n.toFixed(2) }
+
+// ═══════════════════════════════════════════════════════
+// Event Wiring
+// ═══════════════════════════════════════════════════════
+
+// Tab switching
+document.querySelectorAll('.tab').forEach(tab => {
+  tab.addEventListener('click', () => {
+    document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'))
+    tab.classList.add('active')
+    document.querySelectorAll('#tab-gcode,#tab-stock,#tab-machine').forEach(p => p.classList.remove('visible'))
+    document.getElementById('tab-' + tab.dataset.tab).classList.add('visible')
+  })
+})
+
+// GCode file drop / input
+const fileDrop = document.getElementById('file-drop')
+const fileInput = document.getElementById('file-input')
+fileDrop.addEventListener('dragover', e => { e.preventDefault(); fileDrop.classList.add('dragging') })
+fileDrop.addEventListener('dragleave', () => fileDrop.classList.remove('dragging'))
+fileDrop.addEventListener('drop', e => {
+  e.preventDefault(); fileDrop.classList.remove('dragging')
+  const file = e.dataTransfer.files[0]
+  if (file) loadFile(file)
+})
+fileInput.addEventListener('change', () => { if (fileInput.files[0]) loadFile(fileInput.files[0]) })
+
+function loadFile(file) {
+  const reader = new FileReader()
+  reader.onload = e => {
+    state.loadedPath = null
+    syncCanvasControls()
+    document.getElementById('gcode-paste').value = e.target.result
+    processGCode(e.target.result)
+  }
+  reader.readAsText(file)
+}
+
+document.getElementById('btn-load-paste').addEventListener('click', () => {
+  const text = document.getElementById('gcode-paste').value.trim()
+  if (text) {
+    state.loadedPath = null
+    syncCanvasControls()
+    processGCode(text)
+  }
+})
+document.getElementById('gcode-paste').addEventListener('input', savePersistentState)
+
+function autoFitGCodeToStock() {
+  if (!parsedGCode) return
+  const b = parsedGCode.bounds
+  const { x: bx, y: by } = state.machine
+
+  const gcW     = Math.max(b.maxX - b.minX, 1)
+  const gcH     = Math.max(b.maxY - b.minY, 1)
+  const gcDepth = Math.max(Math.abs(b.minZ), 5)
+
+  // Centre GCode on bed
+  state.workZero.x = bx / 2 - (b.minX + b.maxX) / 2
+  state.workZero.y = by / 2 - (b.minY + b.maxY) / 2
+
+  // Stock just contains the GCode footprint + 10mm margin each side
+  const margin = 10
+  state.stock.x  = gcW + margin * 2
+  state.stock.y  = gcH + margin * 2
+  state.stock.z  = gcDepth + 5
+  state.stock.oz = 0
+  state.stock.ox = state.workZero.x + b.minX - margin
+  state.stock.oy = state.workZero.y + b.minY - margin
+  state.stock.originMode = 'corner'
+
+  // Sync UI fields
+  document.getElementById('stock-x').value   = state.stock.x.toFixed(1)
+  document.getElementById('stock-y').value   = state.stock.y.toFixed(1)
+  document.getElementById('stock-z').value   = state.stock.z.toFixed(1)
+  document.getElementById('stock-ox').value  = state.stock.ox.toFixed(1)
+  document.getElementById('stock-oy').value  = state.stock.oy.toFixed(1)
+  document.getElementById('stock-oz').value  = '0'
+  document.getElementById('wz-x').value      = state.workZero.x.toFixed(1)
+  document.getElementById('wz-y').value      = state.workZero.y.toFixed(1)
+
+  buildStock()
+  updateToolheadPosition()
+}
+
+function processGCode(text) {
+  parsedGCode = parseGCode(text)
+  state.gcodeLines = text.split('\n')
+  autoFitGCodeToStock()
+  simReset()
+  simSetEnabled(true)
+  renderPaths()
+  updateGCodeUI()
+  fitPathsCamera()
+  savePersistentState()
+}
+
+function fitPathsCamera() {
+  if (!parsedGCode) return
+  const b = parsedGCode.bounds
+  const bedY = state._bedY || 80
+  const stockTopY = bedY + (state.stock.oz || 0) + (state.stock.z || 20)
+  const wx = state.workZero.x || 0
+  const wy = state.workZero.y || 0
+  const cx = wx + (b.minX + b.maxX) / 2
+  const cy = stockTopY + (b.minZ + b.maxZ) / 2
+  const cz = machineYToSceneZ(wy + (b.minY + b.maxY) / 2)
+  const span = Math.max(b.maxX - b.minX, b.maxY - b.minY, Math.abs(b.minZ), 20)
+  orbit.setTarget(cx, cy, cz)
+  orbit.setRadius(span * 2.8)
+}
+
+function updateGCodeUI() {
+  if (!parsedGCode) return
+  const s = parsedGCode.stats
+  const b = parsedGCode.bounds
+
+  document.getElementById('gcode-stats-section').style.display = ''
+  document.getElementById('gcode-preview-section').style.display = ''
+  document.getElementById('gcode-list-section').style.display = ''
+
+  document.getElementById('stat-lines').textContent = s.lines
+  document.getElementById('stat-dist').textContent = s.totalDist > 1000 ? (s.totalDist / 1000).toFixed(2) + ' m' : fmt(s.totalDist) + ' mm'
+  document.getElementById('stat-rapids').textContent = s.rapids
+  document.getElementById('stat-cuts').textContent = s.cuts
+
+  const gcW = b.maxX - b.minX, gcH = b.maxY - b.minY, gcD = Math.abs(b.minZ)
+  const overX = gcW > state.machine.x, overY = gcH > state.machine.y, overZ = gcD > state.machine.z
+  const flag = (v, over) => over ? `<span style="color:var(--danger)">${v} ⚠</span>` : v
+  document.getElementById('bb-x').innerHTML = flag(`${fmt(b.minX)} → ${fmt(b.maxX)} mm`, overX)
+  document.getElementById('bb-y').innerHTML = flag(`${fmt(b.minY)} → ${fmt(b.maxY)} mm`, overY)
+  document.getElementById('bb-z').innerHTML = flag(`${fmt(b.minZ)} → ${fmt(b.maxZ)} mm`, overZ)
+
+  let scaleWarn = document.getElementById('gcode-scale-warn')
+  if (!scaleWarn) {
+    scaleWarn = document.createElement('div')
+    scaleWarn.id = 'gcode-scale-warn'
+    scaleWarn.className = 'warning-box'
+    document.getElementById('gcode-preview-section').appendChild(scaleWarn)
+  }
+  if (overX || overY || overZ) {
+    scaleWarn.style.display = ''
+    scaleWarn.textContent = `⚠ GCode footprint exceeds machine travel: ${overX?`X ${fmt(gcW)}>${state.machine.x}mm `:''}${overY?`Y ${fmt(gcH)}>${state.machine.y}mm `:''}${overZ?`Z ${fmt(gcD)}>${state.machine.z}mm`:''}`
+  } else {
+    scaleWarn.style.display = 'none'
+  }
+
+  // Code list (first 200 lines for performance)
+  const list = document.getElementById('gcode-list')
+  list.innerHTML = ''
+  const preview = state.gcodeLines.slice(0, 200)
+  for (let i = 0; i < preview.length; i++) {
+    const ln = preview[i].trim()
+    if (!ln) continue
+    const div = document.createElement('div')
+    const upper = ln.toUpperCase()
+    div.className = 'gcode-line' + (upper.match(/G0\b|G00\b/) ? ' rapid' : upper.match(/G1\b|G01\b|G2|G3/) ? ' cut' : '')
+    div.textContent = ln
+    list.appendChild(div)
+  }
+  if (state.gcodeLines.length > 200) {
+    const more = document.createElement('div')
+    more.className = 'gcode-line'
+    more.style.color = 'var(--text-dim)'
+    more.textContent = `… ${state.gcodeLines.length - 200} more lines`
+    list.appendChild(more)
+  }
+}
+
+// View buttons
+document.getElementById('btn-fit').addEventListener('click', () => {
+  if (parsedGCode) fitPathsCamera(); else fitCamera()
+})
+document.getElementById('btn-fit-canvas').addEventListener('click', () => {
+  if (parsedGCode) fitPathsCamera(); else fitCamera()
+})
+document.getElementById('btn-top').addEventListener('click', () => setView(0.1, -Math.PI / 2))
+document.getElementById('btn-front').addEventListener('click', () => setView(Math.PI / 2 - 0.1, Math.PI / 2))
+document.getElementById('btn-iso').addEventListener('click', () => { orbit.setAngles(0.8, 0.6); orbit.setRadius(orbit.radius) })
+document.getElementById('btn-view-3d').addEventListener('click', () => setProjectionMode(state.projectionMode))
+document.getElementById('btn-projection').addEventListener('click', () => {
+  setProjectionMode(state.projectionMode === 'perspective' ? 'orthographic' : 'perspective')
+})
+document.getElementById('btn-rapids').addEventListener('click', () => {
+  state.showRapids = !state.showRapids
+  applyPathVisibility()
+  syncCanvasControls()
+  savePersistentState()
+})
+document.getElementById('btn-tool').addEventListener('click', () => {
+  state.showToolhead = !state.showToolhead
+  groups.toolhead.visible = state.showToolhead
+  document.getElementById('toggle-toolhead').checked = state.showToolhead
+  syncCanvasControls()
+})
+document.getElementById('btn-follow').addEventListener('click', () => {
+  state.autoFollow = !state.autoFollow
+  syncCanvasControls()
+  savePersistentState()
+})
+document.getElementById('btn-place-stock').addEventListener('click', enterTopStockPlacement)
+
+// Toggles
+document.getElementById('toggle-machine').addEventListener('change', e => {
+  const vis = e.target.checked
+  groups.frame.visible = vis
+  groups.gantry.visible = vis
+  groups.carriage.visible = vis
+  groups.zSlide.visible = vis
+  groups.bed.visible = vis
+})
+document.getElementById('toggle-toolhead').addEventListener('change', e => {
+  state.showToolhead = e.target.checked
+  groups.toolhead.visible = state.showToolhead
+  syncCanvasControls()
+  savePersistentState()
+})
+document.getElementById('toggle-paths').addEventListener('change', e => {
+  state.showPaths = e.target.checked
+  groups.paths.visible = state.showPaths
+  applyPathVisibility()
+  savePersistentState()
+})
+document.getElementById('toggle-stock').addEventListener('change', e => {
+  state.showStock = e.target.checked
+  groups.stock.visible = state.showStock
+  savePersistentState()
+})
+
+// Stock
+document.getElementById('btn-apply-stock').addEventListener('click', () => {
+  state.stock.x = parseFloat(document.getElementById('stock-x').value) || 100
+  state.stock.y = parseFloat(document.getElementById('stock-y').value) || 100
+  state.stock.z = parseFloat(document.getElementById('stock-z').value) || 20
+  state.stock.ox = parseFloat(document.getElementById('stock-ox').value) || 0
+  state.stock.oy = parseFloat(document.getElementById('stock-oy').value) || 0
+  state.stock.oz = parseFloat(document.getElementById('stock-oz').value) || 0
+  const wasPlacingStock = state.placingStock
+  state.placingStock = false
+  state.draggingStock = false
+  buildStock()
+  buildMachine()
+  if (parsedGCode) renderPaths()
+  if (wasPlacingStock) {
+    setProjectionMode('perspective')
+    syncPlacementUi()
+    syncCanvasControls()
+  }
+  savePersistentState()
+})
+
+const originBtns = ['corner', 'center', 'custom']
+originBtns.forEach(m => {
+  document.getElementById('origin-' + m).addEventListener('click', () => {
+    state.stock.originMode = m
+    originBtns.forEach(b => document.getElementById('origin-' + b).classList.toggle('active', b === m))
+    document.getElementById('custom-origin-fields').style.display = m === 'custom' ? '' : 'none'
+    savePersistentState()
+  })
+})
+document.getElementById('origin-corner').classList.add('active')
+
+const opacitySlider = document.getElementById('stock-opacity')
+opacitySlider.addEventListener('input', () => {
+  const val = parseInt(opacitySlider.value)
+  document.getElementById('stock-opacity-val').textContent = val + '%'
+  state.stock.opacity = val / 100
+  buildStock()
+  savePersistentState()
+})
+
+// Work Zero
+document.getElementById('btn-apply-wz').addEventListener('click', () => {
+  state.workZero.x = parseFloat(document.getElementById('wz-x').value) || 0
+  state.workZero.y = parseFloat(document.getElementById('wz-y').value) || 0
+  renderPaths()
+  updateToolheadPosition()
+  if (parsedGCode) fitPathsCamera()
+  savePersistentState()
+})
+document.getElementById('wz-center').addEventListener('click', () => {
+  state.workZero.x = state.machine.x / 2
+  state.workZero.y = state.machine.y / 2
+  document.getElementById('wz-x').value = state.workZero.x
+  document.getElementById('wz-y').value = state.workZero.y
+  renderPaths(); updateToolheadPosition()
+  if (parsedGCode) fitPathsCamera()
+  savePersistentState()
+})
+
+// Machine
+document.getElementById('btn-apply-machine').addEventListener('click', () => {
+  state.machine.x = parseFloat(document.getElementById('bed-x').value) || 300
+  state.machine.y = parseFloat(document.getElementById('bed-y').value) || 300
+  state.machine.z = parseFloat(document.getElementById('bed-z').value) || 100
+  buildMachine(); buildStock(); buildToolhead(); installEditedVisualizerGeometry()
+  savePersistentState()
+})
+
+document.getElementById('btn-load-settings').addEventListener('click', loadMachineSettings)
+
+document.getElementById('home-corner')?.addEventListener('change', e => {
+  state.machineHomeCorner = e.target.value
+  syncVisualToolPosition()
+  savePersistentState()
+})
+
+document.getElementById('flip-machine-x')?.addEventListener('change', e => {
+  state.machineFlipX = e.target.checked
+  syncVisualToolPosition()
+  savePersistentState()
+})
+
+document.getElementById('show-grid').addEventListener('change', e => { state.showGrid = e.target.checked; buildMachine(); savePersistentState() })
+document.getElementById('show-axes').addEventListener('change', e => { state.showAxes = e.target.checked; buildMachine(); savePersistentState() })
+document.getElementById('show-limits').addEventListener('change', e => { state.showLimits = e.target.checked; buildMachine(); savePersistentState() })
+
+// ═══════════════════════════════════════════════════════
+// Load GCode from Machine (current open file)
+// ═══════════════════════════════════════════════════════
+async function loadFromMachine() {
+  const btn = document.getElementById('btn-load-machine')
+  const info = document.getElementById('machine-file-info')
+
+  // Don't attempt if we know we're not connected
+  if (!state.connected) {
+    info.style.display = 'block'
+    info.style.color = 'var(--warn)'
+    info.textContent = '⚠ Not connected to machine'
+    return
+  }
+
+  const origText = btn.innerHTML
+  btn.textContent = 'Loading…'
+  btn.disabled = true
+  info.style.display = 'none'
+
+  try {
+    let found = null
+
+    // 1. Check if we already know the active file from status line events
+    if (state.currentMachineFile) {
+      found = state.currentMachineFile
+    }
+
+    // 2. Scan SD root for gcode files
+    if (!found) {
+      const dirs = [{ path: '/sd', fs: 'sd' }, { path: '/', fs: 'local' }]
+      for (const { path, fs } of dirs) {
+        try {
+          const result = await call('listFiles', { path, fs })
+          if (result && result.files) {
+            const gcodeFile = result.files.find(f => !f.isDir && /\.(nc|gcode|cnc|tap|ngc|gc)$/i.test(f.name))
+            if (gcodeFile) {
+              found = path.replace(/\/$/, '') + '/' + gcodeFile.name
+              break
+            }
+          }
+        } catch { /* not available */ }
+      }
+    }
+
+    // 3. Check one level of subdirectories on SD
+    if (!found) {
+      try {
+        const result = await call('listFiles', { path: '/sd', fs: 'sd' })
+        if (result && result.files) {
+          for (const f of result.files) {
+            if (!f.isDir) continue
+            try {
+              const sub = await call('listFiles', { path: '/sd/' + f.name, fs: 'sd' })
+              const gcodeFile = sub?.files?.find(ff => !ff.isDir && /\.(nc|gcode|cnc|tap|ngc|gc)$/i.test(ff.name))
+              if (gcodeFile) { found = '/sd/' + f.name + '/' + gcodeFile.name; break }
+            } catch { /* skip */ }
+          }
+        }
+      } catch { /* skip */ }
+    }
+
+    if (!found) {
+      info.style.display = 'block'
+      info.style.color = 'var(--warn)'
+      info.textContent = '⚠ No GCode file found. Load manually above.'
+      return
+    }
+
+    const fs = found.startsWith('/sd') ? 'sd' : 'local'
+    const content = await call('readFile', { path: found, fs })
+
+    info.style.display = 'block'
+    info.style.color = 'var(--ok)'
+    info.textContent = '✓ ' + found.split('/').pop()
+
+    state.loadedPath = found
+    syncCanvasControls()
+    document.getElementById('gcode-paste').value = content
+    processGCode(content)
+
+  } catch (err) {
+    info.style.display = 'block'
+    info.style.color = 'var(--danger)'
+    info.textContent = '✗ ' + (err.message || 'Failed to load from machine')
+  } finally {
+    btn.innerHTML = origText
+    btn.disabled = false
+  }
+}
+
+// Listen to raw machine lines to detect active file
+window.addEventListener('message', e => {
+  if (e.data?.type === 'fluid-event' && e.data.event === 'line') {
+    const line = e.data.data || ''
+    // FluidNC reports active file in status: SD:0.12,/sd/file.nc
+    const sdMatch = line.match(/SD:[^,]+,([^\|>]+\.(?:nc|gcode|cnc|tap|ngc|gc))/i)
+    if (sdMatch) state.currentMachineFile = sdMatch[1].trim()
+  }
+})
+
+// ═══════════════════════════════════════════════════════
+// Simulation Engine  (continued — functions below)
+// ═══════════════════════════════════════════════════════
+
+function simSetEnabled(enabled) {
+  document.getElementById('btn-sim-play').disabled = !enabled
+  document.getElementById('btn-sim-reset').disabled = !enabled
+}
+
+function setSimulationToolPosition(pos) {
+  state.visualToolPos = { ...pos }
+  updateToolheadPosition(pos)
+}
+
+function simReset() {
+  sim.active = false
+  sim.running = false
+  sim.moveIndex = 0
+  sim.segT = 0
+  sim.lastTime = 0
+  updateSimPlayBtn()
+  updateSimProgress()
+  clearRevealedPath()
+  syncVisualToolPosition()
+  document.getElementById('sim-progress-display').style.display = 'none'
+}
+
+function simTogglePlay() {
+  if (!parsedGCode || !parsedGCode.moves.length) return
+
+  if (sim.moveIndex >= parsedGCode.moves.length) {
+    simReset()
+  }
+
+  sim.running = !sim.running
+  if (sim.running) {
+    sim.active = true
+    sim.lastTime = performance.now()
+    document.getElementById('sim-progress-display').style.display = ''
+    initRevealedPath()
+    const move = parsedGCode.moves[Math.min(sim.moveIndex, parsedGCode.moves.length - 1)]
+    if (move) setSimulationToolPosition(move.from)
+  }
+  updateSimPlayBtn()
+}
+
+function updateSimPlayBtn() {
+  const playIcon = document.getElementById('sim-icon-play')
+  const pauseIcon = document.getElementById('sim-icon-pause')
+  const label = document.getElementById('sim-btn-label')
+  if (sim.running) {
+    playIcon.style.display = 'none'
+    pauseIcon.style.display = ''
+    label.textContent = 'Pause'
+  } else {
+    playIcon.style.display = ''
+    pauseIcon.style.display = 'none'
+    label.textContent = sim.moveIndex > 0 ? 'Resume' : 'Simulate'
+  }
+}
+
+function updateSimProgress() {
+  if (!parsedGCode) return
+  const total = parsedGCode.moves.length
+  const pct = total ? Math.round((sim.moveIndex / total) * 100) : 0
+  document.getElementById('sim-pct').textContent = pct + '%'
+  document.getElementById('sim-move-cur').textContent = sim.moveIndex
+  document.getElementById('sim-move-tot').textContent = total
+  document.getElementById('job-progress').style.width = pct + '%'
+}
+
+// Revealed path — grows as simulation progresses
+function initRevealedPath() {
+  // Remove old
+  clearRevealedPath()
+  if (!parsedGCode) return
+
+  // Pre-allocate buffer large enough for arc segments (arcs produce up to ~90 pts each)
+  const maxPts = parsedGCode.moves.length * 96 + 2
+  const positions = new Float32Array(maxPts * 3)
+  const colors = new Float32Array(maxPts * 3)
+
+  const geo = new THREE.BufferGeometry()
+  geo.setAttribute('position', new THREE.BufferAttribute(positions, 3))
+  geo.setAttribute('color', new THREE.BufferAttribute(colors, 3))
+  geo.setDrawRange(0, 0)
+
+  const mat = new THREE.LineBasicMaterial({ vertexColors: true, linewidth: 1 })
+  const lines = new THREE.LineSegments(geo, mat)
+
+  sim.revealedLines = lines
+  sim.revealedPositions = positions
+  sim.revealedColors = colors
+  sim.revealedCount = 0
+
+  groups.paths.add(lines)
+
+  // Dim the full preview path while sim is running
+  groups.paths.children.forEach(c => {
+    if (c !== lines && c.material) c.material.opacity = 0.15
+  })
+}
+
+function clearRevealedPath() {
+  if (sim.revealedLines) {
+    if (sim.revealedLines.geometry) sim.revealedLines.geometry.dispose()
+    if (sim.revealedLines.material) sim.revealedLines.material.dispose()
+    groups.paths.remove(sim.revealedLines)
+    sim.revealedLines = null
+  }
+  // Restore full path opacity
+  groups.paths.children.forEach(c => {
+    if (c.material) c.material.opacity = c.material.type === 'LineBasicMaterial' && c.material.transparent ? 0.5 : 1.0
+  })
+}
+
+function appendRevealedSegment(from, to, type) {
+  if (!sim.revealedLines) return
+  const pos = sim.revealedPositions
+  const col = sim.revealedColors
+  const i = sim.revealedCount * 6
+  const bedY = state._bedY || 80
+  const stockTopY = bedY + (state.stock.oz || 0) + (state.stock.z || 20)
+  const wx = state.workZero.x || 0
+  const wy = state.workZero.y || 0
+
+  // From point
+  pos[i]   = wx + from.x; pos[i+1] = stockTopY + from.z; pos[i+2] = machineYToSceneZ(wy + from.y)
+  // To point
+  pos[i+3] = wx + to.x;   pos[i+4] = stockTopY + to.z;   pos[i+5] = machineYToSceneZ(wy + to.y)
+
+  // Color by type
+  const theme = getThemePalette()
+  const c = type === 'rapid' ? theme.rapid : type === 'arc' ? theme.arc : theme.cut
+  col[i] = c.r; col[i+1] = c.g; col[i+2] = c.b
+  col[i+3] = c.r; col[i+4] = c.g; col[i+5] = c.b
+
+  sim.revealedCount++
+  const geo = sim.revealedLines.geometry
+  geo.attributes.position.needsUpdate = true
+  geo.attributes.color.needsUpdate = true
+  geo.setDrawRange(0, sim.revealedCount * 2)
+}
+
+function appendRevealedArc(from, to, i, j, cw, type) {
+  const pts = arcPoints(from, to, i, j, cw)
+  for (let k = 0; k < pts.length - 1; k++) {
+    appendRevealedSegment(pts[k], pts[k + 1], type)
+  }
+}
+
+// Simulation tick — called from animate loop
+function simTick(now) {
+  if (!sim.running || !parsedGCode) return
+
+  const dt = (now - sim.lastTime) / 1000
+  sim.lastTime = now
+
+  const moves = parsedGCode.moves
+  if (sim.moveIndex >= moves.length) {
+    sim.running = false
+    updateSimPlayBtn()
+    // Restore full path opacity
+    groups.paths.children.forEach(c => {
+      if (c !== sim.revealedLines && c.material) c.material.opacity = c.material.transparent ? 0.5 : 1.0
+    })
+    return
+  }
+
+  const move = moves[sim.moveIndex]
+  const dist = Math.hypot(move.to.x - move.from.x, move.to.y - move.from.y, move.to.z - move.from.z)
+
+  // Speed: rapids at 3000 mm/min, cuts at 1000 mm/min, scaled by speedMult
+  const mmPerSec = (move.type === 'rapid' ? 3000 : 1000) / 60 * sim.speedMult
+  const segDuration = dist > 0.001 ? dist / mmPerSec : 0.001
+
+  sim.segT += dt / segDuration
+
+  if (sim.segT >= 1) {
+    if (move.type === 'arc' && move.i !== undefined) {
+      appendRevealedArc(move.from, move.to, move.i, move.j, move.cw, move.type)
+    } else {
+      appendRevealedSegment(move.from, move.to, move.type)
+    }
+    setSimulationToolPosition(move.to)
+    sim.moveIndex++
+    sim.segT = 0
+    updateSimProgress()
+
+    const listItems = document.querySelectorAll('.gcode-line')
+    listItems.forEach(el => el.classList.remove('active'))
+    if (move.lineIndex !== undefined && listItems[move.lineIndex]) {
+      listItems[move.lineIndex].classList.add('active')
+      listItems[move.lineIndex].scrollIntoView({ block: 'nearest' })
+    }
+  } else {
+    const t = sim.segT
+    if (move.type === 'arc' && move.i !== undefined) {
+      const acx = move.from.x + move.i, acy = move.from.y + move.j
+      const r = Math.hypot(move.i, move.j)
+      const a0 = Math.atan2(move.from.y - acy, move.from.x - acx)
+      const a1 = Math.atan2(move.to.y - acy, move.to.x - acx)
+      let sweep = move.cw ? (a0 - a1) : (a1 - a0)
+      if (sweep <= 0) sweep += 2 * Math.PI
+      if (move.cw) sweep = -sweep
+      setSimulationToolPosition({
+        x: acx + r * Math.cos(a0 + sweep * t),
+        y: acy + r * Math.sin(a0 + sweep * t),
+        z: move.from.z + (move.to.z - move.from.z) * t,
+      })
+    } else {
+      setSimulationToolPosition({
+        x: move.from.x + (move.to.x - move.from.x) * t,
+        y: move.from.y + (move.to.y - move.from.y) * t,
+        z: move.from.z + (move.to.z - move.from.z) * t,
+      })
+    }
+  }
+}
+
+document.getElementById('btn-load-machine').addEventListener('click', loadFromMachine)
+
+document.getElementById('btn-sim-play').addEventListener('click', simTogglePlay)
+document.getElementById('btn-sim-reset').addEventListener('click', simReset)
+document.getElementById('btn-mist').addEventListener('click', () => {
+  call('sendRealtime', { byte: 0xA0 }).catch(console.error)
+  setCoolantState('mist')
+})
+document.getElementById('btn-flood').addEventListener('click', () => {
+  call('sendRealtime', { byte: 0xA1 }).catch(console.error)
+  setCoolantState('flood')
+})
+document.getElementById('btn-coolant-off').addEventListener('click', () => {
+  call('sendCommand', { command: 'M9' }).catch(console.error)
+  setCoolantState('off')
+})
+document.getElementById('btn-job-start').addEventListener('click', () => {
+  if (!state.loadedPath) return
+  call('sendCommand', { command: `$SD/Run=${state.loadedPath}` }).catch(console.error)
+})
+document.getElementById('btn-job-pause').addEventListener('click', () => call('sendRealtime', { byte: 0x21 }).catch(console.error))
+document.getElementById('btn-job-resume').addEventListener('click', () => call('sendRealtime', { byte: 0x7e }).catch(console.error))
+document.getElementById('btn-job-abort').addEventListener('click', () => call('sendRealtime', { byte: 0x18 }).catch(console.error))
+document.getElementById('btn-camera-overlay').addEventListener('click', toggleCameraOverlay)
+document.getElementById('camera-opacity').addEventListener('input', e => {
+  state.cameraOverlay.opacity = parseInt(e.target.value, 10) / 100
+  syncCameraOverlayUi()
+  savePersistentState()
+})
+document.getElementById('camera-scale').addEventListener('input', e => {
+  state.cameraOverlay.scale = parseInt(e.target.value, 10) / 100
+  syncCameraOverlayUi()
+  savePersistentState()
+})
+document.getElementById('camera-flip-x').addEventListener('change', e => {
+  state.cameraOverlay.flipX = e.target.checked
+  syncCameraOverlayUi()
+  savePersistentState()
+})
+document.getElementById('camera-flip-y').addEventListener('change', e => {
+  state.cameraOverlay.flipY = e.target.checked
+  syncCameraOverlayUi()
+  savePersistentState()
+})
+
+document.getElementById('sim-speed').addEventListener('input', e => {
+  sim.speedMult = parseInt(e.target.value)
+  document.getElementById('sim-speed-val').textContent = sim.speedMult + '×'
+})
+
+// ═══════════════════════════════════════════════════════
+// Edited Visualizer Geometry
+// ═══════════════════════════════════════════════════════
+const EDITED_VISUALIZER_GEOMETRY = {
+  "generatedAt": "2026-05-16T11:56:38.436Z",
+  "machine": { "x": 300, "y": 300, "z": 100 },
+  "parts": [
+    { "id": "bed-surface", "name": "Bed surface", "kind": "bed", "shape": "box", "pos": [150,130,35.2], "rot": [0,0,0], "size": [300,340,9.6], "color": "#202b3d", "anchor": {"x":false,"y":false,"z":false}, "glow": false },
+    { "id": "base-leg-1", "name": "Base leg 1", "kind": "bed", "shape": "box", "pos": [-41.65,-31.65,14.95], "rot": [0,0,0], "size": [16.7,16.7,29.9], "color": "#303b4d", "anchor": {"x":false,"y":false,"z":false}, "glow": false },
+    { "id": "base-leg-2", "name": "Base leg 2", "kind": "bed", "shape": "box", "pos": [341.65,-31.65,14.95], "rot": [0,0,0], "size": [16.7,16.7,29.9], "color": "#303b4d", "anchor": {"x":false,"y":false,"z":false}, "glow": false },
+    { "id": "base-leg-3", "name": "Base leg 3", "kind": "bed", "shape": "box", "pos": [-41.65,391.65,14.95], "rot": [0,0,0], "size": [16.7,16.7,29.9], "color": "#303b4d", "anchor": {"x":false,"y":false,"z":false}, "glow": false },
+    { "id": "base-leg-4", "name": "Base leg 4", "kind": "bed", "shape": "box", "pos": [341.65,391.65,14.95], "rot": [0,0,0], "size": [16.7,16.7,29.9], "color": "#303b4d", "anchor": {"x":false,"y":false,"z":false}, "glow": false },
+    { "id": "front-base-rail", "name": "Front base rail", "kind": "bed", "shape": "box", "pos": [150,-34,35.8], "rot": [0,0,0], "size": [398,11,7.4], "color": "#69768a", "anchor": {"x":false,"y":false,"z":false}, "glow": false },
+    { "id": "left-y-rail", "name": "Left Y rail", "kind": "y-axis", "shape": "box", "pos": [2.4,130,42.1], "rot": [0,0,0], "size": [4.8,340,4.2], "color": "#69768a", "anchor": {"x":false,"y":true,"z":false}, "glow": false },
+    { "id": "right-y-rail", "name": "Right Y rail", "kind": "y-axis", "shape": "box", "pos": [297.6,130,42], "rot": [0,0,0], "size": [4.8,340,4.2], "color": "#69768a", "anchor": {"x":false,"y":true,"z":false}, "glow": false },
+    { "id": "gantry-upright-left", "name": "Gantry upright left", "kind": "y-axis", "shape": "box", "pos": [9.1,262.8,67], "rot": [0,0,0], "size": [18.2,11,54], "color": "#303b4d", "anchor": {"x":false,"y":true,"z":false}, "glow": false },
+    { "id": "gantry-upright-right", "name": "Gantry upright right", "kind": "y-axis", "shape": "box", "pos": [290.9,262.8,67], "rot": [0,0,0], "size": [18.2,11,54], "color": "#303b4d", "anchor": {"x":false,"y":true,"z":false}, "glow": false },
+    { "id": "gantry-cross-beam", "name": "Gantry cross beam", "kind": "y-axis", "shape": "box", "pos": [150,263.71,99], "rot": [0,0,0], "size": [298,14.4,22], "color": "#294a72", "anchor": {"x":false,"y":true,"z":false}, "glow": false },
+    { "id": "x-rail-top", "name": "X rail top", "kind": "x-axis", "shape": "box", "pos": [150,270.92,103], "rot": [0,0,0], "size": [298,2.16,2.16], "color": "#69768a", "anchor": {"x":true,"y":true,"z":false}, "glow": false },
+    { "id": "x-rail-bottom", "name": "X rail bottom", "kind": "x-axis", "shape": "box", "pos": [150,270.92,93], "rot": [0,0,0], "size": [298,2.16,2.16], "color": "#69768a", "anchor": {"x":true,"y":true,"z":false}, "glow": false },
+    { "id": "carriage-grip-1", "name": "Carriage grip 1", "kind": "x-axis", "shape": "box", "pos": [0,274.16,103], "rot": [0,0,0], "size": [26.4,6.48,5.4], "color": "#69768a", "anchor": {"x":true,"y":true,"z":false}, "glow": false },
+    { "id": "carriage-grip-2", "name": "Carriage grip 2", "kind": "x-axis", "shape": "box", "pos": [0,274.16,93], "rot": [0,0,0], "size": [26.4,6.48,5.4], "color": "#69768a", "anchor": {"x":true,"y":true,"z":false}, "glow": false },
+    { "id": "z-column", "name": "Z column", "kind": "z-axis", "shape": "box", "pos": [0,295,84.27], "rot": [0,0,0], "size": [21.6,32,23], "color": "#294a72", "anchor": {"x":true,"y":true,"z":true}, "glow": false },
+    { "id": "z-rail-1", "name": "Z rail 1", "kind": "z-axis", "shape": "box", "pos": [-6.05,278.52,88.24], "rot": [0,0,0], "size": [2.59,2.59,35.2], "color": "#69768a", "anchor": {"x":true,"y":true,"z":true}, "glow": false },
+    { "id": "z-rail-2", "name": "Z rail 2", "kind": "z-axis", "shape": "box", "pos": [6.05,278.63,88], "rot": [0,0,0], "size": [2.59,2.59,35.2], "color": "#69768a", "anchor": {"x":true,"y":true,"z":true}, "glow": false },
+    { "id": "spindle-mount-plate", "name": "Spindle mount plate", "kind": "z-axis", "shape": "box", "pos": [0,300,88], "rot": [0,0,0], "size": [24.84,3.88,5.2], "color": "#405d84", "anchor": {"x":true,"y":true,"z":true}, "glow": false },
+    { "id": "spindle-body", "name": "Spindle body", "kind": "z-axis", "shape": "cylinder", "pos": [0,300,76.41], "rot": [0,0,0], "size": [21,21,40], "color": "#9aa5b4", "anchor": {"x":true,"y":true,"z":true}, "glow": false },
+    { "id": "spindle-collet", "name": "Spindle collet", "kind": "z-axis", "shape": "cylinder", "pos": [0,300,54.8], "rot": [0,0,0], "size": [12.6,12.6,4.8], "color": "#69768a", "anchor": {"x":true,"y":true,"z":true}, "glow": false },
+    { "id": "end-effector", "name": "End effector glow", "kind": "z-axis", "shape": "cylinder", "pos": [0,300,38.4], "rot": [0,0,0], "size": [4.62,4.62,2.4], "color": "#f0a030", "anchor": {"x":true,"y":true,"z":true}, "glow": true },
+    { "id": "custom-mp8abs9b", "name": "Custom block", "kind": "custom", "pos": [1.05,283.83,88.99], "rot": [0,0,0], "size": [27.25,5.85,35], "color": "#234571", "anchor": {"x":true,"y":true,"z":true}, "glow": false }
+  ]
+}
+
+function installEditedVisualizerGeometry(options = { hideOriginal: false, enabled: false }) {
+  if (!options.enabled) return
+  if (!window.THREE || typeof scene === 'undefined' || typeof groups === 'undefined') {
+    console.warn('3D visualiser scene is not ready yet.')
+    return
+  }
+  if (!groups.editedGeometry) {
+    groups.editedGeometry = new THREE.Group()
+    scene.add(groups.editedGeometry)
+  }
+  if (typeof clearGroup === 'function') clearGroup(groups.editedGeometry)
+  else while (groups.editedGeometry.children.length) groups.editedGeometry.remove(groups.editedGeometry.children[0])
+
+  const makeMat = (part, alpha = 1) => new THREE.MeshLambertMaterial({
+    color: part.color || '#8d9ab1',
+    transparent: alpha < 1,
+    opacity: alpha,
+  })
+  const makeGeometry = (part, sx, sy, sz, glowScale = 1) => {
+    if (part.shape === 'cylinder') {
+      const r = Math.max(sx, sy) * glowScale / 2
+      return new THREE.CylinderGeometry(r, r, sz * glowScale, 18)
+    }
+    return new THREE.BoxGeometry(sx * glowScale, sz * glowScale, sy * glowScale)
+  }
+  const addPart = (part) => {
+    const sx = Math.max(1, part.size?.[0] || 1)
+    const sy = Math.max(1, part.size?.[1] || 1)
+    const sz = Math.max(1, part.size?.[2] || 1)
+    const mesh = new THREE.Mesh(makeGeometry(part, sx, sy, sz), makeMat(part))
+    // pos: [machineX, machineY, machineZ] → scene: x=machineX, y=machineZ, z=machineY
+    mesh.position.set(part.pos?.[0] || 0, part.pos?.[2] || 0, part.pos?.[1] || 0)
+    mesh.rotation.set(
+      ((part.rot?.[0] || 0) * Math.PI) / 180,
+      ((part.rot?.[1] || 0) * Math.PI) / 180,
+      ((part.rot?.[2] || 0) * Math.PI) / 180,
+    )
+    groups.editedGeometry.add(mesh)
+    const edge = new THREE.LineSegments(
+      new THREE.EdgesGeometry(mesh.geometry),
+      new THREE.LineBasicMaterial({ color: part.color || '#8d9ab1', transparent: true, opacity: 0.45 }),
+    )
+    edge.position.copy(mesh.position)
+    edge.rotation.set(mesh.rotation.x, mesh.rotation.y, mesh.rotation.z)
+    groups.editedGeometry.add(edge)
+    if (part.glow) {
+      const halo = new THREE.Mesh(makeGeometry(part, sx, sy, sz, 1.35), makeMat(part, 0.22))
+      halo.position.copy(mesh.position)
+      halo.rotation.set(mesh.rotation.x, mesh.rotation.y, mesh.rotation.z)
+      groups.editedGeometry.add(halo)
+    }
+  }
+
+  EDITED_VISUALIZER_GEOMETRY.parts.forEach(part => addPart(part))
+  if (options.hideOriginal) {
+    ;['bed','frame','gantry','carriage','zSlide','toolhead'].forEach(key => {
+      if (groups[key]) groups[key].visible = false
+    })
+  }
+}
+
+// ═══════════════════════════════════════════════════════
+// Init
+// ═══════════════════════════════════════════════════════
+async function init() {
+  loadPersistentState()
+  installLiveThemeSync()
+  if (state._savedGcodeText) document.getElementById('gcode-paste').value = state._savedGcodeText
+  syncStockInputs()
+  syncCameraOverlayUi()
+  syncPlacementUi()
+  setProjectionMode(state.projectionMode)
+  setCoolantState('off')
+  syncCanvasControls()
+  syncJobControls('Idle')
+
+  // buildMachine already calls buildToolhead internally
+  buildMachine()
+  buildStock()
+  installEditedVisualizerGeometry()
+
+  // Try to connect to FigUI host
+  try {
+    await call('subscribe', { event: 'status' })
+    await call('subscribe', { event: 'line' })
+    const s = await call('getStatus')
+    onMachineStatus(s)
+    await loadMachineSettings()
+    // Only auto-load if we're actually connected (don't spam 404s in demo/offline mode)
+    if (state.connected) {
+      setTimeout(() => loadFromMachine(), 800)
+    }
+  } catch {
+    // Not connected to a real machine — run in standalone/demo mode
+    document.getElementById('machine-warn').style.display = 'block'
+    document.getElementById('machine-status').className = 'status-pill disconnected'
+    document.getElementById('machine-status').innerHTML = '<div class="status-dot"></div><span>Sim Mode</span>'
+    // Show demo toolpath
+    const demo = `G21 G90
+G0 Z5
+G0 X0 Y0
+G1 Z-2 F300
+G1 X100 F1200
+G1 Y100
+G1 X0
+G1 Y0
+G0 Z5
+G0 X20 Y20
+G1 Z-1 F300
+G1 X80 F1200
+G1 Y80
+G1 X20
+G1 Y20
+G0 Z5
+G0 X50 Y50
+G1 Z-3 F300
+G2 X50 Y50 I20 J0 F1200
+G0 Z10
+G0 X0 Y0`
+    document.getElementById('gcode-paste').value = demo
+    processGCode(demo)
+  }
+}
+
+init()
+</script>
+</body>
+</html>
