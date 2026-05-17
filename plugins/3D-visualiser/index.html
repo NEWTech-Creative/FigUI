@@ -101,6 +101,7 @@
     setFromPoints(points){ this.points = points.map(p => p.clone ? p.clone() : new Vector3(p.x,p.y,p.z)); return this }
     setAttribute(name, attr){ this.attributes[name]=attr; return this }
     setDrawRange(start, count){ this.drawRange = { start, count }; return this }
+    computeBoundingSphere(){ return this }
   }
   class Material { constructor(o={}){ this.color = o.color instanceof Color ? o.color : new Color(o.color ?? 0xffffff); this.transparent=!!o.transparent; this.opacity=o.opacity ?? 1; this.vertexColors=!!o.vertexColors; this.type=this.constructor.name } dispose(){} }
   class MeshLambertMaterial extends Material {}
@@ -221,7 +222,7 @@
             }
           }
           else if(g.points?.length) for(let i=0;i<g.points.length-1;i+=(obj instanceof LineSegments?2:1)) lineBatch.push({a:wp.clone().add(g.points[i]),b:wp.clone().add(g.points[i+1]),mat})
-          else if(g.attributes.position){
+          else if(g.attributes?.position){
             const arr=g.attributes.position.array,cols=g.attributes.color?.array,count=Math.min(g.drawRange.count,arr.length/3)
             for(let i=0;i<count-1;i+=2){const c=cols?new Color():null;if(cols){c.r=cols[i*3];c.g=cols[i*3+1];c.b=cols[i*3+2]}lineBatch.push({a:new Vector3(arr[i*3],arr[i*3+1],arr[i*3+2]),b:new Vector3(arr[(i+1)*3],arr[(i+1)*3+1],arr[(i+1)*3+2]),mat,col:c})}
           }
@@ -234,6 +235,22 @@
             else if(g.type==='cylinder') faces=cylinderFaces(g.r,g.h)
             else if(g.type==='cone') faces=coneFaces(g.r,g.h)
             else if(g.type==='torus') faces=cylinderFaces(g.r,g.h,16)
+            else if(g.type==='buffer' && g.attributes?.position) {
+              const arr = g.attributes.position.array
+              const norm = g.attributes.normal?.array
+              faces = []
+              for (let i = 0; i + 8 < arr.length; i += 9) {
+                const v = [
+                  new Vector3(arr[i], arr[i + 1], arr[i + 2]),
+                  new Vector3(arr[i + 3], arr[i + 4], arr[i + 5]),
+                  new Vector3(arr[i + 6], arr[i + 7], arr[i + 8]),
+                ]
+                let n
+                if (norm && norm.length >= i + 9) n = new Vector3(norm[i], norm[i + 1], norm[i + 2]).normalize()
+                else n = new Vector3().crossVectors(v[1].clone().sub(v[0]), v[2].clone().sub(v[0])).normalize()
+                faces.push({ v, n })
+              }
+            }
             else faces=[]
             const alpha=mat.opacity??1, transp=mat.transparent&&alpha<0.99
             // Apply own quaternion first (for cones oriented by setFromUnitVectors), then parent Euler
@@ -301,7 +318,7 @@
       }
     }
   }
-  window.THREE = { Color, Vector2, Vector3, Group, Scene, PerspectiveCamera, OrthographicCamera, WebGLRenderer, AmbientLight, DirectionalLight, MeshLambertMaterial, MeshBasicMaterial, LineBasicMaterial, SpriteMaterial, BoxGeometry, CylinderGeometry, ConeGeometry, TorusGeometry, EdgesGeometry, BufferGeometry, BufferAttribute, Mesh, LineSegments, Line, Sprite, CanvasTexture, Raycaster, Plane, DoubleSide:2, PCFSoftShadowMap:1 }
+  window.THREE = { Color, Vector2, Vector3, Group, Scene, PerspectiveCamera, OrthographicCamera, WebGLRenderer, AmbientLight, DirectionalLight, MeshLambertMaterial, MeshBasicMaterial, LineBasicMaterial, SpriteMaterial, BoxGeometry, CylinderGeometry, ConeGeometry, TorusGeometry, EdgesGeometry, BufferGeometry, BufferAttribute, Float32BufferAttribute: BufferAttribute, Mesh, LineSegments, Line, Sprite, CanvasTexture, Raycaster, Plane, DoubleSide:2, PCFSoftShadowMap:1 }
 })()
 </script>
 <style>
@@ -1216,6 +1233,16 @@
             <svg viewBox="0 0 24 24"><polyline points="1 4 1 10 7 10"/><path d="M3.51 15a9 9 0 102.13-9.36L1 10"/></svg>
             Fetch $$ Settings
           </button>
+          <button class="btn" id="btn-import-machine-json">
+            <svg viewBox="0 0 24 24"><path d="M12 3v12"/><polyline points="7 10 12 15 17 10"/><path d="M5 21h14"/></svg>
+            Import machine.json
+          </button>
+          <button class="btn" id="btn-clear-machine-json">
+            <svg viewBox="0 0 24 24"><path d="M3 6h18"/><path d="M8 6V4h8v2"/><path d="M19 6l-1 14H6L5 6"/></svg>
+            Clear saved import
+          </button>
+          <input id="machine-json-file" type="file" accept=".json,application/json" style="display:none">
+          <div class="mini-note" id="machine-json-status">Active geometry: loading...</div>
         </div>
 
         <div class="panel-section">
@@ -1308,9 +1335,112 @@ const state = {
 }
 
 const STORAGE_KEY = 'figui.3dVisualiser.v2'
+const MACHINE_PROFILE_STORAGE_KEY = 'figui.3dVisualiser.machineProfile'
+const MACHINE_PROFILE_FILE = 'machine.json'
+const MACHINE_DEFAULT_PROFILE_FILE = 'machine_default.json'
+let machineGeometryProfile = null
+let machineGeometrySource = 'built-in defaults'
 
 function machineYToSceneZ(machineY) {
   return state.machine.y - machineY
+}
+
+function applyMachineGeometryProfile(profile, source = 'machine profile') {
+  if (!profile || typeof profile !== 'object') return
+  machineGeometryProfile = profile
+  machineGeometrySource = source
+  if (profile.machine) {
+    state.machine = {
+      x: Number(profile.machine.x) || state.machine.x,
+      y: Number(profile.machine.y) || state.machine.y,
+      z: Number(profile.machine.z) || state.machine.z,
+    }
+  }
+  if (profile.home) {
+    if (['front-left','front-right','back-left','back-right'].includes(profile.home.corner)) {
+      state.machineHomeCorner = profile.home.corner
+    }
+    if (typeof profile.home.flipX === 'boolean') state.machineFlipX = profile.home.flipX
+  }
+}
+
+function describeMachineGeometryProfile(profile) {
+  if (!profile) return 'built-in procedural defaults'
+  const edited = profile.editedGeometry || profile.geometry
+  if (edited?.enabled) return `${profile.name || 'machine profile'} with edited part geometry`
+  if (profile.proceduralGeometry?.enabled !== false) return `${profile.name || 'machine profile'} procedural geometry`
+  return profile.name || 'machine profile'
+}
+
+function updateMachineJsonStatus(tone = 'var(--text-dim)') {
+  setMachineJsonStatus(`Active geometry: ${machineGeometrySource} (${describeMachineGeometryProfile(machineGeometryProfile)}).`, tone)
+}
+
+function rebuildAfterMachineProfileLoad() {
+  syncStockInputs()
+  buildMachine()
+  buildStock()
+  buildToolhead()
+  installEditedVisualizerGeometry()
+  if (parsedGCode) renderPaths()
+  updateToolheadPosition()
+}
+
+async function loadMachineGeometryProfile() {
+  if (location.protocol === 'file:') {
+    try {
+      const stored = localStorage.getItem(MACHINE_PROFILE_STORAGE_KEY)
+      if (stored) {
+        applyMachineGeometryProfile(JSON.parse(stored), 'saved imported machine.json')
+        setMachineJsonStatus('Active geometry: saved imported machine.json. Browsers block file:// loading, so use Import machine.json after changing the file.', 'var(--warn)')
+        return
+      }
+    } catch (err) {
+      console.warn('Unable to load saved imported machine geometry:', err)
+    }
+    machineGeometrySource = 'built-in defaults'
+    setMachineJsonStatus('Active geometry: built-in defaults. Browsers block file:// loading; click Import machine.json to load your file.', 'var(--warn)')
+    return
+  }
+
+  const fetchProfile = async (fileName) => {
+    const response = await fetch(fileName, { cache: 'no-store' })
+    if (!response.ok) throw new Error(`${fileName} ${response.status}`)
+    return response.json()
+  }
+
+  const errors = []
+  for (const fileName of [MACHINE_PROFILE_FILE, MACHINE_DEFAULT_PROFILE_FILE]) {
+    try {
+      applyMachineGeometryProfile(await fetchProfile(fileName), fileName)
+      updateMachineJsonStatus(fileName === MACHINE_PROFILE_FILE ? 'var(--ok)' : 'var(--warn)')
+      return
+    } catch (err) {
+      errors.push(`${fileName}: ${err.message || err}`)
+    }
+  }
+
+  try {
+    const stored = localStorage.getItem(MACHINE_PROFILE_STORAGE_KEY)
+    if (stored) {
+      applyMachineGeometryProfile(JSON.parse(stored), 'saved imported machine.json')
+      updateMachineJsonStatus('var(--warn)')
+      return
+    }
+  } catch (err) {
+    errors.push(`saved import: ${err.message || err}`)
+  }
+
+  machineGeometrySource = 'built-in defaults'
+  updateMachineJsonStatus('var(--warn)')
+  console.warn('Using built-in machine geometry defaults:', errors.join('; '))
+}
+
+function setMachineJsonStatus(text, tone = 'var(--text-dim)') {
+  const el = document.getElementById('machine-json-status')
+  if (!el) return
+  el.textContent = text
+  el.style.color = tone
 }
 
 function syncVisualToolPosition() {
@@ -1981,6 +2111,7 @@ function buildStock() {
 // Toolhead (tool bit tip) — built inside zSlide context
 // ═══════════════════════════════════════════════════════
 let toolheadGroup = null
+let editedGlowHalos = []
 function buildToolhead() {
   clearGroup(groups.toolhead)
   if (!state.showToolhead) return
@@ -2541,6 +2672,13 @@ function animate() {
     const ring = toolheadGroup.children[2]
     if (ring && ring.material) ring.material.opacity = 0.5 + 0.35 * Math.sin(now * 0.004)
   }
+  for (const halo of editedGlowHalos) {
+    if (!halo?.material) continue
+    const pulse = 0.22 + 0.16 * Math.sin(now * 0.003)
+    halo.material.opacity = pulse
+    const scale = 1.04 + 0.06 * Math.sin(now * 0.003)
+    halo.scale.set(scale, scale, scale)
+  }
   // Simulation step (guard: sim functions defined later in file but hoisted as function decls)
   if (typeof simTick === 'function') simTick(now)
   animateToolheadPosition(now)
@@ -2993,6 +3131,34 @@ document.getElementById('btn-apply-machine').addEventListener('click', () => {
 
 document.getElementById('btn-load-settings').addEventListener('click', loadMachineSettings)
 
+document.getElementById('btn-import-machine-json')?.addEventListener('click', () => {
+  document.getElementById('machine-json-file')?.click()
+})
+document.getElementById('machine-json-file')?.addEventListener('change', async e => {
+  const file = e.target.files?.[0]
+  if (!file) return
+  try {
+    const profile = JSON.parse(await file.text())
+    localStorage.setItem(MACHINE_PROFILE_STORAGE_KEY, JSON.stringify(profile))
+    applyMachineGeometryProfile(profile, `imported ${file.name}`)
+    rebuildAfterMachineProfileLoad()
+    setMachineJsonStatus(`Active geometry: imported ${file.name}; saved for file:// refreshes. Replace ${MACHINE_PROFILE_FILE} when running from FigUI or a local server.`, 'var(--ok)')
+  } catch (err) {
+    setMachineJsonStatus('Invalid machine.json: ' + (err.message || err), 'var(--danger)')
+  } finally {
+    e.target.value = ''
+  }
+})
+
+document.getElementById('btn-clear-machine-json')?.addEventListener('click', async () => {
+  localStorage.removeItem(MACHINE_PROFILE_STORAGE_KEY)
+  machineGeometryProfile = null
+  machineGeometrySource = 'built-in defaults'
+  await loadMachineGeometryProfile()
+  rebuildAfterMachineProfileLoad()
+  updateMachineJsonStatus('var(--warn)')
+})
+
 document.getElementById('home-corner')?.addEventListener('change', e => {
   state.machineHomeCorner = e.target.value
   syncVisualToolPosition()
@@ -3383,38 +3549,11 @@ document.getElementById('sim-speed').addEventListener('input', e => {
 // ═══════════════════════════════════════════════════════
 // Edited Visualizer Geometry
 // ═══════════════════════════════════════════════════════
-const EDITED_VISUALIZER_GEOMETRY = {
-  "generatedAt": "2026-05-16T11:56:38.436Z",
-  "machine": { "x": 300, "y": 300, "z": 100 },
-  "parts": [
-    { "id": "bed-surface", "name": "Bed surface", "kind": "bed", "shape": "box", "pos": [150,130,35.2], "rot": [0,0,0], "size": [300,340,9.6], "color": "#202b3d", "anchor": {"x":false,"y":false,"z":false}, "glow": false },
-    { "id": "base-leg-1", "name": "Base leg 1", "kind": "bed", "shape": "box", "pos": [-41.65,-31.65,14.95], "rot": [0,0,0], "size": [16.7,16.7,29.9], "color": "#303b4d", "anchor": {"x":false,"y":false,"z":false}, "glow": false },
-    { "id": "base-leg-2", "name": "Base leg 2", "kind": "bed", "shape": "box", "pos": [341.65,-31.65,14.95], "rot": [0,0,0], "size": [16.7,16.7,29.9], "color": "#303b4d", "anchor": {"x":false,"y":false,"z":false}, "glow": false },
-    { "id": "base-leg-3", "name": "Base leg 3", "kind": "bed", "shape": "box", "pos": [-41.65,391.65,14.95], "rot": [0,0,0], "size": [16.7,16.7,29.9], "color": "#303b4d", "anchor": {"x":false,"y":false,"z":false}, "glow": false },
-    { "id": "base-leg-4", "name": "Base leg 4", "kind": "bed", "shape": "box", "pos": [341.65,391.65,14.95], "rot": [0,0,0], "size": [16.7,16.7,29.9], "color": "#303b4d", "anchor": {"x":false,"y":false,"z":false}, "glow": false },
-    { "id": "front-base-rail", "name": "Front base rail", "kind": "bed", "shape": "box", "pos": [150,-34,35.8], "rot": [0,0,0], "size": [398,11,7.4], "color": "#69768a", "anchor": {"x":false,"y":false,"z":false}, "glow": false },
-    { "id": "left-y-rail", "name": "Left Y rail", "kind": "y-axis", "shape": "box", "pos": [2.4,130,42.1], "rot": [0,0,0], "size": [4.8,340,4.2], "color": "#69768a", "anchor": {"x":false,"y":true,"z":false}, "glow": false },
-    { "id": "right-y-rail", "name": "Right Y rail", "kind": "y-axis", "shape": "box", "pos": [297.6,130,42], "rot": [0,0,0], "size": [4.8,340,4.2], "color": "#69768a", "anchor": {"x":false,"y":true,"z":false}, "glow": false },
-    { "id": "gantry-upright-left", "name": "Gantry upright left", "kind": "y-axis", "shape": "box", "pos": [9.1,262.8,67], "rot": [0,0,0], "size": [18.2,11,54], "color": "#303b4d", "anchor": {"x":false,"y":true,"z":false}, "glow": false },
-    { "id": "gantry-upright-right", "name": "Gantry upright right", "kind": "y-axis", "shape": "box", "pos": [290.9,262.8,67], "rot": [0,0,0], "size": [18.2,11,54], "color": "#303b4d", "anchor": {"x":false,"y":true,"z":false}, "glow": false },
-    { "id": "gantry-cross-beam", "name": "Gantry cross beam", "kind": "y-axis", "shape": "box", "pos": [150,263.71,99], "rot": [0,0,0], "size": [298,14.4,22], "color": "#294a72", "anchor": {"x":false,"y":true,"z":false}, "glow": false },
-    { "id": "x-rail-top", "name": "X rail top", "kind": "x-axis", "shape": "box", "pos": [150,270.92,103], "rot": [0,0,0], "size": [298,2.16,2.16], "color": "#69768a", "anchor": {"x":true,"y":true,"z":false}, "glow": false },
-    { "id": "x-rail-bottom", "name": "X rail bottom", "kind": "x-axis", "shape": "box", "pos": [150,270.92,93], "rot": [0,0,0], "size": [298,2.16,2.16], "color": "#69768a", "anchor": {"x":true,"y":true,"z":false}, "glow": false },
-    { "id": "carriage-grip-1", "name": "Carriage grip 1", "kind": "x-axis", "shape": "box", "pos": [0,274.16,103], "rot": [0,0,0], "size": [26.4,6.48,5.4], "color": "#69768a", "anchor": {"x":true,"y":true,"z":false}, "glow": false },
-    { "id": "carriage-grip-2", "name": "Carriage grip 2", "kind": "x-axis", "shape": "box", "pos": [0,274.16,93], "rot": [0,0,0], "size": [26.4,6.48,5.4], "color": "#69768a", "anchor": {"x":true,"y":true,"z":false}, "glow": false },
-    { "id": "z-column", "name": "Z column", "kind": "z-axis", "shape": "box", "pos": [0,295,84.27], "rot": [0,0,0], "size": [21.6,32,23], "color": "#294a72", "anchor": {"x":true,"y":true,"z":true}, "glow": false },
-    { "id": "z-rail-1", "name": "Z rail 1", "kind": "z-axis", "shape": "box", "pos": [-6.05,278.52,88.24], "rot": [0,0,0], "size": [2.59,2.59,35.2], "color": "#69768a", "anchor": {"x":true,"y":true,"z":true}, "glow": false },
-    { "id": "z-rail-2", "name": "Z rail 2", "kind": "z-axis", "shape": "box", "pos": [6.05,278.63,88], "rot": [0,0,0], "size": [2.59,2.59,35.2], "color": "#69768a", "anchor": {"x":true,"y":true,"z":true}, "glow": false },
-    { "id": "spindle-mount-plate", "name": "Spindle mount plate", "kind": "z-axis", "shape": "box", "pos": [0,300,88], "rot": [0,0,0], "size": [24.84,3.88,5.2], "color": "#405d84", "anchor": {"x":true,"y":true,"z":true}, "glow": false },
-    { "id": "spindle-body", "name": "Spindle body", "kind": "z-axis", "shape": "cylinder", "pos": [0,300,76.41], "rot": [0,0,0], "size": [21,21,40], "color": "#9aa5b4", "anchor": {"x":true,"y":true,"z":true}, "glow": false },
-    { "id": "spindle-collet", "name": "Spindle collet", "kind": "z-axis", "shape": "cylinder", "pos": [0,300,54.8], "rot": [0,0,0], "size": [12.6,12.6,4.8], "color": "#69768a", "anchor": {"x":true,"y":true,"z":true}, "glow": false },
-    { "id": "end-effector", "name": "End effector glow", "kind": "z-axis", "shape": "cylinder", "pos": [0,300,38.4], "rot": [0,0,0], "size": [4.62,4.62,2.4], "color": "#f0a030", "anchor": {"x":true,"y":true,"z":true}, "glow": true },
-    { "id": "custom-mp8abs9b", "name": "Custom block", "kind": "custom", "pos": [1.05,283.83,88.99], "rot": [0,0,0], "size": [27.25,5.85,35], "color": "#234571", "anchor": {"x":true,"y":true,"z":true}, "glow": false }
-  ]
-}
-
-function installEditedVisualizerGeometry(options = { hideOriginal: false, enabled: false }) {
-  if (!options.enabled) return
+function installEditedVisualizerGeometry(options = {}) {
+  const geometry = machineGeometryProfile?.editedGeometry || machineGeometryProfile?.geometry || null
+  const parts = Array.isArray(geometry?.parts) ? geometry.parts : []
+  const enabled = options.enabled ?? geometry?.enabled ?? false
+  if (!enabled || !parts.length) return
   if (!window.THREE || typeof scene === 'undefined' || typeof groups === 'undefined') {
     console.warn('3D visualiser scene is not ready yet.')
     return
@@ -3423,8 +3562,34 @@ function installEditedVisualizerGeometry(options = { hideOriginal: false, enable
     groups.editedGeometry = new THREE.Group()
     scene.add(groups.editedGeometry)
   }
+  const replaceOriginal = options.hideOriginal ?? geometry?.hideOriginal ?? false
+  ;['bed','frame','gantry','carriage','zSlide','toolhead'].forEach(key => {
+    if (groups[key]) groups[key].visible = true
+    if (replaceOriginal && groups[key]) clearGroup(groups[key])
+  })
   if (typeof clearGroup === 'function') clearGroup(groups.editedGeometry)
   else while (groups.editedGeometry.children.length) groups.editedGeometry.remove(groups.editedGeometry.children[0])
+  editedGlowHalos = []
+
+  const sourceMachine = geometry?.sourceMachine || geometry?.machine || machineGeometryProfile?.machine || state.machine
+  const scale = {
+    x: (state.machine?.x || 300) / Math.max(1, Number(sourceMachine?.x) || 300),
+    y: (state.machine?.y || 300) / Math.max(1, Number(sourceMachine?.y) || 300),
+    z: (state.machine?.z || 100) / Math.max(1, Number(sourceMachine?.z) || 100),
+  }
+  const scaledPartForMachine = (part) => ({
+    ...part,
+    pos: [
+      (part.pos?.[0] || 0) * scale.x,
+      (part.pos?.[1] || 0) * scale.y,
+      (part.pos?.[2] || 0) * scale.z,
+    ],
+    size: [
+      Math.max(1, (part.size?.[0] || 1) * scale.x),
+      Math.max(1, (part.size?.[1] || 1) * scale.y),
+      Math.max(1, (part.size?.[2] || 1) * scale.z),
+    ],
+  })
 
   const makeMat = (part, alpha = 1) => new THREE.MeshLambertMaterial({
     color: part.color || '#8d9ab1',
@@ -3432,46 +3597,119 @@ function installEditedVisualizerGeometry(options = { hideOriginal: false, enable
     opacity: alpha,
   })
   const makeGeometry = (part, sx, sy, sz, glowScale = 1) => {
+    if (part.shape === 'mesh' && Array.isArray(part.meshData?.vertices)) {
+      const src = part.meshData.vertices
+      const mirror = part.meshData.mirror || {}
+      const mx = mirror.x ? -1 : 1
+      const my = mirror.y ? -1 : 1
+      const mz = mirror.z ? -1 : 1
+      const positions = []
+      const normals = []
+      for (let i = 0; i + 5 < src.length; i += 6) {
+        positions.push(
+          src[i] * mx * sx * glowScale / 2,
+          src[i + 2] * mz * sz * glowScale / 2,
+          src[i + 1] * my * sy * glowScale / 2,
+        )
+        normals.push(src[i + 3] * mx, src[i + 5] * mz, src[i + 4] * my)
+      }
+      const geometry = new THREE.BufferGeometry()
+      geometry.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3))
+      geometry.setAttribute('normal', new THREE.Float32BufferAttribute(normals, 3))
+      geometry.computeBoundingSphere()
+      return geometry
+    }
     if (part.shape === 'cylinder') {
       const r = Math.max(sx, sy) * glowScale / 2
       return new THREE.CylinderGeometry(r, r, sz * glowScale, 18)
     }
     return new THREE.BoxGeometry(sx * glowScale, sz * glowScale, sy * glowScale)
   }
+  const targetFor = (part) => {
+    const byAttachment = {
+      bed: () => ({ group: groups.bed, local: false }),
+      'y-axis': () => ({ group: groups.gantry, local: true, preserveWorld: part.anchorMode === 'world' }),
+      'x-axis': () => ({ group: groups.carriage, local: true, preserveWorld: part.anchorMode === 'world' }),
+      'z-axis': () => ({ group: groups.zSlide, local: true, preserveWorld: part.anchorMode === 'world' }),
+      toolhead: () => ({ group: groups.toolhead, local: true, preserveWorld: part.anchorMode === 'world' }),
+    }
+    if (part.attachedTo && byAttachment[part.attachedTo]) return byAttachment[part.attachedTo]()
+    if (part.kind === 'bed') return { group: groups.bed, local: false }
+    if (part.kind === 'toolhead' || part.id === 'end-effector' || part.id === 'tool-shank' || part.id === 'tool-bit') {
+      return { group: groups.toolhead, local: true }
+    }
+    if (part.id && (part.id.startsWith('z-') || part.id.startsWith('spindle-'))) return { group: groups.zSlide, local: true }
+    if (part.id && part.id.startsWith('carriage-')) return { group: groups.carriage, local: true }
+    if (part.id === 'left-y-rail' || part.id === 'right-y-rail') return { group: groups.bed, local: false }
+    if (part.id && (part.id.startsWith('gantry-') || part.id.startsWith('x-') || part.id === 'ball-screw')) {
+      return { group: groups.gantry, local: true }
+    }
+    if (part.kind === 'y-axis' || part.kind === 'x-axis') return { group: groups.gantry, local: true }
+    if (part.anchor?.z) return { group: groups.zSlide, local: true, preserveWorld: part.anchorMode === 'world' }
+    if (part.anchor?.x) return { group: groups.carriage, local: true, preserveWorld: part.anchorMode === 'world' }
+    if (part.anchor?.y) return { group: groups.gantry, local: true, preserveWorld: part.anchorMode === 'world' }
+    return { group: groups.editedGeometry, local: false }
+  }
+  const getEditorHomeOffsets = () => {
+    const homeSceneZ = state.machine?.y || 300
+    return {
+      gantry: [0, 0, homeSceneZ],
+      carriage: [0, 0, homeSceneZ],
+      zSlide: [0, 0, homeSceneZ],
+      toolhead: [0, 0, homeSceneZ],
+    }
+  }
+  const sceneToVisualiserPos = (part, target) => {
+    const x = part.pos?.[0] || 0
+    const y = part.pos?.[2] || 0
+    const z = part.pos?.[1] || 0
+    if (!target.local) return [x, y, z]
+    if (target.preserveWorld) {
+      const offsets = getEditorHomeOffsets()
+      const key = target.group === groups.zSlide ? 'zSlide' : target.group === groups.toolhead ? 'toolhead' : target.group === groups.carriage ? 'carriage' : 'gantry'
+      const offset = offsets[key] || [0, 0, state.machine?.y || 300]
+      return [x - offset[0], y - offset[1], z - offset[2]]
+    }
+    return [x, y, z - (state.machine?.y || 300)]
+  }
   const addPart = (part) => {
-    const sx = Math.max(1, part.size?.[0] || 1)
-    const sy = Math.max(1, part.size?.[1] || 1)
-    const sz = Math.max(1, part.size?.[2] || 1)
-    const mesh = new THREE.Mesh(makeGeometry(part, sx, sy, sz), makeMat(part))
+    const scaledPart = scaledPartForMachine(part)
+    const sx = Math.max(1, scaledPart.size?.[0] || 1)
+    const sy = Math.max(1, scaledPart.size?.[1] || 1)
+    const sz = Math.max(1, scaledPart.size?.[2] || 1)
+    const target = targetFor(scaledPart)
+    if (!target.group) return
+    const mesh = new THREE.Mesh(makeGeometry(scaledPart, sx, sy, sz), makeMat(scaledPart))
     // pos: [machineX, machineY, machineZ] → scene: x=machineX, y=machineZ, z=machineY
-    mesh.position.set(part.pos?.[0] || 0, part.pos?.[2] || 0, part.pos?.[1] || 0)
-    mesh.rotation.set(
-      ((part.rot?.[0] || 0) * Math.PI) / 180,
-      ((part.rot?.[1] || 0) * Math.PI) / 180,
-      ((part.rot?.[2] || 0) * Math.PI) / 180,
-    )
-    groups.editedGeometry.add(mesh)
+    mesh.position.set(...sceneToVisualiserPos(scaledPart, target))
+    mesh.rotation.x = ((scaledPart.rot?.[0] || 0) * Math.PI) / 180
+    mesh.rotation.y = ((scaledPart.rot?.[1] || 0) * Math.PI) / 180
+    mesh.rotation.z = ((scaledPart.rot?.[2] || 0) * Math.PI) / 180
+    target.group.add(mesh)
     const edge = new THREE.LineSegments(
       new THREE.EdgesGeometry(mesh.geometry),
-      new THREE.LineBasicMaterial({ color: part.color || '#8d9ab1', transparent: true, opacity: 0.45 }),
+      new THREE.LineBasicMaterial({ color: scaledPart.color || '#8d9ab1', transparent: true, opacity: 0.45 }),
     )
     edge.position.copy(mesh.position)
-    edge.rotation.set(mesh.rotation.x, mesh.rotation.y, mesh.rotation.z)
-    groups.editedGeometry.add(edge)
-    if (part.glow) {
-      const halo = new THREE.Mesh(makeGeometry(part, sx, sy, sz, 1.35), makeMat(part, 0.22))
+    edge.rotation.x = mesh.rotation.x
+    edge.rotation.y = mesh.rotation.y
+    edge.rotation.z = mesh.rotation.z
+    target.group.add(edge)
+    if (scaledPart.glow) {
+      const halo = new THREE.Mesh(makeGeometry(scaledPart, sx, sy, sz, 1.35), makeMat(scaledPart, 0.22))
       halo.position.copy(mesh.position)
-      halo.rotation.set(mesh.rotation.x, mesh.rotation.y, mesh.rotation.z)
-      groups.editedGeometry.add(halo)
+      halo.rotation.x = mesh.rotation.x
+      halo.rotation.y = mesh.rotation.y
+      halo.rotation.z = mesh.rotation.z
+      halo.scale.set(1.05, 1.05, 1.05)
+      halo.userData.glowHalo = true
+      editedGlowHalos.push(halo)
+      target.group.add(halo)
     }
   }
 
-  EDITED_VISUALIZER_GEOMETRY.parts.forEach(part => addPart(part))
-  if (options.hideOriginal) {
-    ;['bed','frame','gantry','carriage','zSlide','toolhead'].forEach(key => {
-      if (groups[key]) groups[key].visible = false
-    })
-  }
+  parts.forEach(part => addPart(part))
+  if (typeof updateToolheadPosition === 'function') updateToolheadPosition()
 }
 
 // ═══════════════════════════════════════════════════════
@@ -3479,6 +3717,7 @@ function installEditedVisualizerGeometry(options = { hideOriginal: false, enable
 // ═══════════════════════════════════════════════════════
 async function init() {
   loadPersistentState()
+  await loadMachineGeometryProfile()
   installLiveThemeSync()
   if (state._savedGcodeText) document.getElementById('gcode-paste').value = state._savedGcodeText
   syncStockInputs()

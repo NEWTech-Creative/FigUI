@@ -1,0 +1,1549 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>3D CNC Model Editor</title>
+<style>
+  * { box-sizing: border-box; }
+  :root {
+    --bg: #0b1018;
+    --panel: #121a27;
+    --panel-2: #182235;
+    --line: #2b3850;
+    --text: #e4e9f4;
+    --muted: #8d9ab1;
+    --dim: #536176;
+    --accent: #f0a030;
+    --x: #e84040;
+    --y: #34c97a;
+    --z: #4a90d9;
+    --toolbox: #0e1521;
+    --stage: #080d14;
+    --group-head: #101827;
+    --group-bg: rgba(24,34,53,.45);
+  }
+  body.light {
+    --bg: #f4f6fa;
+    --panel: #ffffff;
+    --panel-2: #eef2f7;
+    --line: #c9d2df;
+    --text: #172032;
+    --muted: #5f6f85;
+    --dim: #7f8da0;
+    --accent: #c97916;
+    --x: #d83a3a;
+    --y: #168f55;
+    --z: #246fbd;
+    --toolbox: #f8fafc;
+    --stage: #e8edf4;
+    --group-head: #e6ebf2;
+    --group-bg: rgba(230,235,242,.7);
+  }
+  html, body { margin: 0; width: 100%; height: 100%; overflow: hidden; background: var(--bg); color: var(--text); font-family: ui-monospace, SFMono-Regular, Consolas, monospace; }
+  #app { display: grid; grid-template-columns: 210px 1fr 330px; height: 100vh; min-width: 0; }
+  #stage { position: relative; min-width: 0; background: var(--stage); }
+  canvas { display: block; width: 100%; height: 100%; }
+  #hud { position: absolute; left: 12px; top: 12px; display: flex; gap: 6px; flex-wrap: wrap; }
+  button, input, select, textarea { font: inherit; }
+  button {
+    border: 1px solid var(--line);
+    background: var(--panel-2);
+    color: var(--text);
+    border-radius: 4px;
+    padding: 7px 10px;
+    cursor: pointer;
+  }
+  button:hover, button.active { border-color: var(--accent); color: var(--accent); }
+  #toolbox {
+    background: var(--toolbox);
+    border-right: 1px solid var(--line);
+    overflow: auto;
+    padding: 12px;
+    display: flex;
+    flex-direction: column;
+    gap: 14px;
+  }
+  #side {
+    background: var(--panel);
+    border-left: 1px solid var(--line);
+    overflow: auto;
+    padding: 12px;
+    display: flex;
+    flex-direction: column;
+    gap: 14px;
+  }
+  .title { font-weight: 800; color: var(--accent); letter-spacing: .1em; text-transform: uppercase; font-size: 12px; }
+  .topbar { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+  #themeToggle { width: 34px; height: 30px; padding: 0; font-size: 14px; line-height: 1; }
+  .section { display: flex; flex-direction: column; gap: 8px; }
+  .tool-grid { display: grid; grid-template-columns: 1fr; gap: 6px; }
+  .section-label { color: var(--dim); border-bottom: 1px solid var(--line); padding-bottom: 4px; font-size: 10px; letter-spacing: .12em; text-transform: uppercase; font-weight: 700; }
+  .grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; }
+  .grid-3 { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; }
+  label { display: block; color: var(--muted); font-size: 10px; margin-bottom: 3px; }
+  input, select, textarea {
+    width: 100%;
+    background: var(--panel-2);
+    border: 1px solid var(--line);
+    color: var(--text);
+    border-radius: 4px;
+    padding: 6px 7px;
+    outline: none;
+  }
+  input:focus, select:focus, textarea:focus { border-color: var(--accent); }
+  input[type=color] { height: 31px; padding: 2px; cursor: pointer; }
+  input[type=checkbox] { width: auto; accent-color: var(--accent); }
+  textarea { resize: vertical; min-height: 88px; font-size: 11px; line-height: 1.35; }
+  .axis-list { display: flex; flex-direction: column; gap: 6px; }
+  .part-group { border: 1px solid var(--line); border-radius: 5px; overflow: hidden; background: var(--group-bg); }
+  .part-group-head {
+    width: 100%;
+    border: 0;
+    border-bottom: 1px solid var(--line);
+    border-radius: 0;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    padding: 8px;
+    background: var(--group-head);
+    text-align: left;
+  }
+  .part-group-head:hover { color: var(--text); border-color: var(--line); }
+  .group-title { font-size: 10px; letter-spacing: .1em; text-transform: uppercase; font-weight: 900; }
+  .group-meta { color: var(--dim); font-size: 10px; }
+  .group-caret { color: var(--accent); font-size: 11px; width: 14px; text-align: center; }
+  .part-group-body { display: flex; flex-direction: column; gap: 6px; padding: 6px; }
+  .part-group.collapsed .part-group-head { border-bottom: 0; }
+  .part-group.collapsed .part-group-body { display: none; }
+  .part-row {
+    display: flex;
+    flex-direction: column;
+    gap: 7px;
+    padding: 8px;
+    border: 1px solid var(--line);
+    background: var(--panel-2);
+    border-radius: 5px;
+    text-align: left;
+  }
+  .part-row.active { border-color: var(--accent); }
+  .part-head { display: flex; justify-content: space-between; gap: 8px; font-size: 11px; font-weight: 800; }
+  .part-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .part-kind { color: var(--dim); font-size: 9px; text-transform: uppercase; }
+  .chips { display: grid; grid-template-columns: repeat(3, 1fr); gap: 4px; }
+  .chip { border: 1px solid var(--line); border-radius: 4px; text-align: center; padding: 4px; color: var(--dim); font-size: 10px; font-weight: 900; }
+  .chip.on.x { color: var(--x); border-color: var(--x); background: rgba(232,64,64,.08); }
+  .chip.on.y { color: var(--y); border-color: var(--y); background: rgba(52,201,122,.08); }
+  .chip.on.z { color: var(--z); border-color: var(--z); background: rgba(74,144,217,.08); }
+  .check-row { display: flex; align-items: center; gap: 7px; color: var(--muted); font-size: 11px; }
+  .mini { color: var(--dim); font-size: 10px; line-height: 1.45; }
+  @media (max-width: 850px) {
+    #app { grid-template-columns: 1fr; grid-template-rows: auto minmax(360px, 58vh) 1fr; }
+    #toolbox { border-right: 0; border-bottom: 1px solid var(--line); max-height: 260px; }
+    #side { border-left: 0; border-top: 1px solid var(--line); }
+  }
+</style>
+</head>
+<body>
+<div id="app">
+  <aside id="toolbox">
+    <div class="topbar">
+      <div class="title">Toolbox</div>
+      <button id="themeToggle" title="Toggle light theme" aria-label="Toggle light theme">☀</button>
+    </div>
+
+    <div class="section">
+      <div class="section-label">View</div>
+      <div class="tool-grid">
+        <button id="fit">Fit</button>
+        <button id="undoBtn">Undo</button>
+        <button id="viewIso" class="active">Iso</button>
+        <button id="viewTop">Top</button>
+        <button id="viewFront">Front</button>
+      </div>
+    </div>
+
+    <div class="section">
+      <div class="section-label">Transform</div>
+      <div class="tool-grid">
+        <button id="toolMove" class="active">Move</button>
+        <button id="toolRotate">Rotate</button>
+        <button id="toolResize">Resize</button>
+      </div>
+    </div>
+
+    <div class="section">
+      <div class="section-label">Add Geometry</div>
+      <input id="newName" type="text" value="Custom block" aria-label="New object name">
+      <button id="add">Add Box</button>
+      <button id="remove">Delete Selected</button>
+      <div class="mini">This editor exports box and cylinder primitives for the visualiser machine profile.</div>
+    </div>
+
+  </aside>
+
+  <div id="stage">
+    <canvas id="gl"></canvas>
+  </div>
+
+  <aside id="side">
+    <div class="title">3D Model Editor</div>
+
+    <div class="section">
+      <div class="section-label">Axis Groups</div>
+      <div class="grid-3">
+        <div><label>Machine X</label><input id="machineX" type="number" min="10" step="10"></div>
+        <div><label>Machine Y</label><input id="machineY" type="number" min="10" step="10"></div>
+        <div><label>Machine Z</label><input id="machineZ" type="number" min="10" step="10"></div>
+      </div>
+      <div class="axis-list" id="partList"></div>
+    </div>
+
+    <div class="section">
+      <div class="section-label">Selected Object</div>
+      <select id="selected"></select>
+      <div class="grid-3">
+        <div><label>Move X</label><input id="posX" type="number" step="1"></div>
+        <div><label>Move Y</label><input id="posY" type="number" step="1"></div>
+        <div><label>Move Z</label><input id="posZ" type="number" step="1"></div>
+      </div>
+      <div class="grid-3">
+        <div><label>Rotate X</label><input id="rotX" type="number" step="1"></div>
+        <div><label>Rotate Y</label><input id="rotY" type="number" step="1"></div>
+        <div><label>Rotate Z</label><input id="rotZ" type="number" step="1"></div>
+      </div>
+      <div class="grid-3">
+        <div><label>Size X</label><input id="sizeX" type="number" min="1" step="1"></div>
+        <div><label>Size Y</label><input id="sizeY" type="number" min="1" step="1"></div>
+        <div><label>Size Z</label><input id="sizeZ" type="number" min="1" step="1"></div>
+      </div>
+      <div class="grid-3">
+        <label class="check-row"><input id="ancX" type="checkbox"> Anchor X</label>
+        <label class="check-row"><input id="ancY" type="checkbox"> Anchor Y</label>
+        <label class="check-row"><input id="ancZ" type="checkbox"> Anchor Z</label>
+      </div>
+      <div class="grid-2">
+        <div><label>Colour</label><input id="color" type="color"></div>
+        <label class="check-row" style="align-self:end;padding-bottom:7px"><input id="glow" type="checkbox"> Slow glow</label>
+      </div>
+    </div>
+
+    <div class="section">
+      <div class="section-label">Model Data</div>
+      <div class="grid-2">
+        <button id="importBtn">Import machine.json</button>
+        <button id="importMeshBtn">Import STL/OBJ</button>
+      </div>
+      <input id="importFile" type="file" accept=".json,application/json" style="display:none">
+      <input id="importMeshFile" type="file" accept=".stl,.obj,model/stl,text/plain" style="display:none">
+      <div class="grid-2">
+        <button id="updateVisualiserBtn">Generate machine.json</button>
+        <button id="copyCodeBtn">Copy JSON</button>
+      </div>
+      <textarea id="jsonBox" spellcheck="false"></textarea>
+      <div class="mini" id="meshImportStatus"></div>
+      <div class="mini">The visualiser loads plugins/3D-visualiser/machine.json as the active profile. machine_default.json is only a fallback. Older part-array exports can still be imported here.</div>
+    </div>
+  </aside>
+</div>
+
+<script>
+const canvas = document.getElementById('gl')
+const gl = canvas.getContext('webgl', { antialias: true, alpha: false })
+if (!gl) alert('WebGL is not available in this browser context.')
+
+const STORAGE_KEY = 'figui.3dModelEditor.v1'
+const MAX_IMPORTED_TRIANGLES = 30000
+const GEOMETRY_VERSION = 7
+const EDITOR_VIEW_VERSION = 2
+const EDITOR_VIEW_Y_SIGN = -1
+const machineDefault = { x: 300, y: 300, z: 100 }
+const palette = {
+  bed: '#202b3d',
+  slot: '#111827',
+  frame: '#303b4d',
+  rail: '#69768a',
+  anod: '#294a72',
+  carriage: '#405d84',
+  spindle: '#9aa5b4',
+  tool: '#d7dde8',
+  glow: '#f0a030',
+}
+function visualizerBox(id, name, kind, x, yUp, zDepth, w, hUp, dDepth, color, anchor = {x:false,y:false,z:false}, glow = false, shape = 'box') {
+  return { id, name, kind, shape, pos:[round(x), round(zDepth), round(yUp)], rot:[0,0,0], size:[round(w), round(dDepth), round(hUp)], color, anchor, glow }
+}
+function round(n) { return Math.round(n * 100) / 100 }
+function buildVisualizerGeometry(machine = machineDefault) {
+  const bx = machine.x, by = machine.y, bz = machine.z
+  const parts = []
+  const wallT  = Math.max(8,  Math.min(20, bx * 0.04))
+  const legH   = Math.max(40, Math.min(120, bz * 0.35))
+  const railH  = wallT * 0.7
+  const bedThk = Math.max(6, wallT * 0.8)
+  const bedY   = legH
+  const spindleHpre = Math.max(40, Math.min(90, bz * 0.3))
+  const zColHpre = bz * 0.4
+  const minGantryH = spindleHpre * 1.15 + zColHpre * 0.2
+  const gantryH = Math.max(minGantryH, Math.min(bz * 0.5, 130))
+  const gantryBeamH = Math.max(14, wallT * 1.2)
+  const gantryBeamD = gantryBeamH
+  const surrX = 50, surrBack = 100
+  const gantryFaceOffsetZ = 30
+  const bedFrontExtra = gantryFaceOffsetZ + 10
+  const bedMinZ = -bedFrontExtra
+  const bedDepth = by + bedFrontExtra
+  const bedCenterZ = bedMinZ + bedDepth / 2
+  const surrMinZ = bedMinZ - surrBack
+  const surrPanelDepth = by - surrMinZ
+  const surrPanelCenterZ = (surrMinZ + by) / 2
+  const homeYScene = by
+  const gantryZ = (z) => z + homeYScene
+  const add = (...args) => parts.push(visualizerBox(...args))
+
+  add('bed-surface', 'Bed surface', 'bed', bx/2, bedY-bedThk/2, bedCenterZ, bx, bedThk, bedDepth, palette.bed)
+  add('back-boundary-panel', 'Back boundary panel', 'bed', bx/2, bedY-bedThk/2, bedMinZ-surrBack/2, bx, bedThk, surrBack, palette.slot)
+  add('left-boundary-panel', 'Left boundary panel', 'bed', -surrX/2, bedY-bedThk/2, surrPanelCenterZ, surrX, bedThk, surrPanelDepth, palette.slot)
+  add('right-boundary-panel', 'Right boundary panel', 'bed', bx+surrX/2, bedY-bedThk/2, surrPanelCenterZ, surrX, bedThk, surrPanelDepth, palette.slot)
+
+  const legW = wallT * 1.4 - .1, legD = wallT * 1.4 - .1
+  const legRenderH = Math.max(4, legH - bedThk - 0.5)
+  const machineMinX = -surrX
+  const machineMaxX = bx + surrX
+  const machineMinZ = surrMinZ
+  const machineMaxZ = by
+  ;[
+    [machineMinX + legW/2, legRenderH/2, machineMinZ + legD/2],
+    [machineMaxX - legW/2, legRenderH/2, machineMinZ + legD/2],
+    [machineMinX + legW/2, legRenderH/2, machineMaxZ - legD/2],
+    [machineMaxX - legW/2, legRenderH/2, machineMaxZ - legD/2],
+  ].forEach((p, i) => add(`base-leg-${i+1}`, `Base leg ${i+1}`, 'bed', p[0], p[1], p[2], legW, legRenderH, legD, palette.frame))
+
+  const railW = bx + surrX * 2 - 2
+  add('front-base-rail', 'Front base rail', 'bed', bx/2, bedY-railH/2, bedMinZ+wallT/2, railW, railH-1, wallT-1, palette.rail)
+  add('rear-base-rail', 'Rear base rail', 'bed', bx/2, bedY-railH/2, by-wallT/2, railW, railH-1, wallT-1, palette.rail)
+
+  const yRailH = railH * 0.5, yRailD = wallT * 0.4
+  add('left-y-rail', 'Left Y rail', 'y-axis', -surrX+yRailD/2, bedY+yRailH/2, bedCenterZ, yRailD, yRailH, bedDepth, palette.rail, {x:false,y:true,z:false})
+  add('right-y-rail', 'Right Y rail', 'y-axis', bx+surrX-yRailD/2, bedY+yRailH/2, bedCenterZ, yRailD, yRailH, bedDepth, palette.rail, {x:false,y:true,z:false})
+
+  const upW = wallT * 1.6 - 1, upD = wallT * 1.0 - 1
+  const beamLocalZ = -gantryFaceOffsetZ - gantryBeamD * 0.5
+  const beamY = bedY + gantryH
+  add('gantry-upright-left', 'Gantry upright left', 'y-axis', -surrX+upW/2, bedY+gantryH/2, gantryZ(beamLocalZ), upW, gantryH, upD, palette.frame, {x:false,y:true,z:false})
+  add('gantry-upright-right', 'Gantry upright right', 'y-axis', bx+surrX-upW/2, bedY+gantryH/2, gantryZ(beamLocalZ), upW, gantryH, upD, palette.frame, {x:false,y:true,z:false})
+  add('gantry-cross-beam', 'Gantry cross beam', 'y-axis', bx/2, beamY, gantryZ(beamLocalZ), bx+surrX*2-2, gantryBeamH, gantryBeamD, palette.anod, {x:false,y:true,z:false})
+
+  const xRailH = gantryBeamH * 0.15, xRailW = bx + surrX * 2 - 2
+  const beamFaceZ = beamLocalZ + gantryBeamD * 0.5 + 2
+  add('x-rail-top', 'X rail top', 'x-axis', bx/2, beamY+gantryBeamH*.3, gantryZ(beamFaceZ-xRailH*.5), xRailW, xRailH, xRailH, palette.rail, {x:true,y:true,z:false})
+  add('x-rail-bottom', 'X rail bottom', 'x-axis', bx/2, beamY-gantryBeamH*.3, gantryZ(beamFaceZ-xRailH*.5), xRailW, xRailH, xRailH, palette.rail, {x:true,y:true,z:false})
+  const screwH = gantryBeamH * 0.25
+  add('ball-screw', 'Ball screw housing', 'x-axis', bx/2, beamY+gantryBeamH/2+screwH/2, gantryZ(beamLocalZ), (bx+surrX*2)*.83, screwH, screwH, palette.rail, {x:true,y:true,z:false})
+  const carrW = wallT * 2, carrD = gantryBeamD * 1.4
+  const cgW = carrW * 1.1, cgH = xRailH * 2.5, cgD = xRailH * 3
+  ;[gantryBeamH*.28, -gantryBeamH*.28].forEach((oy, i) => {
+    add(`carriage-grip-${i+1}`, `Carriage grip ${i+1}`, 'x-axis', 0, beamY+oy, gantryZ(beamFaceZ-xRailH*.5+cgD*.5), cgW, cgH, cgD, palette.rail, {x:true,y:true,z:false})
+  })
+
+  const spindleR = Math.max(8, Math.min(20, bx * 0.035))
+  const spindleH = Math.max(40, Math.min(90, bz * 0.3))
+  const zColW = carrW * 0.9, zColH = bz * 0.4, zColD = carrD * 0.55
+  const zColumnLocalZ = -spindleR - zColD / 2 - 2
+  add('z-column', 'Z column', 'z-axis', 0, beamY-zColH*.35, gantryZ(zColumnLocalZ), zColW, zColH, zColD, palette.anod, {x:true,y:true,z:true})
+  const zRailW = zColW * 0.12
+  ;[-zColW*.28, zColW*.28].forEach((ox, i) => {
+    add(`z-rail-${i+1}`, `Z rail ${i+1}`, 'z-axis', ox, beamY-zColH*.35, gantryZ(zColumnLocalZ-zColD*.3), zRailW, zColH*.88, zRailW, palette.rail, {x:true,y:true,z:true})
+  })
+  const plateW = zColW * 1.15, plateH = zColH * 0.13, plateD = zColD * 0.35
+  add('spindle-mount-plate', 'Spindle mount plate', 'z-axis', 0, beamY-zColH*.15, gantryZ(0), plateW, plateH, plateD, palette.carriage, {x:true,y:true,z:true})
+  add('spindle-body', 'Spindle body', 'z-axis', 0, beamY-zColH*.2-spindleH*.25, gantryZ(0), spindleR*2, spindleH, spindleR*2, palette.spindle, {x:true,y:true,z:true}, false, 'cylinder')
+  add('spindle-collet', 'Spindle collet', 'z-axis', 0, beamY-zColH*.2-spindleH*.78, gantryZ(0), spindleR*1.2, spindleH*.12, spindleR*1.2, palette.rail, {x:true,y:true,z:true}, false, 'cylinder')
+  const tipGroupY = beamY - zColH * 0.2 - spindleH * 0.78
+  add('tool-shank', 'Tool shank', 'toolhead', 0, tipGroupY-spindleH*.03, gantryZ(0), spindleR*.5, spindleH*.2, spindleR*.5, palette.spindle, {x:true,y:true,z:true}, false, 'cylinder')
+  add('tool-bit', 'Tool bit', 'toolhead', 0, tipGroupY-spindleH*.23, gantryZ(0), spindleR*.32, spindleH*.35, spindleR*.32, palette.tool, {x:true,y:true,z:true}, false, 'cylinder')
+  add('end-effector', 'End effector glow', 'z-axis', 0, tipGroupY-spindleH*.41, gantryZ(0), spindleR*.44, 2.4, spindleR*.44, palette.glow, {x:true,y:true,z:true}, true, 'cylinder')
+
+  return parts
+}
+let state = {
+  selected:'end-effector',
+  tool: 'move',
+  geometryVersion: GEOMETRY_VERSION,
+  viewVersion: EDITOR_VIEW_VERSION,
+  machine: {...machineDefault},
+  parts: buildVisualizerGeometry(machineDefault),
+  camera:{ yaw:-42, pitch:28, dist:540, target:[150,-150,40] },
+  collapsedGroups: {},
+  theme: 'dark',
+}
+try { state = { ...state, ...JSON.parse(localStorage.getItem(STORAGE_KEY) || '{}') } } catch {}
+state.collapsedGroups = state.collapsedGroups || {}
+state.theme = state.theme === 'light' ? 'light' : 'dark'
+if (state.geometryVersion !== GEOMETRY_VERSION) {
+  const savedMachine = state.machine || machineDefault
+  const custom = Array.isArray(state.parts) ? state.parts.filter(p => p.kind === 'custom') : []
+  state = {
+    ...state,
+    selected: 'end-effector',
+    geometryVersion: GEOMETRY_VERSION,
+    viewVersion: EDITOR_VIEW_VERSION,
+    machine: savedMachine,
+    parts: [...buildVisualizerGeometry(savedMachine), ...custom],
+    camera: { yaw:-42, pitch:28, dist:Math.max(savedMachine.x, savedMachine.y, savedMachine.z) * 1.8, target:editorScenePos([savedMachine.x/2, savedMachine.y/2, savedMachine.z/2]) },
+    collapsedGroups: state.collapsedGroups || {},
+  }
+  save()
+}
+if (state.viewVersion !== EDITOR_VIEW_VERSION) {
+  const mx = state.machine?.x || 300
+  const my = state.machine?.y || 300
+  const mz = state.machine?.z || 100
+  state.camera = { yaw:-42, pitch:28, dist:Math.max(mx,my,mz) * 1.8, target:editorScenePos([mx/2,my/2,mz/2]) }
+  state.viewVersion = EDITOR_VIEW_VERSION
+  save()
+}
+
+const vs = `
+attribute vec3 aPos;
+attribute vec3 aNormal;
+uniform mat4 uMvp;
+uniform mat4 uModel;
+uniform vec3 uColor;
+uniform float uAlpha;
+varying vec4 vColor;
+void main(){
+  vec3 n = normalize((uModel * vec4(aNormal,0.0)).xyz);
+  float light = max(dot(n, normalize(vec3(.45,.85,.35))), 0.0);
+  vColor = vec4(uColor * (.48 + light * .52), uAlpha);
+  gl_Position = uMvp * vec4(aPos,1.0);
+}`
+const fs = `precision mediump float; varying vec4 vColor; void main(){ gl_FragColor = vColor; }`
+function shader(type, src){ const s=gl.createShader(type); gl.shaderSource(s, src); gl.compileShader(s); return s }
+const program = gl.createProgram()
+gl.attachShader(program, shader(gl.VERTEX_SHADER, vs))
+gl.attachShader(program, shader(gl.FRAGMENT_SHADER, fs))
+gl.linkProgram(program)
+gl.useProgram(program)
+
+const stride = 24
+const aPos = gl.getAttribLocation(program, 'aPos')
+const aNormal = gl.getAttribLocation(program, 'aNormal')
+const uni = {
+  mvp: gl.getUniformLocation(program, 'uMvp'),
+  model: gl.getUniformLocation(program, 'uModel'),
+  color: gl.getUniformLocation(program, 'uColor'),
+  alpha: gl.getUniformLocation(program, 'uAlpha'),
+}
+const geometries = {
+  box: createGeometry(makeCube()),
+  cylinder: createGeometry(makeCylinder(24)),
+}
+const meshGeometryCache = new Map()
+const meshWireCache = new Map()
+
+function createGeometry(data) {
+  const buffer = gl.createBuffer()
+  gl.bindBuffer(gl.ARRAY_BUFFER, buffer)
+  gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(data), gl.STATIC_DRAW)
+  return { buffer, count: data.length / 6 }
+}
+
+function bindGeometry(geometry) {
+  gl.bindBuffer(gl.ARRAY_BUFFER, geometry.buffer)
+  gl.enableVertexAttribArray(aPos)
+  gl.vertexAttribPointer(aPos, 3, gl.FLOAT, false, stride, 0)
+  gl.enableVertexAttribArray(aNormal)
+  gl.vertexAttribPointer(aNormal, 3, gl.FLOAT, false, stride, 12)
+}
+
+function makeCube(){
+  const f = [
+    [[-1,-1, 1],[ 1,-1, 1],[ 1, 1, 1],[-1, 1, 1],[0,0,1]],
+    [[ 1,-1,-1],[-1,-1,-1],[-1, 1,-1],[ 1, 1,-1],[0,0,-1]],
+    [[-1,-1,-1],[-1,-1, 1],[-1, 1, 1],[-1, 1,-1],[-1,0,0]],
+    [[ 1,-1, 1],[ 1,-1,-1],[ 1, 1,-1],[ 1, 1, 1],[1,0,0]],
+    [[-1, 1, 1],[ 1, 1, 1],[ 1, 1,-1],[-1, 1,-1],[0,1,0]],
+    [[-1,-1,-1],[ 1,-1,-1],[ 1,-1, 1],[-1,-1, 1],[0,-1,0]],
+  ]
+  const out = []
+  for (const face of f) {
+    const n = face[4], idx = [0,1,2,0,2,3]
+    for (const i of idx) out.push(...face[i], ...n)
+  }
+  return out
+}
+
+function makeCylinder(segments = 24) {
+  const out = []
+  const push = (p, n) => out.push(...p, ...n)
+  for (let i = 0; i < segments; i++) {
+    const a0 = (i / segments) * Math.PI * 2
+    const a1 = ((i + 1) / segments) * Math.PI * 2
+    const c0 = Math.cos(a0), s0 = Math.sin(a0), c1 = Math.cos(a1), s1 = Math.sin(a1)
+    const p0 = [c0, s0, -1], p1 = [c1, s1, -1], p2 = [c1, s1, 1], p3 = [c0, s0, 1]
+    const n0 = [c0, s0, 0], n1 = [c1, s1, 0]
+    push(p0, n0); push(p1, n1); push(p2, n1)
+    push(p0, n0); push(p2, n1); push(p3, n0)
+    push([0,0,1], [0,0,1]); push(p3, [0,0,1]); push(p2, [0,0,1])
+    push([0,0,-1], [0,0,-1]); push(p1, [0,0,-1]); push(p0, [0,0,-1])
+  }
+  return out
+}
+
+function getPartGeometry(part) {
+  if (part.shape !== 'mesh') return geometries[part.shape || 'box'] || geometries.box
+  const key = part.id + ':' + (part.meshData?.hash || part.meshData?.vertices?.length || 0) + ':editor-preview-v3'
+  if (meshGeometryCache.has(key)) return meshGeometryCache.get(key)
+  const src = Array.isArray(part.meshData?.vertices) ? part.meshData.vertices : []
+  const mirror = part.meshData?.mirror || {}
+  const mx = mirror.x ? -1 : 1
+  const my = mirror.y ? -1 : 1
+  const mz = mirror.z ? -1 : 1
+  const data = []
+  for (let i = 0; i + 5 < src.length; i += 6) {
+    data.push(src[i] * mx, src[i + 1] * my, src[i + 2] * mz, src[i + 3] * mx, src[i + 4] * my, src[i + 5] * mz)
+  }
+  const geometry = data.length ? createGeometry(data) : geometries.box
+  meshGeometryCache.set(key, geometry)
+  return geometry
+}
+
+function getMeshWireGeometry(part) {
+  if (part.shape !== 'mesh') return null
+  const key = part.id + ':' + (part.meshData?.hash || part.meshData?.vertices?.length || 0) + ':editor-preview-v3'
+  if (meshWireCache.has(key)) return meshWireCache.get(key)
+  const src = Array.isArray(part.meshData?.vertices) ? part.meshData.vertices : []
+  const mirror = part.meshData?.mirror || {}
+  const mx = mirror.x ? -1 : 1
+  const my = mirror.y ? -1 : 1
+  const mz = mirror.z ? -1 : 1
+  const out = []
+  const pushVertex = (i) => out.push(src[i] * mx, src[i + 1] * my, src[i + 2] * mz, 0, 0, 1)
+  for (let i = 0; i + 17 < src.length; i += 18) {
+    pushVertex(i); pushVertex(i + 6)
+    pushVertex(i + 6); pushVertex(i + 12)
+    pushVertex(i + 12); pushVertex(i)
+  }
+  const geometry = out.length ? createGeometry(out) : null
+  meshWireCache.set(key, geometry)
+  return geometry
+}
+
+function normalForTriangle(a, b, c) {
+  const ux = b[0] - a[0], uy = b[1] - a[1], uz = b[2] - a[2]
+  const vx = c[0] - a[0], vy = c[1] - a[1], vz = c[2] - a[2]
+  const nx = uy * vz - uz * vy, ny = uz * vx - ux * vz, nz = ux * vy - uy * vx
+  const len = Math.hypot(nx, ny, nz) || 1
+  return [nx / len, ny / len, nz / len]
+}
+
+function setMeshImportStatus(text, tone = 'var(--dim)') {
+  const el = document.getElementById('meshImportStatus')
+  if (!el) return
+  el.textContent = text
+  el.style.color = tone
+}
+
+function limitTriangles(triangles, max = MAX_IMPORTED_TRIANGLES) {
+  if (triangles.length <= max) return { triangles, skipped: 0, step: 1 }
+  const step = Math.ceil(triangles.length / max)
+  return { triangles: triangles.filter((_, i) => i % step === 0).slice(0, max), skipped: triangles.length - Math.min(max, Math.ceil(triangles.length / step)), step }
+}
+
+function normalizeImportedMeshConvention(part) {
+  if (part?.shape !== 'mesh' || !Array.isArray(part.meshData?.vertices)) return part
+  if (part.meshData.axisConvention === 'figui-machine-v2') return { ...part, anchorMode: part.anchorMode || 'world' }
+  const vertices = [...part.meshData.vertices]
+  for (let i = 0; i + 5 < vertices.length; i += 6) {
+    vertices[i + 1] = -vertices[i + 1]
+    vertices[i + 4] = -vertices[i + 4]
+  }
+  return {
+    ...part,
+    anchorMode: part.anchorMode || 'world',
+    meshData: {
+      ...part.meshData,
+      axisConvention: 'figui-machine-v2',
+      hash: `${part.meshData.hash || vertices.length}:v2`,
+      vertices,
+    },
+  }
+}
+
+function meshPartFromTriangles(name, triangles, sourceTriangleCount = triangles.length, placementPart = selectedPart()) {
+  if (!triangles.length) throw new Error('No triangles found in mesh file')
+  const min = [Infinity, Infinity, Infinity]
+  const max = [-Infinity, -Infinity, -Infinity]
+  for (const tri of triangles) {
+    for (const v of tri.vertices) {
+      for (let i = 0; i < 3; i++) {
+        min[i] = Math.min(min[i], v[i])
+        max[i] = Math.max(max[i], v[i])
+      }
+    }
+  }
+  const center = max.map((v, i) => (v + min[i]) / 2)
+  const size = max.map((v, i) => Math.max(1, v - min[i]))
+  const data = []
+  for (const tri of triangles) {
+    const n = tri.normal || normalForTriangle(tri.vertices[0], tri.vertices[1], tri.vertices[2])
+    for (const v of tri.vertices) {
+      data.push(
+        round((v[0] - center[0]) / (size[0] / 2)),
+        round(-(v[1] - center[1]) / (size[1] / 2)),
+        round((v[2] - center[2]) / (size[2] / 2)),
+        round(n[0]),
+        round(-n[1]),
+        round(n[2]),
+      )
+    }
+  }
+  const machine = state.machine || machineDefault
+  const sourceAnchor = placementPart?.anchor || { x:false, y:false, z:false }
+  const hasMovingAnchor = !!(sourceAnchor.x || sourceAnchor.y || sourceAnchor.z)
+  const sourcePos = Array.isArray(placementPart?.pos) ? placementPart.pos : [machine.x / 2, machine.y / 2, Math.max(8, size[2] / 2 + 35)]
+  const id = 'mesh-' + Date.now().toString(36)
+  return {
+    id,
+    name: name.replace(/\.[^.]+$/, '') || 'Imported mesh',
+    kind: 'custom',
+    attachedTo: attachedGroupForPart(placementPart),
+    anchorMode: 'world',
+    shape: 'mesh',
+    pos: [
+      round(sourcePos[0] || 0),
+      round(sourcePos[1] || 0),
+      round((sourcePos[2] || 0) + Math.max(0, size[2] / 2)),
+    ],
+    rot: [0, 0, 0],
+    size: size.map(round),
+    color: '#8d9ab1',
+    anchor: hasMovingAnchor ? { x:!!sourceAnchor.x, y:!!sourceAnchor.y, z:!!sourceAnchor.z } : { x:false, y:false, z:false },
+    glow: false,
+    meshData: {
+      format: 'normalized-triangles-v1',
+      axisConvention: 'figui-machine-v2',
+      hash: String(data.length) + ':' + id,
+      sourceTriangles: sourceTriangleCount,
+      triangles: triangles.length,
+      vertices: data,
+    },
+  }
+}
+
+function parseAsciiStl(text) {
+  const triangles = []
+  const vertexMatches = [...text.matchAll(/vertex\s+(-?\d*\.?\d+(?:e[-+]?\d+)?)\s+(-?\d*\.?\d+(?:e[-+]?\d+)?)\s+(-?\d*\.?\d+(?:e[-+]?\d+)?)/gi)]
+  for (let i = 0; i + 2 < vertexMatches.length; i += 3) {
+    triangles.push({
+      vertices: [0,1,2].map(j => vertexMatches[i+j].slice(1,4).map(Number)),
+    })
+  }
+  return triangles
+}
+
+function parseBinaryStl(buffer) {
+  const view = new DataView(buffer)
+  const count = view.getUint32(80, true)
+  const triangles = []
+  let offset = 84
+  for (let i = 0; i < count && offset + 50 <= view.byteLength; i++) {
+    const normal = [view.getFloat32(offset, true), view.getFloat32(offset + 4, true), view.getFloat32(offset + 8, true)]
+    offset += 12
+    const vertices = []
+    for (let j = 0; j < 3; j++) {
+      vertices.push([view.getFloat32(offset, true), view.getFloat32(offset + 4, true), view.getFloat32(offset + 8, true)])
+      offset += 12
+    }
+    offset += 2
+    triangles.push({ normal, vertices })
+  }
+  return triangles
+}
+
+function parseObj(text) {
+  const verts = []
+  const triangles = []
+  for (const raw of text.split(/\r?\n/)) {
+    const line = raw.trim()
+    if (line.startsWith('v ')) {
+      const [, x, y, z] = line.split(/\s+/)
+      verts.push([Number(x), Number(y), Number(z)])
+    } else if (line.startsWith('f ')) {
+      const ids = line.slice(2).trim().split(/\s+/).map(token => Number(token.split('/')[0]))
+      for (let i = 1; i + 1 < ids.length; i++) {
+        const tri = [ids[0], ids[i], ids[i + 1]].map(id => verts[id < 0 ? verts.length + id : id - 1])
+        if (tri.every(Boolean)) triangles.push({ vertices: tri })
+      }
+    }
+  }
+  return triangles
+}
+
+async function importMeshFile(file) {
+  const ext = file.name.toLowerCase().split('.').pop()
+  let triangles = []
+  if (ext === 'obj') {
+    triangles = parseObj(await file.text())
+  } else if (ext === 'stl') {
+    const buffer = await file.arrayBuffer()
+    const head = new TextDecoder().decode(buffer.slice(0, Math.min(buffer.byteLength, 512)))
+    triangles = head.trimStart().startsWith('solid') ? parseAsciiStl(await file.text()) : parseBinaryStl(buffer)
+    if (!triangles.length) triangles = parseBinaryStl(buffer)
+  } else {
+    throw new Error('Use STL or OBJ for mesh import')
+  }
+  const limited = limitTriangles(triangles)
+  const part = meshPartFromTriangles(file.name, limited.triangles, triangles.length)
+  part.meshData.downsampleStep = limited.step
+  return part
+}
+
+function save(){
+  try {
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(state))
+  } catch (err) {
+    try {
+      const lightState = {
+        ...state,
+        parts: state.parts.map(part => part.shape === 'mesh'
+          ? { ...part, meshData: { ...part.meshData, vertices: [] }, _meshNotSaved: true }
+          : part),
+      }
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(lightState))
+      setMeshImportStatus('Large mesh is active, but only a lightweight placeholder was saved for refresh. Use Generate machine.json to export the full mesh.', 'var(--accent)')
+    } catch {
+      console.warn('Unable to save editor state:', err)
+    }
+  }
+}
+function applyTheme() {
+  const light = state.theme === 'light'
+  document.body.classList.toggle('light', light)
+  const btn = document.getElementById('themeToggle')
+  if (btn) {
+    btn.textContent = light ? '☾' : '☀'
+    btn.title = light ? 'Switch to dark theme' : 'Switch to light theme'
+    btn.setAttribute('aria-label', btn.title)
+  }
+}
+const undoStack = []
+function pushUndo() {
+  undoStack.push(JSON.stringify({
+    selected: state.selected,
+    tool: state.tool,
+    geometryVersion: state.geometryVersion,
+    machine: state.machine,
+    parts: state.parts,
+    camera: state.camera,
+  }))
+  if (undoStack.length > 50) undoStack.shift()
+}
+function undo() {
+  const previous = undoStack.pop()
+  if (!previous) return
+  state = JSON.parse(previous)
+  state.collapsedGroups = state.collapsedGroups || {}
+  syncUi()
+  save()
+}
+function selectedPart(){ return state.parts.find(p => p.id === state.selected) || state.parts[0] }
+function hexToRgb(hex){ const n=parseInt(hex.slice(1),16); return [((n>>16)&255)/255, ((n>>8)&255)/255, (n&255)/255] }
+const deg = Math.PI / 180
+let lastProj = null
+let lastView = null
+let gizmoHandles = []
+
+function editorScenePos(pos = [0, 0, 0]) {
+  return [pos[0] || 0, (pos[1] || 0) * EDITOR_VIEW_Y_SIGN, pos[2] || 0]
+}
+
+function editorModelForPart(part, sx, sy, sz) {
+  const raw = m4Mul(
+    m4Translate(...part.pos),
+    m4Mul(m4RotateXYZ(part.rot[0]*deg, part.rot[1]*deg, part.rot[2]*deg), m4Scale(sx, sy, sz))
+  )
+  return EDITOR_VIEW_Y_SIGN === 1 ? raw : m4Mul(m4Scale(1, EDITOR_VIEW_Y_SIGN, 1), raw)
+}
+
+function projectEditorPoint(point, proj = lastProj, view = lastView) {
+  return projectScreen(editorScenePos(point), proj, view)
+}
+
+function fitCameraToParts() {
+  const parts = Array.isArray(state.parts) ? state.parts : []
+  if (!parts.length) {
+    const mx = state.machine?.x || 300, my = state.machine?.y || 300, mz = state.machine?.z || 100
+    state.camera = { yaw:-42, pitch:28, dist:Math.max(mx,my,mz) * 1.8, target:editorScenePos([mx/2,my/2,mz/2]) }
+    return
+  }
+  const min = [Infinity, Infinity, Infinity]
+  const max = [-Infinity, -Infinity, -Infinity]
+  for (const part of parts) {
+    const p = part.pos || [0,0,0]
+    const s = part.size || [1,1,1]
+    for (let i = 0; i < 3; i++) {
+      min[i] = Math.min(min[i], p[i] - s[i] / 2)
+      max[i] = Math.max(max[i], p[i] + s[i] / 2)
+    }
+  }
+  const size = max.map((v, i) => Math.max(1, v - min[i]))
+  state.camera = {
+    yaw: -42,
+    pitch: 28,
+    dist: Math.max(...size) * 1.9,
+    target: editorScenePos(max.map((v, i) => (v + min[i]) / 2)),
+  }
+}
+
+function render(now = 0){
+  resize()
+  gl.viewport(0,0,canvas.width,canvas.height)
+  gl.clearColor(.035,.055,.085,1)
+  gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT)
+  gl.enable(gl.DEPTH_TEST)
+  gl.enable(gl.BLEND)
+  gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA)
+  const aspect = canvas.width / canvas.height
+  const proj = m4Perspective(45 * deg, aspect, 1, 5000)
+  const view = cameraMatrix()
+  lastProj = proj
+  lastView = view
+  drawAxes(proj, view)
+  for (const part of state.parts) drawPart(part, proj, view, now, false)
+  for (const part of state.parts.filter(p => p.shape === 'mesh')) drawMeshWire(part, proj, view)
+  for (const part of state.parts.filter(p => p.glow)) drawPart(part, proj, view, now, true)
+  drawGizmo(proj, view)
+  requestAnimationFrame(render)
+}
+
+function drawPart(part, proj, view, now, glowPass){
+  const pulse = .45 + Math.sin(now * .003) * .18
+  const scale = glowPass ? 1.18 : 1
+  const alpha = glowPass ? pulse : (part.id === state.selected ? 1 : .92)
+  if (glowPass) gl.blendFunc(gl.SRC_ALPHA, gl.ONE)
+  const model = editorModelForPart(part, part.size[0]*scale/2, part.size[1]*scale/2, part.size[2]*scale/2)
+  const mvp = m4Mul(proj, m4Mul(view, model))
+  gl.uniformMatrix4fv(uni.mvp, false, mvp)
+  gl.uniformMatrix4fv(uni.model, false, model)
+  gl.uniform3fv(uni.color, hexToRgb(part.color))
+  gl.uniform1f(uni.alpha, alpha)
+  const geometry = getPartGeometry(part)
+  bindGeometry(geometry)
+  gl.drawArrays(gl.TRIANGLES, 0, geometry.count)
+  if (glowPass) gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA)
+}
+
+function drawMeshWire(part, proj, view) {
+  const geometry = getMeshWireGeometry(part)
+  if (!geometry) return
+  const model = editorModelForPart(part, part.size[0]/2, part.size[1]/2, part.size[2]/2)
+  const mvp = m4Mul(proj, m4Mul(view, model))
+  gl.uniformMatrix4fv(uni.mvp, false, mvp)
+  gl.uniformMatrix4fv(uni.model, false, model)
+  gl.uniform3fv(uni.color, hexToRgb(part.id === state.selected ? '#f0a030' : '#d7dde8'))
+  gl.uniform1f(uni.alpha, part.id === state.selected ? 0.72 : 0.38)
+  bindGeometry(geometry)
+  gl.drawArrays(gl.LINES, 0, geometry.count)
+}
+
+function drawAxes(proj, view){
+  const mx = state.machine?.x || 300
+  const my = state.machine?.y || 300
+  const mz = state.machine?.z || 100
+  const axis = [
+    { id:'axis-x', name:'X rail', kind:'axis', pos:[mx/2,0,4], rot:[0,0,0], size:[mx,2,2], color:'#e84040', anchor:{x:true,y:false,z:false}, glow:false },
+    { id:'axis-y', name:'Y rail', kind:'axis', pos:[0,my/2,7], rot:[0,0,0], size:[2,my,2], color:'#34c97a', anchor:{x:false,y:true,z:false}, glow:false },
+    { id:'axis-z', name:'Z rail', kind:'axis', pos:[0,0,mz/2], rot:[0,0,0], size:[2,2,mz], color:'#4a90d9', anchor:{x:false,y:false,z:true}, glow:false },
+  ]
+  axis.forEach(a => drawPart(a, proj, view, 0, false))
+}
+
+function drawGizmo(proj, view) {
+  const part = selectedPart()
+  if (!part) return
+  const maxSize = Math.max(...part.size)
+  const len = Math.max(64, maxSize * 1.3)
+  const thick = Math.max(0.8, len * 0.006)
+  const p = part.pos
+  const axes = [
+    { axis:'x', color:'#e84040', dir:[1,0,0], barSize:[len,thick,thick], barPos:[p[0]+len/2,p[1],p[2]], tipPos:[p[0]+len,p[1],p[2]], tipSize:[thick*6,thick*6,thick*6] },
+    { axis:'y', color:'#34c97a', dir:[0,1,0], barSize:[thick,len,thick], barPos:[p[0],p[1]+len/2,p[2]], tipPos:[p[0],p[1]+len,p[2]], tipSize:[thick*6,thick*6,thick*6] },
+    { axis:'z', color:'#4a90d9', dir:[0,0,1], barSize:[thick,thick,len], barPos:[p[0],p[1],p[2]+len/2], tipPos:[p[0],p[1],p[2]+len], tipSize:[thick*6,thick*6,thick*6] },
+  ]
+  gizmoHandles = []
+  for (const a of axes) {
+    const bar = { id:'gizmo-'+a.axis, name:a.axis, kind:'gizmo', shape:'box', pos:a.barPos, rot:[0,0,0], size:a.barSize, color:a.color, anchor:{}, glow:false }
+    const tip = { id:'gizmo-tip-'+a.axis, name:a.axis, kind:'gizmo', shape:'box', pos:a.tipPos, rot:[0,0,0], size:a.tipSize, color:a.color, anchor:{}, glow:false }
+    drawPart(bar, proj, view, 0, false)
+    drawPart(tip, proj, view, 0, false)
+    const start = projectEditorPoint(p, proj, view)
+    const end = projectEditorPoint(a.tipPos, proj, view)
+    if (start && end) gizmoHandles.push({ axis:a.axis, start, end, dir:a.dir })
+  }
+}
+
+function cameraMatrix(){
+  const c = state.camera
+  const yaw = c.yaw * deg, pitch = c.pitch * deg
+  const eye = [
+    c.target[0] + c.dist * Math.cos(pitch) * Math.sin(yaw),
+    c.target[1] - c.dist * Math.cos(pitch) * Math.cos(yaw),
+    c.target[2] + c.dist * Math.sin(pitch),
+  ]
+  return m4LookAt(eye, c.target, [0,0,1])
+}
+
+function resize(){
+  const dpr = Math.min(devicePixelRatio || 1, 2)
+  const w = Math.floor(canvas.clientWidth * dpr), h = Math.floor(canvas.clientHeight * dpr)
+  if (canvas.width !== w || canvas.height !== h) { canvas.width = w; canvas.height = h }
+}
+
+function groupForPart(part) {
+  if (part.attachedTo && ['bed','y-axis','x-axis','z-axis','toolhead','custom'].includes(part.attachedTo)) return part.attachedTo
+  if (part.kind === 'bed') return 'bed'
+  if (part.kind === 'toolhead' || part.id === 'end-effector' || part.id?.startsWith('tool-')) return 'toolhead'
+  if (part.kind === 'z-axis' || part.id?.startsWith('z-') || part.id?.startsWith('spindle-')) return 'z-axis'
+  if (part.id?.startsWith('carriage-')) return 'x-axis'
+  if (part.kind === 'x-axis') return 'x-axis'
+  if (part.kind === 'y-axis') return 'y-axis'
+  return 'custom'
+}
+
+function attachedGroupForPart(part) {
+  const group = groupForPart(part)
+  return group === 'custom' ? undefined : group
+}
+
+const PART_GROUPS = [
+  ['bed', 'Bed / Static'],
+  ['y-axis', 'Y Axis'],
+  ['x-axis', 'X Axis'],
+  ['z-axis', 'Z Axis'],
+  ['toolhead', 'Toolhead'],
+  ['custom', 'Custom / Mesh'],
+]
+
+function renderPartRow(part) {
+  const row = document.createElement('button')
+  row.className = 'part-row' + (part.id === state.selected ? ' active' : '')
+  row.innerHTML = `<div class="part-head"><span class="part-name">${part.name}</span><span class="part-kind">${part.kind}</span></div>
+    <div class="chips"><span class="chip x ${part.anchor.x?'on':''}">X</span><span class="chip y ${part.anchor.y?'on':''}">Y</span><span class="chip z ${part.anchor.z?'on':''}">Z</span></div>`
+  row.onclick = () => { state.selected = part.id; syncUi(); save() }
+  return row
+}
+
+function syncUi(){
+  const list = document.getElementById('partList')
+  const select = document.getElementById('selected')
+  document.getElementById('machineX').value = state.machine?.x || machineDefault.x
+  document.getElementById('machineY').value = state.machine?.y || machineDefault.y
+  document.getElementById('machineZ').value = state.machine?.z || machineDefault.z
+  list.innerHTML = ''
+  select.innerHTML = ''
+  state.parts.forEach(part => {
+    const opt = document.createElement('option')
+    opt.value = part.id; opt.textContent = part.name; select.appendChild(opt)
+  })
+  const grouped = new Map(PART_GROUPS.map(([id]) => [id, []]))
+  for (const part of state.parts) {
+    const groupId = groupForPart(part)
+    if (!grouped.has(groupId)) grouped.set(groupId, [])
+    grouped.get(groupId).push(part)
+  }
+  for (const [groupId, label] of PART_GROUPS) {
+    const parts = grouped.get(groupId) || []
+    if (!parts.length) continue
+    const group = document.createElement('div')
+    const collapsed = !!state.collapsedGroups[groupId]
+    group.className = 'part-group' + (collapsed ? ' collapsed' : '')
+    const head = document.createElement('button')
+    head.type = 'button'
+    head.className = 'part-group-head'
+    head.innerHTML = `<span class="group-caret">${collapsed ? '+' : '-'}</span><span class="group-title">${label}</span><span class="group-meta">${parts.length}</span>`
+    head.onclick = () => {
+      state.collapsedGroups[groupId] = !state.collapsedGroups[groupId]
+      syncUi()
+      save()
+    }
+    const body = document.createElement('div')
+    body.className = 'part-group-body'
+    parts.forEach(part => body.appendChild(renderPartRow(part)))
+    group.appendChild(head)
+    group.appendChild(body)
+    list.appendChild(group)
+  }
+  select.value = state.selected
+  const p = selectedPart()
+  ;['X','Y','Z'].forEach((a,i) => {
+    document.getElementById('pos'+a).value = p.pos[i]
+    document.getElementById('rot'+a).value = p.rot[i]
+    document.getElementById('size'+a).value = p.size[i]
+    document.getElementById('anc'+a).checked = p.anchor[a.toLowerCase()]
+  })
+  document.getElementById('color').value = p.color
+  document.getElementById('glow').checked = p.glow
+  syncToolButtons()
+}
+
+function applyInputs(){
+  pushUndo()
+  const p = selectedPart()
+  ;['X','Y','Z'].forEach((a,i) => {
+    p.pos[i] = Number(document.getElementById('pos'+a).value) || 0
+    p.rot[i] = Number(document.getElementById('rot'+a).value) || 0
+    p.size[i] = Math.max(1, Number(document.getElementById('size'+a).value) || 1)
+    p.anchor[a.toLowerCase()] = document.getElementById('anc'+a).checked
+  })
+  p.color = document.getElementById('color').value
+  p.glow = document.getElementById('glow').checked
+  save()
+  syncUi()
+}
+
+document.getElementById('selected').onchange = e => { state.selected = e.target.value; syncUi(); save() }
+document.getElementById('undoBtn').onclick = undo
+document.getElementById('themeToggle').onclick = () => {
+  state.theme = state.theme === 'light' ? 'dark' : 'light'
+  applyTheme()
+  save()
+}
+;['posX','posY','posZ','rotX','rotY','rotZ','sizeX','sizeY','sizeZ','ancX','ancY','ancZ','color','glow'].forEach(id => {
+  document.getElementById(id).addEventListener('input', applyInputs)
+})
+;['machineX','machineY','machineZ'].forEach(id => {
+  document.getElementById(id).addEventListener('input', () => {
+    state.machine = {
+      x: Math.max(10, Number(document.getElementById('machineX').value) || machineDefault.x),
+      y: Math.max(10, Number(document.getElementById('machineY').value) || machineDefault.y),
+      z: Math.max(10, Number(document.getElementById('machineZ').value) || machineDefault.z),
+    }
+    save()
+  })
+})
+document.getElementById('add').onclick = () => {
+  pushUndo()
+  const name = document.getElementById('newName').value.trim() || 'Custom block'
+  const id = 'custom-' + Date.now().toString(36)
+  const source = selectedPart()
+  const anchor = source?.anchor ? { x:!!source.anchor.x, y:!!source.anchor.y, z:!!source.anchor.z } : { x:false, y:false, z:false }
+  const pos = Array.isArray(source?.pos) ? [...source.pos] : [(state.machine?.x || 300)/2,(state.machine?.y || 300)/2,35]
+  state.parts.push({ id, name, kind:'custom', attachedTo: attachedGroupForPart(source), pos, rot:[0,0,0], size:[45,45,35], color:'#4a90d9', anchor, anchorMode: (anchor.x || anchor.y || anchor.z) ? 'world' : undefined, glow:false })
+  state.selected = id
+  syncUi(); save()
+}
+document.getElementById('remove').onclick = () => {
+  const p = selectedPart()
+  if (!p) return
+  pushUndo()
+  state.parts = state.parts.filter(x => x.id !== p.id)
+  state.selected = state.parts[0]?.id || ''
+  syncUi(); save()
+}
+document.getElementById('importBtn').onclick = () => {
+  document.getElementById('importFile').click()
+}
+document.getElementById('importMeshBtn').onclick = () => {
+  document.getElementById('importMeshFile').click()
+}
+document.getElementById('importFile').addEventListener('change', async e => {
+  const file = e.target.files?.[0]
+  if (!file) return
+  try {
+    const text = await file.text()
+    const payload = JSON.parse(text)
+    pushUndo()
+    applyImportedMachineProfile(payload)
+    fitCameraToParts()
+    document.getElementById('jsonBox').value = JSON.stringify(payload, null, 2)
+    syncUi(); save()
+  } catch (err) { alert('Invalid model JSON: ' + err.message) }
+  finally { e.target.value = '' }
+})
+document.getElementById('importMeshFile').addEventListener('change', async e => {
+  const file = e.target.files?.[0]
+  if (!file) return
+  try {
+    const part = await importMeshFile(file)
+    pushUndo()
+    state.parts.push(part)
+    state.selected = part.id
+    fitCameraToParts()
+    syncUi(); save()
+    const source = part.meshData?.sourceTriangles || 0
+    const used = part.meshData?.triangles || 0
+    const reduced = source > used ? ` Downsampled from ${source.toLocaleString()} to ${used.toLocaleString()} triangles for browser performance.` : ''
+    setMeshImportStatus(`Imported ${file.name} as a detailed mesh with ${used.toLocaleString()} triangles.${reduced}`, 'var(--accent)')
+  } catch (err) { alert('Invalid mesh file: ' + err.message) }
+  finally { e.target.value = '' }
+})
+document.getElementById('updateVisualiserBtn').onclick = () => {
+  const json = generateMachineProfileJson()
+  document.getElementById('jsonBox').value = json
+  downloadMachineJson(json)
+}
+document.getElementById('copyCodeBtn').onclick = async () => {
+  const box = document.getElementById('jsonBox')
+  if (!box.value) box.value = generateMachineProfileJson()
+  try { await navigator.clipboard.writeText(box.value) } catch { box.select(); document.execCommand('copy') }
+}
+document.getElementById('fit').onclick = () => {
+  fitCameraToParts()
+  save()
+}
+document.getElementById('viewIso').onclick = () => { state.camera.yaw = -42; state.camera.pitch = 28; syncViewButtons('viewIso'); save() }
+document.getElementById('viewTop').onclick = () => { state.camera.yaw = 0; state.camera.pitch = 89; syncViewButtons('viewTop'); save() }
+document.getElementById('viewFront').onclick = () => { state.camera.yaw = 0; state.camera.pitch = 0; syncViewButtons('viewFront'); save() }
+function syncViewButtons(id){ ['viewIso','viewTop','viewFront'].forEach(x => document.getElementById(x).classList.toggle('active', x === id)) }
+;[
+  ['toolMove', 'move'],
+  ['toolRotate', 'rotate'],
+  ['toolResize', 'resize'],
+].forEach(([id, tool]) => {
+  document.getElementById(id).onclick = () => {
+    state.tool = tool
+    syncToolButtons()
+    save()
+  }
+})
+function syncToolButtons() {
+  const tool = state.tool || 'move'
+  ;[['toolMove','move'],['toolRotate','rotate'],['toolResize','resize']].forEach(([id, value]) => {
+    document.getElementById(id)?.classList.toggle('active', tool === value)
+  })
+}
+
+function exportPartsWithRequiredTool(parts = state.parts) {
+  const output = parts.map(part => {
+    const copy = normalizeImportedMeshConvention(JSON.parse(JSON.stringify(part)))
+    const attachedTo = attachedGroupForPart(copy)
+    if (attachedTo) copy.attachedTo = attachedTo
+    else delete copy.attachedTo
+    return copy
+  })
+  const end = output.find(part => part.id === 'end-effector')
+  if (!end) return output
+  const spindle = output.find(part => part.id === 'spindle-body')
+  const spindleH = spindle?.size?.[2] || 40
+  const spindleR = (spindle?.size?.[0] || 21) / 2
+  const tipGroupZ = (end.pos?.[2] || 38.4) + spindleH * 0.41
+  const machineY = end.pos?.[1] ?? (state.machine?.y || machineDefault.y)
+  const required = [
+    {
+      id: 'tool-shank',
+      name: 'Tool shank',
+      kind: 'toolhead',
+      shape: 'cylinder',
+      pos: [0, machineY, round(tipGroupZ - spindleH * 0.03)],
+      rot: [0, 0, 0],
+      size: [round(spindleR * 0.5), round(spindleR * 0.5), round(spindleH * 0.2)],
+      color: palette.spindle,
+      anchor: { x: true, y: true, z: true },
+      glow: false,
+    },
+    {
+      id: 'tool-bit',
+      name: 'Tool bit',
+      kind: 'toolhead',
+      shape: 'cylinder',
+      pos: [0, machineY, round(tipGroupZ - spindleH * 0.23)],
+      rot: [0, 0, 0],
+      size: [round(spindleR * 0.32), round(spindleR * 0.32), round(spindleH * 0.35)],
+      color: palette.tool,
+      anchor: { x: true, y: true, z: true },
+      glow: false,
+    },
+  ]
+  const insertAt = output.findIndex(part => part.id === 'end-effector')
+  for (const part of required.reverse()) {
+    if (!output.some(existing => existing.id === part.id)) output.splice(insertAt, 0, part)
+  }
+  return output
+}
+
+function createMachineProfile() {
+  const parts = exportPartsWithRequiredTool()
+  const emptyMeshes = parts.filter(part => part.shape === 'mesh' && !part.meshData?.vertices?.length)
+  if (emptyMeshes.length) {
+    setMeshImportStatus('One or more mesh parts are placeholders from a previous refresh. Re-import the STL/OBJ before generating machine.json.', 'var(--accent)')
+  }
+  return {
+    schemaVersion: 1,
+    name: 'Edited CNC machine',
+    description: 'Generated by the FigUI 3D model editor.',
+    machine: {
+      x: Number(state.machine?.x) || machineDefault.x,
+      y: Number(state.machine?.y) || machineDefault.y,
+      z: Number(state.machine?.z) || machineDefault.z,
+    },
+    proceduralGeometry: {
+      enabled: false,
+      note: 'Part-level edited geometry is enabled below. Set editedGeometry.enabled false to use the visualiser procedural frame.',
+    },
+    editedGeometry: {
+      enabled: true,
+      hideOriginal: true,
+      sourceMachine: {
+        x: Number(state.machine?.x) || machineDefault.x,
+        y: Number(state.machine?.y) || machineDefault.y,
+        z: Number(state.machine?.z) || machineDefault.z,
+      },
+      generatedAt: new Date().toISOString(),
+      parts,
+    },
+  }
+}
+
+function generateMachineProfileJson() {
+  return JSON.stringify(createMachineProfile(), null, 2)
+}
+
+function downloadMachineJson(json) {
+  const blob = new Blob([json], { type: 'application/json' })
+  const url = URL.createObjectURL(blob)
+  const link = document.createElement('a')
+  link.href = url
+  link.download = 'machine.json'
+  document.body.appendChild(link)
+  link.click()
+  link.remove()
+  setTimeout(() => URL.revokeObjectURL(url), 1000)
+}
+
+function applyImportedMachineProfile(payload) {
+  if (Array.isArray(payload)) {
+    state.parts = payload
+    state.selected = payload[0]?.id || ''
+    return
+  }
+  if (!payload || typeof payload !== 'object') throw new Error('Expected machine profile object or parts array')
+  if (payload.machine) {
+    state.machine = {
+      x: Math.max(10, Number(payload.machine.x) || machineDefault.x),
+      y: Math.max(10, Number(payload.machine.y) || machineDefault.y),
+      z: Math.max(10, Number(payload.machine.z) || machineDefault.z),
+    }
+  }
+  const parts = payload.editedGeometry?.parts || payload.geometry?.parts || payload.parts
+  if (!Array.isArray(parts)) throw new Error('No editable geometry parts found')
+  state.parts = parts.map(normalizeImportedMeshConvention)
+  state.selected = parts.find(p => p.id === state.selected)?.id || parts[0]?.id || ''
+}
+
+function generateVisualizerInjection() {
+  return generateMachineProfileJson()
+  const payload = {
+    generatedAt: new Date().toISOString(),
+    machine: state.machine,
+    parts: state.parts,
+  }
+  return `/* FigUI 3D Model Editor export.
+   Paste this near the end of plugins/3D-visualiser/index.html, after clearGroup()
+   and before init(), or paste it after the visualiser script and call installEditedVisualizerGeometry().
+   This replaces the procedural machine groups and preserves the visualiser's moving gantry/carriage/Z behaviour. */
+const EDITED_VISUALIZER_GEOMETRY = ${JSON.stringify(payload, null, 2)};
+
+function installEditedVisualizerGeometry() {
+  if (!window.THREE || typeof scene === 'undefined' || typeof groups === 'undefined') {
+    console.warn('3D visualiser scene is not ready yet.');
+    return;
+  }
+  if (!groups.editedGeometry) {
+    groups.editedGeometry = new THREE.Group();
+    scene.add(groups.editedGeometry);
+  }
+  const wipe = (group) => {
+    if (!group) return;
+    if (typeof clearGroup === 'function') clearGroup(group);
+    else while (group.children.length) group.remove(group.children[0]);
+  };
+  ['bed','frame','gantry','carriage','zSlide','toolhead'].forEach(key => wipe(groups[key]));
+  wipe(groups.editedGeometry);
+
+  const makeMat = (part, alpha = 1) => new THREE.MeshLambertMaterial({
+    color: part.color || '#8d9ab1',
+    transparent: alpha < 1,
+    opacity: alpha,
+  });
+  const makeGeometry = (part, sx, sy, sz, glowScale = 1) => {
+    if (part.shape === 'cylinder') {
+      const r = Math.max(sx, sy) * glowScale / 2;
+      return new THREE.CylinderGeometry(r, r, sz * glowScale, 18);
+    }
+    return new THREE.BoxGeometry(sx * glowScale, sz * glowScale, sy * glowScale);
+  };
+  const targetFor = (part) => {
+    if (part.kind === 'bed') return { group: groups.bed, local: false };
+    if (part.id === 'end-effector') return { group: groups.toolhead, local: true };
+    if (part.id && (part.id.startsWith('z-') || part.id.startsWith('spindle-'))) return { group: groups.zSlide, local: true };
+    if (part.id && part.id.startsWith('carriage-')) return { group: groups.carriage, local: true };
+    if (part.kind === 'y-axis' || part.kind === 'x-axis') return { group: groups.gantry, local: true };
+    return { group: groups.editedGeometry, local: false };
+  };
+  const sceneToVisualiserPos = (part, local) => {
+    const x = part.pos?.[0] || 0;
+    const y = part.pos?.[2] || 0;
+    const z = part.pos?.[1] || 0;
+    return [x, y, local ? z - (EDITED_VISUALIZER_GEOMETRY.machine?.y || 300) : z];
+  };
+  const addPart = (part) => {
+    const sx = Math.max(1, part.size?.[0] || 1);
+    const sy = Math.max(1, part.size?.[1] || 1);
+    const sz = Math.max(1, part.size?.[2] || 1);
+    const target = targetFor(part);
+    if (!target.group) return;
+    const mesh = new THREE.Mesh(makeGeometry(part, sx, sy, sz), makeMat(part, 1));
+    mesh.position.set(...sceneToVisualiserPos(part, target.local));
+    mesh.rotation.x = ((part.rot?.[0] || 0) * Math.PI) / 180;
+    mesh.rotation.y = ((part.rot?.[1] || 0) * Math.PI) / 180;
+    mesh.rotation.z = ((part.rot?.[2] || 0) * Math.PI) / 180;
+    target.group.add(mesh);
+    const edge = new THREE.LineSegments(
+      new THREE.EdgesGeometry(mesh.geometry),
+      new THREE.LineBasicMaterial({ color: part.color || '#8d9ab1', transparent: true, opacity: 0.45 }),
+    );
+    edge.position.copy(mesh.position);
+    edge.rotation.x = mesh.rotation.x;
+    edge.rotation.y = mesh.rotation.y;
+    edge.rotation.z = mesh.rotation.z;
+    target.group.add(edge);
+    if (part.glow) {
+      const halo = new THREE.Mesh(makeGeometry(part, sx, sy, sz, 1.35), makeMat(part, 0.22));
+      halo.position.copy(mesh.position);
+      halo.rotation.x = mesh.rotation.x;
+      halo.rotation.y = mesh.rotation.y;
+      halo.rotation.z = mesh.rotation.z;
+      target.group.add(halo);
+    }
+  };
+
+  EDITED_VISUALIZER_GEOMETRY.parts.forEach(part => addPart(part));
+  if (typeof updateToolheadPosition === 'function') updateToolheadPosition();
+}
+
+if (!window.__editedVisualizerGeometryWrapped && typeof buildMachine === 'function') {
+  const originalBuildMachine = buildMachine;
+  buildMachine = function(...args) {
+    const result = originalBuildMachine.apply(this, args);
+    installEditedVisualizerGeometry();
+    return result;
+  }
+  window.__editedVisualizerGeometryWrapped = true;
+}
+
+installEditedVisualizerGeometry();`
+}
+
+let dragging = false, dragMode = 'orbit', dragAxis = null, dragStart = null, dragInitial = null, sx = 0, sy = 0
+canvas.addEventListener('mousedown', e => {
+  const pos = canvasPointer(e)
+  const gizmo = hitGizmo(pos.x, pos.y)
+  if (gizmo) {
+    pushUndo()
+    dragging = true
+    dragMode = 'gizmo'
+    dragAxis = gizmo
+    dragStart = pos
+    const p = selectedPart()
+    dragInitial = { pos:[...p.pos], rot:[...p.rot], size:[...p.size] }
+    e.preventDefault()
+    return
+  }
+  const picked = pickPart(pos.x, pos.y)
+  if (picked) {
+    state.selected = picked.id
+    syncUi()
+    save()
+    return
+  }
+  dragging = true
+  dragMode = 'orbit'
+  sx = e.clientX
+  sy = e.clientY
+})
+window.addEventListener('mouseup', () => {
+  if (dragging && dragMode === 'gizmo') save()
+  dragging = false
+  dragMode = 'orbit'
+  dragAxis = null
+  dragStart = null
+  dragInitial = null
+})
+window.addEventListener('keydown', e => {
+  const target = e.target
+  const isTextField = target && (
+    target.isContentEditable ||
+    target.tagName === 'INPUT' ||
+    target.tagName === 'TEXTAREA' ||
+    target.tagName === 'SELECT'
+  )
+  if (isTextField) return
+  if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'z' && !e.shiftKey) {
+    e.preventDefault()
+    undo()
+  }
+})
+window.addEventListener('mousemove', e => {
+  if (!dragging) return
+  if (dragMode === 'gizmo') {
+    dragSelectedAxis(canvasPointer(e))
+    return
+  }
+  state.camera.yaw -= (e.clientX - sx) * .35
+  state.camera.pitch = Math.max(-82, Math.min(89, state.camera.pitch + (e.clientY - sy) * .25))
+  sx = e.clientX; sy = e.clientY; save()
+})
+canvas.addEventListener('wheel', e => {
+  e.preventDefault()
+  state.camera.dist = Math.max(80, Math.min(1800, state.camera.dist * (1 + e.deltaY * .001)))
+  save()
+}, { passive:false })
+
+function canvasPointer(e) {
+  const rect = canvas.getBoundingClientRect()
+  return { x: e.clientX - rect.left, y: e.clientY - rect.top }
+}
+
+function hitGizmo(x, y) {
+  let best = null
+  for (const h of gizmoHandles) {
+    const d = distToSegment(x, y, h.start.x, h.start.y, h.end.x, h.end.y)
+    const tip = Math.hypot(x - h.end.x, y - h.end.y)
+    const score = Math.min(d, tip)
+    if (score < 16 && (!best || score < best.score)) best = { ...h, score }
+  }
+  return best
+}
+
+function pickPart(x, y) {
+  if (!lastProj || !lastView) return null
+  let best = null
+  for (const part of state.parts) {
+    const hit = projectedHit(part, x, y)
+    if (hit && (!best || hit.depth < best.depth)) best = { part, depth: hit.depth }
+  }
+  return best?.part || null
+}
+
+function projectedHit(part, x, y) {
+  const pts = projectedCorners(part)
+  if (pts.length < 2) return null
+  const xs = pts.map(p => p.x), ys = pts.map(p => p.y)
+  const pad = 5
+  const minX = Math.min(...xs) - pad, maxX = Math.max(...xs) + pad
+  const minY = Math.min(...ys) - pad, maxY = Math.max(...ys) + pad
+  if (x < minX || x > maxX || y < minY || y > maxY) return null
+  const center = projectEditorPoint(part.pos, lastProj, lastView)
+  const depth = center?.depth ?? 999999
+  return { depth }
+}
+
+function projectedCorners(part) {
+  const sx = Math.max(1, part.size?.[0] || 1) / 2
+  const sy = Math.max(1, part.size?.[1] || 1) / 2
+  const sz = Math.max(1, part.size?.[2] || 1) / 2
+  const rx = (part.rot?.[0] || 0) * deg
+  const ry = (part.rot?.[1] || 0) * deg
+  const rz = (part.rot?.[2] || 0) * deg
+  const model = m4Mul(m4Translate(...part.pos), m4RotateXYZ(rx, ry, rz))
+  const local = [
+    [-sx,-sy,-sz], [sx,-sy,-sz], [sx,sy,-sz], [-sx,sy,-sz],
+    [-sx,-sy, sz], [sx,-sy, sz], [sx,sy, sz], [-sx,sy, sz],
+  ]
+  return local
+    .map(p => m4Transform(model, [p[0], p[1], p[2], 1]))
+    .map(p => projectEditorPoint([p[0], p[1], p[2]], lastProj, lastView))
+    .filter(Boolean)
+}
+
+function dragSelectedAxis(pos) {
+  const p = selectedPart()
+  if (!p || !dragAxis || !dragStart || !dragInitial) return
+  const vx = dragAxis.end.x - dragAxis.start.x
+  const vy = dragAxis.end.y - dragAxis.start.y
+  const len = Math.hypot(vx, vy) || 1
+  const ux = vx / len, uy = vy / len
+  const deltaPx = (pos.x - dragStart.x) * ux + (pos.y - dragStart.y) * uy
+  const idx = { x:0, y:1, z:2 }[dragAxis.axis]
+  const worldScale = Math.max(0.2, (state.camera?.dist || 500) / 520)
+  if ((state.tool || 'move') === 'rotate') {
+    p.rot[idx] = round(dragInitial.rot[idx] + deltaPx * 0.6)
+  } else if (state.tool === 'resize') {
+    p.size[idx] = Math.max(1, round(dragInitial.size[idx] + deltaPx * worldScale))
+  } else {
+    p.pos[idx] = round(dragInitial.pos[idx] + deltaPx * worldScale)
+  }
+  syncUiFieldsOnly()
+}
+
+function syncUiFieldsOnly() {
+  const p = selectedPart()
+  if (!p) return
+  ;['X','Y','Z'].forEach((a,i) => {
+    document.getElementById('pos'+a).value = p.pos[i]
+    document.getElementById('rot'+a).value = p.rot[i]
+    document.getElementById('size'+a).value = p.size[i]
+  })
+}
+
+function distToSegment(px, py, x1, y1, x2, y2) {
+  const vx = x2 - x1, vy = y2 - y1
+  const wx = px - x1, wy = py - y1
+  const c = Math.max(0, Math.min(1, (wx * vx + wy * vy) / ((vx * vx + vy * vy) || 1)))
+  const x = x1 + vx * c, y = y1 + vy * c
+  return Math.hypot(px - x, py - y)
+}
+
+function projectScreen(point, proj = lastProj, view = lastView) {
+  if (!proj || !view || !canvas.width || !canvas.height) return null
+  const mvp = m4Mul(proj, view)
+  const p = m4Transform(mvp, [point[0], point[1], point[2], 1])
+  if (!p || p[3] <= 0.0001) return null
+  const nx = p[0] / p[3], ny = p[1] / p[3]
+  return {
+    x: (nx * 0.5 + 0.5) * canvas.clientWidth,
+    y: (-ny * 0.5 + 0.5) * canvas.clientHeight,
+    depth: p[2] / p[3],
+  }
+}
+
+function m4Identity(){ return [1,0,0,0, 0,1,0,0, 0,0,1,0, 0,0,0,1] }
+function m4Mul(a,b){ const o=Array(16).fill(0); for(let r=0;r<4;r++) for(let c=0;c<4;c++) for(let k=0;k<4;k++) o[c*4+r]+=a[k*4+r]*b[c*4+k]; return o }
+function m4Translate(x,y,z){ const m=m4Identity(); m[12]=x; m[13]=y; m[14]=z; return m }
+function m4Scale(x,y,z){ const m=m4Identity(); m[0]=x; m[5]=y; m[10]=z; return m }
+function m4RotateXYZ(x,y,z){
+  const cx=Math.cos(x), sx=Math.sin(x), cy=Math.cos(y), sy=Math.sin(y), cz=Math.cos(z), sz=Math.sin(z)
+  const rx=[1,0,0,0, 0,cx,sx,0, 0,-sx,cx,0, 0,0,0,1]
+  const ry=[cy,0,-sy,0, 0,1,0,0, sy,0,cy,0, 0,0,0,1]
+  const rz=[cz,sz,0,0, -sz,cz,0,0, 0,0,1,0, 0,0,0,1]
+  return m4Mul(rz, m4Mul(ry, rx))
+}
+function m4Perspective(fovy, aspect, near, far){
+  const f=1/Math.tan(fovy/2), nf=1/(near-far)
+  return [f/aspect,0,0,0, 0,f,0,0, 0,0,(far+near)*nf,-1, 0,0,2*far*near*nf,0]
+}
+function m4LookAt(eye, center, up){
+  const z=norm(sub(eye,center)), x=norm(cross(up,z)), y=cross(z,x)
+  return [x[0],y[0],z[0],0, x[1],y[1],z[1],0, x[2],y[2],z[2],0, -dot(x,eye),-dot(y,eye),-dot(z,eye),1]
+}
+function m4Transform(m, v) {
+  return [
+    m[0]*v[0] + m[4]*v[1] + m[8]*v[2] + m[12]*v[3],
+    m[1]*v[0] + m[5]*v[1] + m[9]*v[2] + m[13]*v[3],
+    m[2]*v[0] + m[6]*v[1] + m[10]*v[2] + m[14]*v[3],
+    m[3]*v[0] + m[7]*v[1] + m[11]*v[2] + m[15]*v[3],
+  ]
+}
+function sub(a,b){ return [a[0]-b[0],a[1]-b[1],a[2]-b[2]] }
+function cross(a,b){ return [a[1]*b[2]-a[2]*b[1], a[2]*b[0]-a[0]*b[2], a[0]*b[1]-a[1]*b[0]] }
+function dot(a,b){ return a[0]*b[0]+a[1]*b[1]+a[2]*b[2] }
+function norm(v){ const l=Math.hypot(...v)||1; return [v[0]/l,v[1]/l,v[2]/l] }
+
+applyTheme()
+syncUi()
+requestAnimationFrame(render)
+</script>
+</body>
+</html>
