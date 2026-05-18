@@ -252,20 +252,77 @@ select:focus { border-color: var(--accent, #f0a030); }
     </div>
 
     <div class="section">
-      <div class="section-title">Engraving Area</div>
-      <label>Width (mm)</label>
-      <input type="number" id="W" value="50" min="1" max="500" step="1" oninput="onSizeChange('W')">
-      <label>Height (mm)</label>
-      <input type="number" id="H" value="50" min="1" max="500" step="1" oninput="onSizeChange('H')">
+      <div class="section-title">Size</div>
+      <div style="display:flex; gap:8px">
+        <div style="flex:1; display:flex; flex-direction:column; gap:4px">
+          <label>Width (mm)</label>
+          <input type="number" id="W" value="50" min="1" max="500" step="1" oninput="onSizeChange('W')">
+        </div>
+        <div style="flex:1; display:flex; flex-direction:column; gap:4px">
+          <label>Height (mm)</label>
+          <input type="number" id="H" value="50" min="1" max="500" step="1" oninput="onSizeChange('H')">
+        </div>
+      </div>
       <label class="check-label">
         <input type="checkbox" id="lock-ratio"> Lock Ratio
       </label>
       <label>Line Spacing (mm)</label>
       <input type="number" id="step" value="0.1" min="0.02" max="1" step="0.01" oninput="refresh()">
+      <div class="file-name" id="step-dpi">254 DPI</div>
+    </div>
+
+    <div class="section">
+      <div class="section-title">Engraving</div>
+      <div class="mode-toggle">
+        <button id="mode-bw-btn" class="mode-btn active" onclick="setMode('bw')">Threshold</button>
+        <button id="mode-gray-btn" class="mode-btn" onclick="setMode('gray')">Grayscale</button>
+      </div>
+      <div id="bw-power">
+        <label>Power</label>
+        <input type="number" id="power" value="800" min="0" max="1000" step="10" oninput="refresh()">
+      </div>
+      <div id="gray-power" style="display:none">
+        <label style="margin-top:4px">Min Power</label>
+        <div class="range-row">
+          <input type="range" id="SMin" min="0" max="1000" step="10" value="0"
+                 oninput="document.getElementById('SMin-val').textContent=this.value; refresh()">
+          <span class="range-val" id="SMin-val">0</span>
+        </div>
+        <label>Max Power</label>
+        <div class="range-row">
+          <input type="range" id="SMax" min="0" max="1000" step="10" value="800"
+                 oninput="document.getElementById('SMax-val').textContent=this.value; refresh()">
+          <span class="range-val" id="SMax-val">800</span>
+        </div>
+      </div>
+      <label>Engraving Speed</label>
+      <input type="number" id="feed" value="3000" min="100" max="10000" step="100" oninput="refresh()">
       <label class="check-label">
-        <input type="checkbox" id="invert" oninput="refresh()"> Invert Image
+        <input type="checkbox" id="bidir" checked oninput="refresh()"> Bidirectional Scan
       </label>
-      <label>Origin (G-code 0,0)</label>
+    </div>
+
+    <div class="section">
+      <div class="section-title">Image Tuning</div>
+      <label>Histogram</label>
+      <canvas id="hist-canvas" width="240" height="70"></canvas>
+      <div id="bw-threshold">
+        <label>Threshold</label>
+        <div class="range-row">
+          <input type="range" id="threshold" min="0" max="255" value="128"
+                 oninput="document.getElementById('threshold-val').textContent=this.value; refresh()">
+          <span class="range-val" id="threshold-val">128</span>
+        </div>
+      </div>
+      <button id="tone-curve-btn" class="lut-edit-btn" onclick="openLutModal()" style="display:none">Tone Curve…</button>
+      <label class="check-label">
+        <input type="checkbox" id="invert" oninput="refresh()"> Invert
+      </label>
+    </div>
+
+    <div class="section" style="border-bottom:none">
+      <div class="section-title">Machine</div>
+      <label>Origin</label>
       <div class="origin-grid">
         <button class="og-btn" data-v="tl"     onclick="setOrigin('tl')">↖</button>
         <button class="og-btn" data-v="t"      onclick="setOrigin('t')">↑</button>
@@ -277,67 +334,15 @@ select:focus { border-color: var(--accent, #f0a030); }
         <button class="og-btn" data-v="b"      onclick="setOrigin('b')">↓</button>
         <button class="og-btn" data-v="br"     onclick="setOrigin('br')">↘</button>
       </div>
-    </div>
-
-    <div class="section">
-      <div class="section-title">Burn</div>
-
-      <!-- Mode toggle -->
-      <div class="mode-toggle">
-        <button id="mode-bw-btn" class="mode-btn active" onclick="setMode('bw')">B/W Threshold</button>
-        <button id="mode-gray-btn" class="mode-btn" onclick="setMode('gray')">Grayscale</button>
-      </div>
-
-      <!-- B/W only -->
-      <div id="bw-fields">
-        <label style="margin-top:4px">Threshold</label>
-        <div class="range-row">
-          <input type="range" id="threshold" min="0" max="255" value="128"
-                 oninput="document.getElementById('threshold-val').textContent=this.value; refresh()">
-          <span class="range-val" id="threshold-val">128</span>
-        </div>
-        <label>Power (0–1000)</label>
-        <input type="number" id="power" value="800" min="0" max="1000" step="10" oninput="refresh()">
-      </div>
-
-      <!-- Grayscale only -->
-      <div id="gray-fields" style="display:none">
-        <label style="margin-top:4px">S Min — light</label>
-        <div class="range-row">
-          <input type="range" id="SMin" min="0" max="1000" step="10" value="0"
-                 oninput="document.getElementById('SMin-val').textContent=this.value; refresh()">
-          <span class="range-val" id="SMin-val">0</span>
-        </div>
-        <label>S Max — dark</label>
-        <div class="range-row">
-          <input type="range" id="SMax" min="0" max="1000" step="10" value="800"
-                 oninput="document.getElementById('SMax-val').textContent=this.value; refresh()">
-          <span class="range-val" id="SMax-val">800</span>
-        </div>
-        <label>Histogram</label>
-        <canvas id="hist-canvas" width="240" height="70"></canvas>
-        <button class="lut-edit-btn" onclick="openLutModal()">Edit Curve…</button>
-      </div>
-
-      <!-- Common -->
-      <label>Feed (mm/min)</label>
-      <input type="number" id="feed" value="3000" min="100" max="10000" step="100" oninput="refresh()">
-      <label class="check-label">
-        <input type="checkbox" id="bidir" checked oninput="refresh()"> Bidirectional
-      </label>
-    </div>
-
-    <div class="section" style="border-bottom:none">
-      <div class="section-title">After Burning</div>
-      <label>Move Head to</label>
+      <label>End Position</label>
       <select id="end-move" onchange="onEndMoveChange()">
         <option value="none">None (stay)</option>
         <option value="origin">Origin (X0 Y0)</option>
         <option value="park">Park (machine home)</option>
-        <option value="right">Right of Engraving</option>
-        <option value="left">Left of Engraving</option>
-        <option value="above">Above Engraving</option>
-        <option value="below">Below Engraving</option>
+        <option value="right">Right Side</option>
+        <option value="left">Left Side</option>
+        <option value="above">Above</option>
+        <option value="below">Below</option>
       </select>
       <div id="f-end-gap" style="display:none">
         <label>Gap (mm)</label>
@@ -460,11 +465,12 @@ function fmt(v) {
 function setMode(m) {
   currentMode = m
   const isBw = m === 'bw'
-  document.getElementById('bw-fields').style.display    = isBw ? '' : 'none'
-  document.getElementById('gray-fields').style.display  = isBw ? 'none' : ''
+  document.getElementById('bw-power').style.display       = isBw ? '' : 'none'
+  document.getElementById('gray-power').style.display     = isBw ? 'none' : ''
+  document.getElementById('bw-threshold').style.display   = isBw ? '' : 'none'
+  document.getElementById('tone-curve-btn').style.display = isBw ? 'none' : ''
   document.getElementById('mode-bw-btn').classList.toggle('active', isBw)
   document.getElementById('mode-gray-btn').classList.toggle('active', !isBw)
-  document.getElementById('s-pts-label').textContent = 'Fired pts'
   refresh()
 }
 
@@ -739,19 +745,29 @@ function drawHistogram() {
     }
   }
 
-  // LUT curve: X=luma (dark→light), Y=top=SMin=light, bottom=SMax=dark
-  ctx.beginPath()
-  for (let i = 0; i < CW; i++) {
-    const luma = i / (CW - 1)
-    const darkFrac = p.invert ? luma : 1 - luma
-    const idx = Math.min(255, Math.max(0, Math.round(darkFrac * 255)))
-    const powerFrac = currentLUT[idx]
-    const y = powerFrac * (CH - 1)  // top=SMin=light, bottom=SMax=dark
-    i === 0 ? ctx.moveTo(i + 0.5, y) : ctx.lineTo(i + 0.5, y)
+  if (p.mode === 'gray') {
+    // LUT curve: X=luma (dark→light), Y=top=SMin=light, bottom=SMax=dark
+    ctx.beginPath()
+    for (let i = 0; i < CW; i++) {
+      const luma = i / (CW - 1)
+      const darkFrac = p.invert ? luma : 1 - luma
+      const idx = Math.min(255, Math.max(0, Math.round(darkFrac * 255)))
+      const powerFrac = currentLUT[idx]
+      const y = powerFrac * (CH - 1)
+      i === 0 ? ctx.moveTo(i + 0.5, y) : ctx.lineTo(i + 0.5, y)
+    }
+    ctx.strokeStyle = '#f0a030'
+    ctx.lineWidth = 1.5
+    ctx.stroke()
+  } else {
+    const tx = Math.round(p.threshold * CW / 255)
+    ctx.strokeStyle = '#f0a030'
+    ctx.lineWidth = 1.5
+    ctx.beginPath()
+    ctx.moveTo(tx + 0.5, 0)
+    ctx.lineTo(tx + 0.5, CH)
+    ctx.stroke()
   }
-  ctx.strokeStyle = '#f0a030'
-  ctx.lineWidth = 1.5
-  ctx.stroke()
 }
 
 // ── Refresh ───────────────────────────────────────────────────────────────────
@@ -764,6 +780,7 @@ function refresh() {
 
 function _doRefresh() {
   const p = getParams()
+  document.getElementById('step-dpi').textContent = Math.round(25.4 / p.step) + ' DPI'
   lastBitmap = imageToBitmap(p, 900)
   computeStats(p, lastBitmap)
   drawHistogram()
@@ -1344,6 +1361,14 @@ document.addEventListener('DOMContentLoaded', () => {
 // ── Init ──────────────────────────────────────────────────────────────────────
 new ResizeObserver(() => { if (lastBitmap) drawPreview() }).observe(document.getElementById('preview-wrap'))
 loadSettings()
+call('getMachineSettings').then(s => {
+  if (s?.spindleMax > 0) {
+    const maxS = s.spindleMax
+    document.getElementById('power').max = maxS
+    document.getElementById('SMin').max  = maxS
+    document.getElementById('SMax').max  = maxS
+  }
+}).catch(() => {})
 </script>
 </body>
 </html>
