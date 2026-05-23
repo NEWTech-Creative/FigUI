@@ -189,6 +189,18 @@ select:focus { border-color: var(--accent, #f0a030); }
 }
 .save-btn:hover { border-color: var(--accent, #f0a030); }
 
+.save-name-input {
+  width: 220px;
+  background: var(--elevated, #1a2235);
+  border: 1px solid var(--border, #222840);
+  border-radius: 6px;
+  color: var(--text-primary, #e2e6f4);
+  font-size: 12px;
+  padding: 7px 10px;
+  outline: none;
+}
+.save-name-input:focus { border-color: var(--accent, #f0a030); }
+
 #status { font-size: 11px; color: var(--text-muted, #6a7898); flex: 1; text-align: right; }
 #status.ok   { color: var(--ok,     #22c55e); }
 #status.err  { color: var(--danger, #ef4444); }
@@ -378,7 +390,11 @@ select:focus { border-color: var(--accent, #f0a030); }
       <canvas id="preview-canvas"></canvas>
     </div>
     <div class="bottom-bar">
-      <button class="save-btn" onclick="doSave()">Save</button>
+      <div id="save-section" style="display:none; align-items:center; gap:8px;">
+        <input id="save-name" class="save-name-input" type="text" placeholder="rasterburn.nc" disabled>
+        <button class="save-btn" id="save-gcode-btn" onclick="saveGCode()" disabled>Save G-code</button>
+        <button class="save-btn" id="open-saved-btn" onclick="openSaved()" style="display:none">Open</button>
+      </div>
       <span id="status"></span>
     </div>
   </div><!-- /main -->
@@ -439,12 +455,15 @@ window.addEventListener('message', e => {
 })
 
 // ── State ────────────────────────────────────────────────────────────────────
-let currentImg    = null
-let imgNatW       = 0
-let imgNatH       = 0
-let currentOrigin = 'bl'
-let currentMode   = 'bw'   // 'bw' | 'gray'
-let lastBitmap    = null   // { data, nCols, nRows, mode } — preview resolution
+let currentImg       = null
+let currentImageName = 'rasterburn'
+let imgNatW          = 0
+let imgNatH          = 0
+let currentOrigin    = 'bl'
+let currentMode      = 'bw'   // 'bw' | 'gray'
+let lastBitmap       = null   // { data, nCols, nRows, mode } — preview resolution
+let generatedCode    = ''
+let generatedPath    = ''
 
 // ── LUT state ────────────────────────────────────────────────────────────────
 // Control points in normalized space: {x: 0..1 (dark fraction), y: 0..1 (power fraction)}
@@ -542,6 +561,7 @@ function onFileChange(e) {
   img.onload = () => {
     URL.revokeObjectURL(url)
     currentImg = img
+    currentImageName = file.name
     imgNatW = img.naturalWidth
     imgNatH = img.naturalHeight
     document.getElementById('file-name').textContent = file.name
@@ -576,17 +596,30 @@ function getParams() {
     H:         Math.max(1,    parseFloat(document.getElementById('H').value)         || 50),
     step:      Math.max(0.02, parseFloat(document.getElementById('step').value)      || 0.1),
     threshold:  parseInt(document.getElementById('threshold').value)                  || 128,
-    ditherType: document.getElementById('dither-type')?.value || 'stochastic',
     power:     Math.min(1000, Math.max(0, parseInt(document.getElementById('power').value) || 800)),
     SMin:      Math.min(1000, Math.max(0, parseInt(document.getElementById('SMin').value)  || 0)),
     SMax:      Math.min(1000, Math.max(0, parseInt(document.getElementById('SMax').value)  || 800)),
     feed:      Math.max(100,  parseInt(document.getElementById('feed').value)         || 3000),
+    ditherType: document.getElementById('dither-type').value,
     bidir:     document.getElementById('bidir').checked,
     invert:    document.getElementById('invert').checked,
     origin:    currentOrigin,
     endMove:   document.getElementById('end-move').value,
     endGap:    parseFloat(document.getElementById('end-gap')?.value) || 10
   }
+}
+
+function sanitizeFileName(name) {
+  return name.replace(/[^a-zA-Z0-9._-]+/g, '_').replace(/^_+|_+$/g, '')
+}
+
+function defaultGcodeFileName() {
+  let name = 'rasterburn'
+  if (currentImageName) {
+    name = currentImageName.replace(/\.[^.]+$/, '')
+  }
+  name = sanitizeFileName(name)
+  return name ? `${name}.nc` : 'rasterburn.nc'
 }
 
 function parkGCode(p) {
@@ -907,6 +940,7 @@ function _doRefresh() {
   computeStats(p, lastBitmap)
   drawHistogram()
   drawPreview()
+  saveSettings()
 }
 
 // ── GCode ─────────────────────────────────────────────────────────────────────
@@ -1026,13 +1060,18 @@ async function doSend() {
       )
       if (!ok) { setStatus('Cancelled.', 'warn'); btn.disabled = false; return }
     }
-    doSave()
     const bmp  = imageToBitmap(p)
     const code = genGCode(p, bmp)
-    setStatus('Writing…')
-    await call('writeFile', { path: '/sd/plugins/rasterburn/tmp-rasterburn.nc', content: code, fs: 'sd' })
-    await call('openFile',  { path: '/sd/plugins/rasterburn/tmp-rasterburn.nc' })
-    setStatus('Opened in FigUI.', 'ok')
+    generatedCode = code
+    const fileName = defaultGcodeFileName()
+    generatedPath = `/sd/${fileName}`
+    const saveName = document.getElementById('save-name')
+    saveName.value = fileName
+    saveName.disabled = false
+    document.getElementById('save-gcode-btn').disabled = false
+    document.getElementById('save-section').style.display = ''
+    document.getElementById('open-saved-btn').style.display = 'none'
+    setStatus(`G-code generated. Edit the filename and click Save G-code.`, 'ok')
   } catch(e) {
     setStatus('Error: ' + e.message, 'err')
   } finally {
@@ -1040,16 +1079,54 @@ async function doSend() {
   }
 }
 
+async function saveGCode() {
+  if (!generatedCode) { setStatus('No generated file to save.', 'warn'); return }
+  const btn = document.getElementById('save-gcode-btn')
+  const input = document.getElementById('save-name')
+  const name = sanitizeFileName(input.value.trim()) || defaultGcodeFileName()
+  const path = `/sd/${name}`
+  btn.disabled = true
+  btn.textContent = 'Saving...'
+  setStatus(`Saving ${name}…`)
+  try {
+    await call('writeFile', { path, content: generatedCode, fs: 'sd' })
+    generatedPath = path
+    document.getElementById('open-saved-btn').style.display = ''
+    btn.textContent = 'Saved'
+    setStatus(`Saved to ${path}.`, 'ok')
+    setTimeout(() => {
+      if (btn.textContent === 'Saved') {
+        btn.textContent = 'Save G-code'
+        btn.disabled = false
+      }
+    }, 1200)
+  } catch (e) {
+    btn.disabled = false
+    btn.textContent = 'Save G-code'
+    setStatus('Save failed: ' + e.message, 'err')
+  }
+}
+
+async function openSaved() {
+  if (!generatedPath) { setStatus('No saved file to open.', 'warn'); return }
+  try {
+    await saveSettings()
+    await call('openFile', { path: generatedPath })
+    await call('close')
+  } catch (e) {
+    setStatus('Could not open file: ' + e.message, 'err')
+  }
+}
+
 // ── Settings ──────────────────────────────────────────────────────────────────
-function doSave() {
+function saveSettings() {
   const p = getParams()
   p.lutPoints = lutPoints
   return call('writeFile', {
     path: '/sd/plugins/rasterburn/settings.json',
     content: JSON.stringify(p, null, 2),
     fs: 'sd'
-  }).then(() => setStatus('Settings saved.', 'ok'))
-    .catch(e  => setStatus('Save error: ' + e.message, 'err'))
+  }).catch(e => setStatus('Save error: ' + e.message, 'err'))
 }
 
 async function loadSettings() {
@@ -1057,7 +1134,6 @@ async function loadSettings() {
     const raw = await call('readFile', { path: '/sd/plugins/rasterburn/settings.json', fs: 'sd' })
     const c = JSON.parse(raw)
     if (c.mode)       setMode(c.mode)
-    if (c.ditherType) document.getElementById('dither-type').value = c.ditherType
     if (c.W     !== undefined) document.getElementById('W').value         = c.W
     if (c.H     !== undefined) document.getElementById('H').value         = c.H
     if (c.step  !== undefined) document.getElementById('step').value      = c.step
@@ -1072,6 +1148,7 @@ async function loadSettings() {
     if (c.bidir !== undefined) document.getElementById('bidir').checked   = c.bidir
     if (c.invert !== undefined) document.getElementById('invert').checked = c.invert
     if (c.origin) setOrigin(c.origin)
+    if (c.ditherType) document.getElementById('dither-type').value = c.ditherType
     if (c.endMove) { document.getElementById('end-move').value = c.endMove; onEndMoveChange() }
     if (c.endGap  !== undefined) document.getElementById('end-gap').value  = c.endGap
     if (Array.isArray(c.lutPoints) && c.lutPoints.length >= 2) {
@@ -1082,7 +1159,7 @@ async function loadSettings() {
   refresh()
 }
 
-async function doClose() { await doSave(); await call('close') }
+async function doClose() { await saveSettings(); await call('close') }
 
 // ── LUT Modal ────────────────────────────────────────────────────────────────
 const LUT_CW  = 420
