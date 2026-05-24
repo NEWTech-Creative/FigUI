@@ -491,6 +491,9 @@ export function sendSilentAlarmQuery() {
 export async function sendStartupQueries() {
   try {
     const ssText = await sendCommand('$SS')
+    const hasMist  = /\[MSG:INFO:\s*Mist coolant/i.test(ssText)
+    const hasFlood = /\[MSG:INFO:\s*Flood coolant/i.test(ssText)
+    if (hasMist || hasFlood) useMachineStore.getState().updateControllerSettings({ hasMist, hasFlood })
     ssText.split('\n').forEach(raw => {
       const line = raw.trim()
       if (line) lineHandlers.forEach(fn => fn(line))

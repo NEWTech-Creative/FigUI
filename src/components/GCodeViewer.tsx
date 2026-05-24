@@ -2202,33 +2202,34 @@ export function GCodeViewer({ className, isTablet }: Props) {
         )}
 
         <div className="flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-3">
-        <div className="flex gap-1.5 sm:flex-[6]">
-          <button
-            onClick={() => { sendRealtime(0xA0); setCoolantState('mist') }}
-            className={`btn gap-1.5 ${isTablet ? 'text-xl py-3' : 'text-lg'} justify-center flex-1 ${coolantState === 'mist' ? 'border-accent/50 text-accent' : 'btn-ghost'}`}
-          >
-            <CloudDrizzle size={isTablet ? 18 : 13} />
-            Mist
-          </button>
-          <button
-            onClick={() => { sendRealtime(0xA1); setCoolantState('flood') }}
-            className={`btn gap-1.5 ${isTablet ? 'text-xl py-3' : 'text-lg'} justify-center flex-1 ${coolantState === 'flood' ? 'border-info/50 text-info' : 'btn-ghost'}`}
-          >
-            <Waves size={isTablet ? 18 : 13} />
-            Flood
-          </button>
-          <button
-            onClick={() => { sendRaw('M9'); setCoolantState('off') }}
-            className={`btn gap-1.5 ${isTablet ? 'text-xl py-3' : 'text-lg'} justify-center flex-1 ${coolantState === 'off' ? 'border-danger/50 text-danger' : 'btn-ghost'}`}
-          >
-            <PowerOff size={isTablet ? 18 : 13} />
-            Off
-          </button>
-        </div>
+        {(controllerSettings.hasMist || controllerSettings.hasFlood) && <>
+          <div className="flex gap-1.5 sm:flex-[6]">
+            {controllerSettings.hasMist && <button
+              onClick={() => { sendRealtime(0xA0); setCoolantState('mist') }}
+              className={`btn gap-1.5 ${isTablet ? 'text-xl py-3' : 'text-lg'} justify-center flex-1 ${coolantState === 'mist' ? 'border-accent/50 text-accent' : 'btn-ghost'}`}
+            >
+              <CloudDrizzle size={isTablet ? 18 : 13} />
+              Mist
+            </button>}
+            {controllerSettings.hasFlood && <button
+              onClick={() => { sendRealtime(0xA1); setCoolantState('flood') }}
+              className={`btn gap-1.5 ${isTablet ? 'text-xl py-3' : 'text-lg'} justify-center flex-1 ${coolantState === 'flood' ? 'border-info/50 text-info' : 'btn-ghost'}`}
+            >
+              <Waves size={isTablet ? 18 : 13} />
+              Flood
+            </button>}
+            <button
+              onClick={() => { sendRaw('M9'); setCoolantState('off') }}
+              className={`btn gap-1.5 ${isTablet ? 'text-xl py-3' : 'text-lg'} justify-center flex-1 ${coolantState === 'off' ? 'border-danger/50 text-danger' : 'btn-ghost'}`}
+            >
+              <PowerOff size={isTablet ? 18 : 13} />
+              Off
+            </button>
+          </div>
+          <div className="hidden sm:block w-px bg-border self-stretch" />
+        </>}
 
-        <div className="hidden sm:block w-px bg-border self-stretch" />
-
-        <div className="flex gap-1.5 sm:flex-[3]">
+        <div className={`flex gap-1.5 ${(controllerSettings.hasMist || controllerSettings.hasFlood) ? 'sm:flex-[3]' : 'sm:ml-auto'}`}>
           {!isJobRunning && !isJobHeld && (
             <button
               className={`btn btn-ok-solid gap-2 justify-center font-bold ${isTablet ? 'text-xl py-3' : 'text-base'} flex-1`}

@@ -92,6 +92,8 @@ export interface ControllerSettings {
   maxTravelX?: number
   maxTravelY?: number
   maxTravelZ?: number
+  hasMist?: boolean
+  hasFlood?: boolean
 }
 
 export interface Macro {
