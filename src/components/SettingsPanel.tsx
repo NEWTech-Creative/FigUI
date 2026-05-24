@@ -1,10 +1,10 @@
 import { useState, useEffect, useMemo } from 'react'
 import {
   RefreshCw, Search, Wifi, Globe, Settings, Sliders,
-  Hash, RotateCcw, X, Cpu, Info, Monitor,
+  Hash, RotateCcw, X, Cpu, Info, Monitor, Upload,
 } from 'lucide-react'
 import type { LucideIcon } from 'lucide-react'
-import { sendCommand, fetchFileContent, saveFileContent } from '../lib/http'
+import { sendCommand, fetchFileContent, saveFileContent, uploadFirmware, getDeviceInfoFast } from '../lib/http'
 import { useMachineStore } from '../store'
 import type { Theme } from '../store'
 
@@ -29,13 +29,14 @@ const PREFIX_TO_CAT: Record<string, string> = {
 }
 
 const CAT_DEFS: Record<string, { label: string; icon: LucideIcon; order: number }> = {
-  workspace: { label: 'Workspace',      icon: Monitor,  order: -1 },
-  wifi:     { label: 'WiFi & Network',  icon: Wifi,     order: 0 },
-  services: { label: 'Services',        icon: Globe,    order: 1 },
-  system:   { label: 'System',          icon: Settings, order: 2 },
-  machine:  { label: 'Machine',         icon: Sliders,  order: 3 },
-  config:   { label: 'Machine Config',  icon: Cpu,      order: 4 },
-  other:    { label: 'Other',           icon: Hash,     order: 99 },
+  workspace: { label: 'Workspace',       icon: Monitor,      order: -1 },
+  wifi:      { label: 'WiFi & Network',  icon: Wifi,         order: 0 },
+  services:  { label: 'Services',        icon: Globe,        order: 1 },
+  system:    { label: 'System',          icon: Settings,     order: 2 },
+  machine:   { label: 'Machine',         icon: Sliders,      order: 3 },
+  config:    { label: 'Machine Config',  icon: Cpu,          order: 4 },
+  other:     { label: 'Other',           icon: Hash,         order: 99 },
+  firmware:  { label: 'Firmware Update', icon: Upload,  order: 100 },
 }
 
 function catOf(s: Setting): string {
@@ -478,6 +479,146 @@ async function updateConfigYaml(settingPath: string, value: string): Promise<voi
   }
 }
 
+type FirmwarePhase = 'idle' | 'uploading' | 'restarting' | 'error'
+
+function FirmwareTab() {
+  const [file, setFile]         = useState<File | null>(null)
+  const [phase, setPhase]       = useState<FirmwarePhase>('idle')
+  const [progress, setProgress] = useState(0)
+  const [countdown, setCountdown] = useState(0)
+  const [errorMsg, setErrorMsg] = useState('')
+  const [dragOver, setDragOver] = useState(false)
+
+  function pick(f: File | null | undefined) {
+    if (!f) return
+    setFile(f)
+    setPhase('idle')
+    setErrorMsg('')
+  }
+
+  async function start() {
+    if (!file || phase === 'uploading' || phase === 'restarting') return
+    if (!confirm(`Flash firmware from "${file.name}"? The device will restart after upload.`)) return
+    setPhase('uploading')
+    setProgress(0)
+    setErrorMsg('')
+    try {
+      await uploadFirmware(file, pct => setProgress(pct))
+      setPhase('restarting')
+      let remaining = 40
+      setCountdown(remaining)
+      const iv = setInterval(() => {
+        remaining--
+        setCountdown(remaining)
+        if (remaining <= 0) { clearInterval(iv); clearInterval(poll); location.reload() }
+      }, 1000)
+      const poll = setInterval(async () => {
+        try {
+          await getDeviceInfoFast()
+          clearInterval(iv)
+          clearInterval(poll)
+          location.reload()
+        } catch { /* device not up yet */ }
+      }, 2000)
+    } catch (e) {
+      setPhase('error')
+      setErrorMsg(e instanceof Error ? e.message : 'Upload failed')
+    }
+  }
+
+  return (
+    <div className="flex flex-col gap-5 p-5 max-w-lg">
+      <div className="flex items-start gap-2 p-3 rounded bg-warn/10 border border-warn/30 text-sm text-warn">
+        <Info size={14} className="shrink-0 mt-px" />
+        <span>Only upload FluidNC firmware ending in .bin. Do not close this page or exit this tab while the update is in progress.</span>
+      </div>
+
+      {phase !== 'uploading' && phase !== 'restarting' && (
+        <label
+          className={`flex flex-col items-center justify-center gap-2 p-8 rounded-lg border-2 border-dashed
+                      cursor-pointer transition-colors ${
+            dragOver
+              ? 'border-accent bg-accent/10'
+              : 'border-border hover:border-accent/50 hover:bg-elevated/40'
+          }`}
+          onDragOver={e => { e.preventDefault(); setDragOver(true) }}
+          onDragLeave={() => setDragOver(false)}
+          onDrop={e => { e.preventDefault(); setDragOver(false); pick(e.dataTransfer.files[0]) }}
+        >
+          <input
+            type="file"
+            accept=".bin"
+            className="sr-only"
+            onChange={e => pick(e.target.files?.[0])}
+          />
+          <Upload size={32} className="text-text-dim" />
+          {file
+            ? <span className="text-base text-text-primary font-mono">{file.name}</span>
+            : <span className="text-base text-text-muted">Drop .bin file here or click to browse</span>
+          }
+          {file && (
+            <span className="text-sm text-text-dim">
+              {file.size < 1048576
+                ? `${(file.size / 1024).toFixed(1)} KB`
+                : `${(file.size / 1048576).toFixed(2)} MB`}
+            </span>
+          )}
+        </label>
+      )}
+
+      {phase === 'uploading' && (
+        <div className="flex flex-col gap-2">
+          <div className="flex justify-between text-sm text-text-muted">
+            <span>Uploading {file?.name}</span>
+            <span>{progress}%</span>
+          </div>
+          <div className="h-2 rounded-full bg-elevated overflow-hidden">
+            <div
+              className="h-full bg-accent rounded-full transition-all duration-200"
+              style={{ width: `${progress}%` }}
+            />
+          </div>
+        </div>
+      )}
+
+      {phase === 'restarting' && (
+        <div className="flex flex-col gap-2">
+          <div className="flex justify-between text-sm text-text-muted">
+            <span>Restarting device…</span>
+            <span>{countdown}s</span>
+          </div>
+          <div className="h-2 rounded-full bg-elevated overflow-hidden">
+            <div
+              className="h-full bg-ok rounded-full transition-all duration-1000"
+              style={{ width: `${(1 - countdown / 40) * 100}%` }}
+            />
+          </div>
+          <p className="text-sm text-text-dim">Page will reload automatically when ready.</p>
+        </div>
+      )}
+
+      {phase === 'error' && (
+        <div className="p-3 rounded bg-danger/10 border border-danger/30 text-danger text-sm">
+          {errorMsg}
+        </div>
+      )}
+
+      {phase !== 'uploading' && phase !== 'restarting' && (
+        <button
+          disabled={!file}
+          onClick={start}
+          className="flex items-center justify-center gap-2 px-4 py-2.5 rounded text-sm font-medium
+                     bg-accent text-white hover:bg-accent/90 transition-colors
+                     disabled:opacity-40 disabled:cursor-not-allowed"
+        >
+          <Upload size={15} />
+          Flash Firmware
+        </button>
+      )}
+    </div>
+  )
+}
+
 interface SettingsPanelProps {
   onClose?: () => void
 }
@@ -803,6 +944,8 @@ export function SettingsPanel({ onClose }: SettingsPanelProps) {
 
           <div className="flex-1 overflow-y-auto min-h-0">
 
+            {!isSearching && category === 'firmware' && <FirmwareTab />}
+
             {!isSearching && category === 'workspace' && (
               <div className="divide-y divide-border">
                 {([
@@ -864,20 +1007,20 @@ export function SettingsPanel({ onClose }: SettingsPanelProps) {
               </div>
             )}
 
-            {(isSearching || category !== 'workspace') && error && (
+            {(isSearching || (category !== 'workspace' && category !== 'firmware')) && error && (
               <div className="m-4 p-3 rounded bg-danger/10 border border-danger/30 text-danger text-sm leading-relaxed whitespace-pre-wrap font-mono">
                 {error}
               </div>
             )}
 
-            {(isSearching || category !== 'workspace') && loading && !error && (
+            {(isSearching || (category !== 'workspace' && category !== 'firmware')) && loading && !error && (
               <div className="flex items-center justify-center h-32 gap-2 text-text-muted text-sm">
                 <RefreshCw size={14} className="animate-spin" />
                 Loading settings…
               </div>
             )}
 
-            {(isSearching || category !== 'workspace') && !loading && !error && visibleSettings.length === 0 && (
+            {(isSearching || (category !== 'workspace' && category !== 'firmware')) && !loading && !error && visibleSettings.length === 0 && (
               <div className="flex flex-col items-center justify-center h-32 gap-2 text-text-dim text-sm">
                 {isSearching
                   ? <>No settings match <span className="font-mono">"{filter}"</span></>
@@ -886,7 +1029,7 @@ export function SettingsPanel({ onClose }: SettingsPanelProps) {
               </div>
             )}
 
-            {(isSearching || category !== 'workspace') && groupedItems.map((item, i) =>
+            {(isSearching || (category !== 'workspace' && category !== 'firmware')) && groupedItems.map((item, i) =>
               item.type === 'header'
                 ? <SectionHeader key={`h-${i}`} label={item.label} level={item.level} />
                 : <SettingRow
@@ -910,7 +1053,11 @@ function buildCategories(settings: Setting[]) {
   const deviceCats = [...seen]
     .map(id => ({ id, ...(CAT_DEFS[id] ?? { label: id, icon: Hash, order: 99 }) }))
     .sort((a, b) => a.order - b.order || a.label.localeCompare(b.label))
-  return [{ id: 'workspace', ...CAT_DEFS.workspace }, ...deviceCats]
+  return [
+    { id: 'workspace', ...CAT_DEFS.workspace },
+    ...deviceCats,
+    { id: 'firmware', ...CAT_DEFS.firmware },
+  ]
 }
 
 function buildSubKeys(settings: Setting[], category: string): string[] {

@@ -198,6 +198,29 @@ export async function saveFileContent(
 
 export const getDeviceInfo = () => sendCommand('[ESP800]')
 
+export function uploadFirmware(
+  file: File,
+  onProgress?: (pct: number) => void,
+): Promise<void> {
+  return new Promise((resolve, reject) => {
+    const xhr = new XMLHttpRequest()
+    const fd = new FormData()
+    fd.append(`/${file.name}S`, String(file.size))
+    fd.append('myfile[]', file, `/${file.name}`)
+
+    if (onProgress) {
+      xhr.upload.onprogress = e => {
+        if (e.lengthComputable) onProgress(Math.round((e.loaded / e.total) * 100))
+      }
+    }
+
+    xhr.onload = () => (xhr.status < 300 ? resolve() : reject(new Error(`Upload failed (${xhr.status})`)))
+    xhr.onerror = () => reject(new Error('Upload failed'))
+    xhr.open('POST', `${base}/updatefw`)
+    xhr.send(fd)
+  })
+}
+
 const MACRO_CFG = '/macrocfg.json'
 
 function colorToClass(color: Macro['color']): string {
