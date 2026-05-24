@@ -308,6 +308,8 @@ function FileRow({ entry, path, fs, canLoadGcode, onNavigate, onRefresh, onEdit,
 const _fmCache = new Map<Filesystem, { result: FileListResult; path: string }>()
 let _fmLastFs: Filesystem = 'sd'
 
+export function invalidateFileCache() { _fmCache.clear() }
+
 export function FileManager({ isTablet }: { isTablet?: boolean }) {
   const espInfo = useMachineStore(s => s.espInfo)
   const machineState = useMachineStore(s => s.status.state)
@@ -355,6 +357,21 @@ export function FileManager({ isTablet }: { isTablet?: boolean }) {
     if (_fmCache.has('sd')) return
     load(sdRoot, 'sd')
   }, [load, sdRoot])
+
+  const refreshTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+
+  const scheduleRefresh = useCallback(() => {
+    if (refreshTimerRef.current !== null) clearTimeout(refreshTimerRef.current)
+    refreshTimerRef.current = setTimeout(() => {
+      refreshTimerRef.current = null
+      load(path, fs)
+    }, 500)
+  }, [load, path, fs])
+
+  useEffect(() => {
+    window.addEventListener('files:changed', scheduleRefresh)
+    return () => window.removeEventListener('files:changed', scheduleRefresh)
+  }, [scheduleRefresh])
 
   function switchFs(newFs: Filesystem) {
     _fmLastFs = newFs

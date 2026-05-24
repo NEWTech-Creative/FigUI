@@ -1,0 +1,1170 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Pen Plot</title>
+<style>
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+body {
+  background: var(--bg, #0c1018);
+  color: var(--text-primary, #e2e6f4);
+  font-family: ui-sans-serif, system-ui, sans-serif;
+  font-size: 16px;
+  height: 100vh;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
+
+.layout { display: flex; flex: 1; overflow: hidden; }
+
+.sidebar {
+  width: 264px; min-width: 264px;
+  background: var(--surface, #151c28);
+  border-right: 1px solid var(--border, #222840);
+  overflow-y: auto;
+  display: flex; flex-direction: column;
+}
+
+.section {
+  border-bottom: 1px solid var(--border, #222840);
+  padding: 10px 12px;
+  display: flex; flex-direction: column; gap: 6px;
+}
+
+.section-title {
+  font-size: 16px; font-weight: 700;
+  letter-spacing: .08em; text-transform: uppercase;
+  color: var(--text-muted, #6a7898);
+  margin-bottom: 2px;
+}
+
+label { color: var(--text-muted, #6a7898); font-size: 16px; margin-top: 2px; }
+
+label.check-label {
+  display: flex; align-items: center; gap: 6px;
+  color: var(--text-primary, #e2e6f4); font-size: 16px; cursor: pointer; margin-top: 0;
+}
+
+input[type=number] {
+  width: 100%;
+  background: var(--elevated, #1a2235);
+  border: 1px solid var(--border, #222840);
+  border-radius: 4px;
+  color: var(--text-primary, #e2e6f4);
+  font-size: 16px; padding: 4px 8px; outline: none;
+}
+input[type=number]:focus { border-color: var(--accent, #f0a030); }
+
+input[type=checkbox] { accent-color: var(--accent, #f0a030); width: 14px; height: 14px; cursor: pointer; flex-shrink: 0; }
+
+.load-btn {
+  padding: 7px 10px;
+  background: var(--elevated, #1a2235);
+  border: 1px solid var(--border, #222840);
+  color: var(--text-primary, #e2e6f4);
+  border-radius: 6px; font-size: 16px; cursor: pointer;
+}
+.load-btn:hover { border-color: var(--accent, #f0a030); }
+
+.file-name {
+  font-size: 16px; color: var(--text-muted, #6a7898);
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+
+.origin-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 3px; }
+.og-btn {
+  padding: 5px 0;
+  background: var(--elevated, #1a2235);
+  border: 1px solid var(--border, #222840);
+  border-radius: 4px;
+  color: var(--text-muted, #6a7898);
+  font-size: 16px; cursor: pointer; text-align: center; line-height: 1;
+}
+.og-btn:hover { border-color: var(--accent, #f0a030); }
+.og-btn.active { background: var(--accent, #f0a030); border-color: var(--accent, #f0a030); color: #000; }
+
+select {
+  width: 100%;
+  background: var(--elevated, #1a2235);
+  border: 1px solid var(--border, #222840);
+  border-radius: 4px;
+  color: var(--text-primary, #e2e6f4);
+  font-size: 16px; padding: 4px 8px; outline: none; cursor: pointer;
+}
+select:focus { border-color: var(--accent, #f0a030); }
+
+.send-btn {
+  margin: 12px 12px 4px; padding: 10px;
+  background: var(--accent, #f0a030); color: #000;
+  border: none; border-radius: 6px;
+  font-size: 16px; font-weight: 700; cursor: pointer;
+}
+.send-btn:hover { filter: brightness(1.1); }
+.send-btn:disabled { opacity: .4; cursor: default; filter: none; }
+
+
+.main { flex: 1; display: flex; flex-direction: column; overflow: hidden; }
+
+.stats-bar {
+  padding: 7px 14px;
+  background: var(--surface, #151c28);
+  border-bottom: 1px solid var(--border, #222840);
+  display: flex; gap: 20px; flex-shrink: 0; flex-wrap: wrap;
+}
+.stat { display: flex; flex-direction: column; gap: 1px; }
+.stat-label { font-size: 16px; text-transform: uppercase; letter-spacing: .08em; color: var(--text-muted, #6a7898); }
+.stat-value { font-size: 16px; font-weight: 600; color: var(--accent, #f0a030); font-family: ui-monospace, monospace; }
+
+.preview-wrap {
+  flex: 1; overflow: hidden;
+  display: grid;
+  grid-template-columns: 22px 1fr;
+  grid-template-rows: 22px 1fr;
+}
+.preview-wrap.empty {
+  grid-template-columns: 0 1fr;
+  grid-template-rows: 0 1fr;
+}
+.preview-wrap.empty .ruler-corner,
+.preview-wrap.empty #ruler-h,
+.preview-wrap.empty #ruler-v {
+  display: none;
+}
+.ruler-corner {
+  background: var(--surface, #151c28);
+  border-right: 1px solid var(--border, #222840);
+  border-bottom: 1px solid var(--border, #222840);
+}
+#ruler-h { display: block; border-bottom: 1px solid var(--border, #222840); background: var(--surface, #151c28); }
+#ruler-v { display: block; border-right: 1px solid var(--border, #222840); background: var(--surface, #151c28); }
+#preview-canvas { display: block; background: var(--elevated, #1a2235); }
+
+.bottom-bar {
+  padding: 8px 12px;
+  background: var(--surface, #151c28);
+  border-top: 1px solid var(--border, #222840);
+  display: flex; align-items: center; gap: 8px; flex-shrink: 0;
+}
+.save-btn {
+  padding: 7px 14px;
+  background: var(--elevated, #1a2235);
+  border: 1px solid var(--border, #222840);
+  color: var(--text-primary, #e2e6f4);
+  border-radius: 6px; font-size: 16px; font-weight: 600; cursor: pointer;
+}
+.save-btn:hover { border-color: var(--accent, #f0a030); }
+
+.save-name-input {
+  width: 220px;
+  background: var(--elevated, #1a2235);
+  border: 1px solid var(--border, #222840);
+  border-radius: 6px;
+  color: var(--text-primary, #e2e6f4);
+  font-size: 16px; padding: 7px 10px; outline: none;
+}
+.save-name-input:focus { border-color: var(--accent, #f0a030); }
+.save-name-ext { font-size: 16px; color: var(--text-muted, #6a7898); font-family: ui-monospace, monospace; white-space: nowrap; padding-left: 2px; }
+
+#status { font-size: 16px; color: var(--text-muted, #6a7898); flex: 1; text-align: right; }
+#status.ok   { color: var(--ok,     #22c55e); }
+#status.err  { color: var(--danger, #ef4444); }
+#status.warn { color: var(--warn,   #f59e0b); }
+</style>
+</head>
+<body>
+
+<div class="layout">
+  <div class="sidebar">
+
+    <div class="section">
+      <div class="section-title">SVG File</div>
+      <input type="file" id="file-input" accept=".svg,image/svg+xml" style="display:none" onchange="onFileChange(event)">
+      <button class="load-btn" onclick="document.getElementById('file-input').click()">Load SVG…</button>
+      <div class="file-name" id="file-name">—</div>
+    </div>
+
+    <div class="section">
+      <div class="section-title">Output Size</div>
+      <div style="display:flex; gap:8px">
+        <div style="flex:1; display:flex; flex-direction:column; gap:4px">
+          <label>Width (mm)</label>
+          <input type="number" id="W" value="100" min="1" max="2000" step="1" oninput="onSizeChange('W')">
+        </div>
+        <div style="flex:1; display:flex; flex-direction:column; gap:4px">
+          <label>Height (mm)</label>
+          <input type="number" id="H" value="100" min="1" max="2000" step="1" oninput="onSizeChange('H')">
+        </div>
+      </div>
+      <label class="check-label">
+        <input type="checkbox" id="lock-ratio" checked> Lock Ratio
+      </label>
+      <label>Flatten Tolerance (mm)</label>
+      <input type="number" id="tolerance" value="0.05" min="0.001" max="1" step="0.005" oninput="refresh()">
+    </div>
+
+    <div class="section">
+      <div class="section-title">Pen</div>
+      <label>Pen-Up Z Travel (mm)</label>
+      <input type="number" id="pen-up" value="3" min="0.5" max="20" step="0.5" oninput="refresh()">
+      <label>Pen-Down Z Travel (mm)</label>
+      <input type="number" id="pen-down" value="0" min="-5" max="5" step="0.1" oninput="refresh()">
+      <label>Draw Speed (mm/min)</label>
+      <input type="number" id="draw-feed" value="3000" min="100" max="20000" step="100" oninput="refresh()">
+      <label>Travel Speed (mm/min)</label>
+      <input type="number" id="travel-feed" value="6000" min="100" max="20000" step="100" oninput="refresh()">
+      <label>Z Speed (mm/min)</label>
+      <input type="number" id="z-feed" value="500" min="50" max="3000" step="50" oninput="refresh()">
+    </div>
+
+    <div class="section" style="border-bottom:none">
+      <div class="section-title">Machine</div>
+      <label>Origin (G-code 0,0)</label>
+      <div class="origin-grid">
+        <button class="og-btn" data-v="tl"     onclick="setOrigin('tl')">↖</button>
+        <button class="og-btn" data-v="t"      onclick="setOrigin('t')">↑</button>
+        <button class="og-btn" data-v="tr"     onclick="setOrigin('tr')">↗</button>
+        <button class="og-btn" data-v="l"      onclick="setOrigin('l')">←</button>
+        <button class="og-btn" data-v="center" onclick="setOrigin('center')">✕</button>
+        <button class="og-btn" data-v="r"      onclick="setOrigin('r')">→</button>
+        <button class="og-btn active" data-v="bl" onclick="setOrigin('bl')">↙</button>
+        <button class="og-btn" data-v="b"      onclick="setOrigin('b')">↓</button>
+        <button class="og-btn" data-v="br"     onclick="setOrigin('br')">↘</button>
+      </div>
+      <label>End Position</label>
+      <select id="end-move" onchange="refresh()">
+        <option value="none">None (stay)</option>
+        <option value="origin">Origin (X0 Y0)</option>
+        <option value="park">Park (machine home)</option>
+      </select>
+    </div>
+
+    <button class="send-btn" id="send-btn" onclick="doSend()" disabled>Generate</button>
+
+  </div>
+
+  <div class="main">
+    <div class="stats-bar">
+      <div class="stat"><div class="stat-label">Paths</div><div class="stat-value" id="s-paths">—</div></div>
+      <div class="stat"><div class="stat-label">Pen-Down</div><div class="stat-value" id="s-draw">—</div></div>
+      <div class="stat"><div class="stat-label">Travel</div><div class="stat-value" id="s-travel">—</div></div>
+      <div class="stat"><div class="stat-label">Lifts</div><div class="stat-value" id="s-lifts">—</div></div>
+      <div class="stat"><div class="stat-label">Est. Time</div><div class="stat-value" id="s-time">—</div></div>
+    </div>
+    <div class="preview-wrap empty" id="preview-wrap">
+      <div class="ruler-corner"></div>
+      <canvas id="ruler-h"></canvas>
+      <canvas id="ruler-v"></canvas>
+      <canvas id="preview-canvas"></canvas>
+    </div>
+    <div class="bottom-bar">
+      <div id="save-section" style="display:none; flex-direction:column; gap:6px;">
+        <div style="display:flex; align-items:center; gap:0;">
+          <input id="save-name" class="save-name-input" type="text" placeholder="penplot" disabled>
+          <span class="save-name-ext">.nc</span>
+        </div>
+        <div style="display:flex; gap:8px;">
+          <button class="save-btn" id="save-gcode-btn" onclick="saveGCode()" disabled>Save G-code</button>
+          <button class="save-btn" id="open-saved-btn" onclick="openSaved()" style="display:none">Open</button>
+        </div>
+      </div>
+      <span id="status"></span>
+    </div>
+  </div>
+</div>
+
+<script>
+let msgId = 0
+const pending = {}
+
+function call(method, params) {
+  return new Promise((resolve, reject) => {
+    const id = String(++msgId)
+    pending[id] = { resolve, reject }
+    window.parent.postMessage({ type: 'fluid-request', id, method, params: params ?? {} }, '*')
+  })
+}
+
+window.addEventListener('message', e => {
+  if (e.data?.type === 'fluid-response') {
+    const p = pending[e.data.id]
+    if (p) { delete pending[e.data.id]; e.data.error ? p.reject(new Error(e.data.error)) : p.resolve(e.data.result) }
+  }
+})
+
+let currentSVGText = null
+let svgFileName = 'penplot'
+let svgAspectRatio = 1
+let currentOrigin = 'bl'
+let lastPolylines = null
+let generatedCode = ''
+let generatedPath = ''
+
+function setStatus(msg, cls = '') {
+  const el = document.getElementById('status')
+  el.textContent = msg; el.className = cls
+}
+
+function fmt(v) {
+  const r = Math.round(v * 1000) / 1000
+  if (r === 0 || Object.is(r, -0)) return '0'
+  const s = r.toString()
+  return s.includes('.') ? s.replace(/0+$/, '').replace(/\.$/, '') : s
+}
+
+function dist2(ax, ay, bx, by) {
+  const dx = bx - ax, dy = by - ay
+  return dx * dx + dy * dy
+}
+
+const ORIGIN_DOT_XY = {
+  tl: [0, 0], t: [0.5, 0], tr: [1, 0],
+  l: [0, 0.5], center: [0.5, 0.5], r: [1, 0.5],
+  bl: [0, 1], b: [0.5, 1], br: [1, 1]
+}
+
+function originOffset(p) {
+  const map = {
+    tl: [0, -p.H],    t: [-p.W/2, -p.H],   tr: [-p.W, -p.H],
+    l:  [0, -p.H/2],  center: [-p.W/2, -p.H/2], r: [-p.W, -p.H/2],
+    bl: [0,  0],      b: [-p.W/2,  0],      br: [-p.W,  0]
+  }
+  const [ox, oy] = map[p.origin] || [0, 0]
+  return { ox, oy }
+}
+
+function setOrigin(o) {
+  currentOrigin = o
+  document.querySelectorAll('.og-btn').forEach(b => b.classList.toggle('active', b.dataset.v === o))
+  refresh()
+}
+
+function onFileChange(e) {
+  const file = e.target.files[0]
+  if (!file) return
+  const reader = new FileReader()
+  reader.onload = evt => {
+    const text = evt.target.result
+    let vbW = 100, vbH = 100
+    try {
+      const doc = new DOMParser().parseFromString(text, 'image/svg+xml')
+      const root = doc.documentElement
+      const vb = root.getAttribute('viewBox')
+      if (vb) {
+        const n = vb.trim().split(/[\s,]+/).map(Number)
+        if (n.length >= 4 && n[2] > 0 && n[3] > 0) { vbW = n[2]; vbH = n[3] }
+      } else {
+        vbW = parseFloat(root.getAttribute('width')) || 100
+        vbH = parseFloat(root.getAttribute('height')) || 100
+      }
+    } catch (_) {}
+    svgAspectRatio = vbW / vbH
+    currentSVGText = text
+    svgFileName = file.name.replace(/\.[^.]+$/, '')
+    document.getElementById('file-name').textContent = file.name
+    document.getElementById('send-btn').disabled = false
+    const W = parseFloat(document.getElementById('W').value) || 100
+    document.getElementById('H').value = fmt(W / svgAspectRatio)
+    document.getElementById('lock-ratio').checked = true
+    refresh()
+  }
+  reader.onerror = () => setStatus('Cannot read file.', 'err')
+  reader.readAsText(file)
+}
+
+function onSizeChange(changed) {
+  if (document.getElementById('lock-ratio').checked) {
+    if (changed === 'W') {
+      document.getElementById('H').value = fmt((parseFloat(document.getElementById('W').value) || 100) / svgAspectRatio)
+    } else {
+      document.getElementById('W').value = fmt((parseFloat(document.getElementById('H').value) || 100) * svgAspectRatio)
+    }
+  }
+  refresh()
+}
+
+function getParams() {
+  return {
+    W:          Math.max(1,     parseFloat(document.getElementById('W').value)          || 100),
+    H:          Math.max(1,     parseFloat(document.getElementById('H').value)          || 100),
+    tolerance:  Math.max(0.001, parseFloat(document.getElementById('tolerance').value)  || 0.05),
+    penUp:      parseFloat(document.getElementById('pen-up').value)                     ?? 3,
+    penDown:    -Math.abs(parseFloat(document.getElementById('pen-down').value)           || 0),
+    drawFeed:   Math.max(100,   parseInt(document.getElementById('draw-feed').value)    || 3000),
+    travelFeed: Math.max(100,   parseInt(document.getElementById('travel-feed').value)  || 6000),
+    zFeed:      Math.max(50,    parseInt(document.getElementById('z-feed').value)       || 500),
+    origin:     currentOrigin,
+    endMove:    document.getElementById('end-move').value,
+  }
+}
+
+function sanitizeFileName(name) {
+  return name.replace(/[^a-zA-Z0-9._-]+/g, '_').replace(/^_+|_+$/g, '')
+}
+
+function defaultFileName() {
+  return sanitizeFileName(svgFileName || 'penplot') || 'penplot'
+}
+
+function mulMat([a1, b1, c1, d1, e1, f1], [a2, b2, c2, d2, e2, f2]) {
+  return [
+    a1*a2 + c1*b2, b1*a2 + d1*b2,
+    a1*c2 + c1*d2, b1*c2 + d1*d2,
+    a1*e2 + c1*f2 + e1, b1*e2 + d1*f2 + f1
+  ]
+}
+
+function applyMat([a, b, c, d, e, f], x, y) {
+  return [a*x + c*y + e, b*x + d*y + f]
+}
+
+function parseTransformStr(str) {
+  if (!str) return [1, 0, 0, 1, 0, 0]
+  let m = [1, 0, 0, 1, 0, 0]
+  const re = /(matrix|translate|scale|rotate|skewX|skewY)\s*\(([^)]*)\)/g
+  let match
+  while ((match = re.exec(str)) !== null) {
+    const args = match[2].trim().split(/[\s,]+/).map(Number)
+    let t
+    switch (match[1]) {
+      case 'matrix':    t = [args[0], args[1], args[2], args[3], args[4], args[5]]; break
+      case 'translate': t = [1, 0, 0, 1, args[0] || 0, args[1] || 0]; break
+      case 'scale': {
+        const sx = args[0] || 1, sy = args[1] !== undefined ? args[1] : sx
+        t = [sx, 0, 0, sy, 0, 0]; break
+      }
+      case 'rotate': {
+        const a = args[0] * Math.PI / 180, c = Math.cos(a), s = Math.sin(a)
+        if (args.length >= 3) {
+          const cx = args[1], cy = args[2]
+          t = [c, s, -s, c, cx*(1-c) + cy*s, cy*(1-c) - cx*s]
+        } else { t = [c, s, -s, c, 0, 0] }
+        break
+      }
+      case 'skewX': { const tv = Math.tan(args[0]*Math.PI/180); t = [1, 0, tv, 1, 0, 0]; break }
+      case 'skewY': { const tv = Math.tan(args[0]*Math.PI/180); t = [1, tv, 0, 1, 0, 0]; break }
+      default: continue
+    }
+    m = mulMat(m, t)
+  }
+  return m
+}
+
+// Path flattening approach inspired by svg2gcode (MIT) — https://github.com/sameer/svg2gcode
+function flattenCubic(x0, y0, x1, y1, x2, y2, x3, y3, tol, pts, depth) {
+  depth = depth || 0
+  if (depth > 16) { pts.push(x3, y3); return }
+  const d = Math.sqrt((x3-x0)**2 + (y3-y0)**2)
+  if (d < 1e-10) { pts.push(x3, y3); return }
+  const nx = (y0-y3)/d, ny = (x3-x0)/d
+  if (Math.abs(nx*(x1-x0) + ny*(y1-y0)) + Math.abs(nx*(x2-x0) + ny*(y2-y0)) <= tol) {
+    pts.push(x3, y3); return
+  }
+  const m01x=(x0+x1)/2, m01y=(y0+y1)/2
+  const m12x=(x1+x2)/2, m12y=(y1+y2)/2
+  const m23x=(x2+x3)/2, m23y=(y2+y3)/2
+  const m012x=(m01x+m12x)/2, m012y=(m01y+m12y)/2
+  const m123x=(m12x+m23x)/2, m123y=(m12y+m23y)/2
+  const mx=(m012x+m123x)/2, my=(m012y+m123y)/2
+  flattenCubic(x0,y0, m01x,m01y, m012x,m012y, mx,my, tol, pts, depth+1)
+  flattenCubic(mx,my, m123x,m123y, m23x,m23y, x3,y3, tol, pts, depth+1)
+}
+
+function flattenQuadratic(x0, y0, x1, y1, x2, y2, tol, pts, depth) {
+  depth = depth || 0
+  if (depth > 16) { pts.push(x2, y2); return }
+  const d = Math.sqrt((x2-x0)**2 + (y2-y0)**2)
+  if (d < 1e-10) { pts.push(x2, y2); return }
+  const nx = (y0-y2)/d, ny = (x2-x0)/d
+  if (Math.abs(nx*(x1-x0) + ny*(y1-y0)) <= tol) { pts.push(x2, y2); return }
+  const m01x=(x0+x1)/2, m01y=(y0+y1)/2
+  const m12x=(x1+x2)/2, m12y=(y1+y2)/2
+  const mx=(m01x+m12x)/2, my=(m01y+m12y)/2
+  flattenQuadratic(x0,y0, m01x,m01y, mx,my, tol, pts, depth+1)
+  flattenQuadratic(mx,my, m12x,m12y, x2,y2, tol, pts, depth+1)
+}
+
+function flattenArc(x1, y1, rx, ry, xRotDeg, largeArc, sweep, x2, y2, tol, pts) {
+  if (x1 === x2 && y1 === y2) return
+  rx = Math.abs(rx); ry = Math.abs(ry)
+  if (rx < 1e-10 || ry < 1e-10) { pts.push(x2, y2); return }
+  const phi = xRotDeg * Math.PI / 180, cp = Math.cos(phi), sp = Math.sin(phi)
+  const dx2 = (x1-x2)/2, dy2 = (y1-y2)/2
+  const x1p = cp*dx2 + sp*dy2, y1p = -sp*dx2 + cp*dy2
+  const x1p2 = x1p*x1p, y1p2 = y1p*y1p, rx2 = rx*rx, ry2 = ry*ry
+  const lam = x1p2/rx2 + y1p2/ry2
+  if (lam > 1) { const l = Math.sqrt(lam); rx *= l; ry *= l }
+  const rx2b = rx*rx, ry2b = ry*ry
+  const num2 = Math.max(0, rx2b*ry2b - rx2b*y1p2 - ry2b*x1p2)
+  const den2 = rx2b*y1p2 + ry2b*x1p2
+  const coeff = (largeArc === sweep ? -1 : 1) * Math.sqrt(den2 > 0 ? num2/den2 : 0)
+  const cxp = coeff*rx*y1p/ry, cyp = -coeff*ry*x1p/rx
+  const cx = cp*cxp - sp*cyp + (x1+x2)/2
+  const cy = sp*cxp + cp*cyp + (y1+y2)/2
+  const angleVec = (ux, uy, vx, vy) => {
+    const n = Math.sqrt(ux*ux + uy*uy), m = Math.sqrt(vx*vx + vy*vy)
+    const d = Math.max(-1, Math.min(1, (ux*vx + uy*vy) / (n*m)))
+    return (ux*vy - uy*vx < 0 ? -1 : 1) * Math.acos(d)
+  }
+  const ux=(x1p-cxp)/rx, uy=(y1p-cyp)/ry
+  const vx=(-x1p-cxp)/rx, vy=(-y1p-cyp)/ry
+  let theta1 = angleVec(1, 0, ux, uy)
+  let dtheta = angleVec(ux, uy, vx, vy)
+  if (!sweep && dtheta > 0) dtheta -= 2*Math.PI
+  if (sweep && dtheta < 0) dtheta += 2*Math.PI
+  const steps = Math.max(2, Math.ceil(Math.abs(dtheta) * Math.max(rx, ry) / tol))
+  for (let i = 1; i <= steps; i++) {
+    const t = theta1 + dtheta * i / steps
+    pts.push(
+      cp*rx*Math.cos(t) - sp*ry*Math.sin(t) + cx,
+      sp*rx*Math.cos(t) + cp*ry*Math.sin(t) + cy
+    )
+  }
+}
+
+function svgPathToPolylines(d, fullMat, tol) {
+  const polylines = []
+  let cur = null
+  let x = 0, y = 0, mx = 0, my = 0, lcx = 0, lcy = 0, lqx = 0, lqy = 0
+
+  const pushL = (lx, ly) => {
+    const [rx, ry] = applyMat(fullMat, lx, ly)
+    if (!cur) cur = []
+    cur.push(rx, ry)
+  }
+
+  const moveTo = (lx, ly) => {
+    if (cur && cur.length >= 4) polylines.push(cur)
+    cur = null; pushL(lx, ly); x = mx = lx; y = my = ly
+  }
+
+  const lineTo = (lx, ly) => { pushL(lx, ly); x = lx; y = ly }
+
+  const closePath = () => {
+    if (cur) { pushL(mx, my); polylines.push(cur); cur = null }
+    x = mx; y = my
+  }
+
+  const cubicTo = (cx1, cy1, cx2, cy2, ex, ey) => {
+    const pts = []
+    flattenCubic(x, y, cx1, cy1, cx2, cy2, ex, ey, tol, pts)
+    for (let i = 0; i < pts.length; i += 2) pushL(pts[i], pts[i+1])
+    lcx = cx2; lcy = cy2; x = ex; y = ey; lqx = x; lqy = y
+  }
+
+  const quadTo = (qx, qy, ex, ey) => {
+    const pts = []
+    flattenQuadratic(x, y, qx, qy, ex, ey, tol, pts)
+    for (let i = 0; i < pts.length; i += 2) pushL(pts[i], pts[i+1])
+    lqx = qx; lqy = qy; x = ex; y = ey; lcx = x; lcy = y
+  }
+
+  const arcTo = (rx, ry, xRot, la, sw, ex, ey) => {
+    const pts = []
+    flattenArc(x, y, rx, ry, xRot, la ? 1 : 0, sw ? 1 : 0, ex, ey, tol, pts)
+    for (let i = 0; i < pts.length; i += 2) pushL(pts[i], pts[i+1])
+    x = ex; y = ey; lcx = x; lcy = y; lqx = x; lqy = y
+  }
+
+  const re = /([MmZzLlHhVvCcSsQqTtAa])|(-?(?:\d+\.?\d*|\.\d+)(?:[eE][+-]?\d+)?)/g
+  const tokens = []
+  let m
+  while ((m = re.exec(d)) !== null) tokens.push(m[1] !== undefined ? m[1] : parseFloat(m[2]))
+
+  let i = 0
+  const num = () => (typeof tokens[i] === 'number' ? tokens[i++] : 0)
+  const hasNum = () => i < tokens.length && typeof tokens[i] === 'number'
+
+  let cmd = ''
+  while (i < tokens.length) {
+    if (typeof tokens[i] === 'string') {
+      cmd = tokens[i++]
+      if (cmd === 'Z' || cmd === 'z') { closePath(); cmd = ''; continue }
+    }
+    if (!hasNum()) { if (i < tokens.length && typeof tokens[i] !== 'string') i++; continue }
+    switch (cmd) {
+      case 'M': { moveTo(num(), num()); cmd = 'L'; break }
+      case 'm': { moveTo(x+num(), y+num()); cmd = 'l'; break }
+      case 'L': { lineTo(num(), num()); break }
+      case 'l': { lineTo(x+num(), y+num()); break }
+      case 'H': { lineTo(num(), y); break }
+      case 'h': { lineTo(x+num(), y); break }
+      case 'V': { lineTo(x, num()); break }
+      case 'v': { lineTo(x, y+num()); break }
+      case 'C': { cubicTo(num(), num(), num(), num(), num(), num()); break }
+      case 'c': { const d1=num(),d2=num(),d3=num(),d4=num(),d5=num(),d6=num(); cubicTo(x+d1,y+d2,x+d3,y+d4,x+d5,y+d6); break }
+      case 'S': { const cx2=num(),cy2=num(),ex=num(),ey=num(); cubicTo(2*x-lcx,2*y-lcy,cx2,cy2,ex,ey); break }
+      case 's': { const d1=num(),d2=num(),d3=num(),d4=num(); cubicTo(2*x-lcx,2*y-lcy,x+d1,y+d2,x+d3,y+d4); break }
+      case 'Q': { quadTo(num(), num(), num(), num()); break }
+      case 'q': { const d1=num(),d2=num(),d3=num(),d4=num(); quadTo(x+d1,y+d2,x+d3,y+d4); break }
+      case 'T': { quadTo(2*x-lqx, 2*y-lqy, num(), num()); break }
+      case 't': { const d1=num(),d2=num(); quadTo(2*x-lqx,2*y-lqy,x+d1,y+d2); break }
+      case 'A': { const r1=num(),r2=num(),xr=num(),la=!!Math.round(num()),sw=!!Math.round(num()),ex=num(),ey=num(); arcTo(r1,r2,xr,la,sw,ex,ey); break }
+      case 'a': { const r1=num(),r2=num(),xr=num(),la=!!Math.round(num()),sw=!!Math.round(num()),d1=num(),d2=num(); arcTo(r1,r2,xr,la,sw,x+d1,y+d2); break }
+      default: i++; break
+    }
+  }
+
+  if (cur && cur.length >= 4) polylines.push(cur)
+  return polylines
+}
+
+function parseSVGPolylines(svgText, p, ox, oy) {
+  let doc, root
+  try {
+    doc = new DOMParser().parseFromString(svgText, 'image/svg+xml')
+    if (doc.querySelector('parsererror')) throw new Error('parseerror')
+    root = doc.documentElement
+  } catch (_) { throw new Error('Invalid SVG') }
+
+  let vbX = 0, vbY = 0, vbW = 100, vbH = 100
+  const vb = root.getAttribute('viewBox')
+  if (vb) {
+    const n = vb.trim().split(/[\s,]+/).map(Number)
+    if (n.length >= 4 && n[2] > 0 && n[3] > 0) [vbX, vbY, vbW, vbH] = n
+  } else {
+    vbW = parseFloat(root.getAttribute('width')) || 100
+    vbH = parseFloat(root.getAttribute('height')) || 100
+  }
+
+  let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity
+  const svgTol = p.tolerance * vbW / p.W
+
+  const all = []
+  const SKIP = new Set(['defs','style','script','title','desc','metadata','marker','symbol','pattern','clippath','mask'])
+
+  function processEl(el, ctm) {
+    const raw = el.tagName || ''
+    const tag = raw.replace(/^.*:/, '').toLowerCase()
+    if (!tag || SKIP.has(tag)) return
+
+    const styleAttr = el.getAttribute('style') || ''
+    const displayAttr = el.getAttribute('display') || ''
+    if (displayAttr === 'none' || /display\s*:\s*none/.test(styleAttr)) return
+    if (/visibility\s*:\s*(hidden|collapse)/.test(styleAttr) || el.getAttribute('visibility') === 'hidden') return
+
+    const _strokeAttr = (el.getAttribute('stroke') || '').trim()
+    const _fillAttr   = (el.getAttribute('fill')   || '').trim()
+    const _styleStroke = ((styleAttr.match(/(?:^|;)\s*stroke\s*:\s*([^;]+)/) || [])[1] || '').trim()
+    const _styleFill   = ((styleAttr.match(/(?:^|;)\s*fill\s*:\s*([^;]+)/)   || [])[1] || '').trim()
+    const _stroke = _styleStroke || _strokeAttr
+    const _fill   = _styleFill   || _fillAttr
+    if (_stroke === 'none' && _fill !== 'none' && _fill !== '') return
+
+    const local = parseTransformStr(el.getAttribute('transform'))
+    const ctm2 = mulMat(ctm, local)
+
+    if (['g', 'svg', 'a', 'switch', 'foreignobject'].includes(tag)) {
+      for (const child of el.children) processEl(child, ctm2)
+      return
+    }
+
+    let pathStr = ''
+
+    switch (tag) {
+      case 'path':
+        pathStr = el.getAttribute('d') || ''
+        break
+      case 'line': {
+        const x1 = el.getAttribute('x1')||0, y1 = el.getAttribute('y1')||0
+        const x2 = el.getAttribute('x2')||0, y2 = el.getAttribute('y2')||0
+        pathStr = `M${x1},${y1} L${x2},${y2}`
+        break
+      }
+      case 'rect': {
+        const x = +el.getAttribute('x')||0, y = +el.getAttribute('y')||0
+        const w = +el.getAttribute('width')||0, h = +el.getAttribute('height')||0
+        if (w <= 0 || h <= 0) return
+        if (Math.abs(x - vbX) < 1 && Math.abs(y - vbY) < 1 &&
+            Math.abs(w - vbW) < 1 && Math.abs(h - vbH) < 1) return
+        let rx = +(el.getAttribute('rx')||0), ry = +(el.getAttribute('ry')||0)
+        if (!rx && ry) rx = ry; if (!ry && rx) ry = rx
+        if (rx <= 0) {
+          pathStr = `M${x},${y} H${x+w} V${y+h} H${x} Z`
+        } else {
+          rx = Math.min(rx, w/2); ry = Math.min(ry, h/2)
+          pathStr = `M${x+rx},${y} H${x+w-rx} A${rx},${ry},0,0,1,${x+w},${y+ry}` +
+            ` V${y+h-ry} A${rx},${ry},0,0,1,${x+w-rx},${y+h}` +
+            ` H${x+rx} A${rx},${ry},0,0,1,${x},${y+h-ry}` +
+            ` V${y+ry} A${rx},${ry},0,0,1,${x+rx},${y} Z`
+        }
+        break
+      }
+      case 'circle': {
+        const cx = +el.getAttribute('cx')||0, cy = +el.getAttribute('cy')||0
+        const r = +el.getAttribute('r')||0
+        if (r <= 0) return
+        pathStr = `M${cx+r},${cy} A${r},${r},0,0,1,${cx-r},${cy} A${r},${r},0,0,1,${cx+r},${cy} Z`
+        break
+      }
+      case 'ellipse': {
+        const cx = +el.getAttribute('cx')||0, cy = +el.getAttribute('cy')||0
+        const rx2 = +el.getAttribute('rx')||0, ry2 = +el.getAttribute('ry')||0
+        if (rx2 <= 0 || ry2 <= 0) return
+        pathStr = `M${cx+rx2},${cy} A${rx2},${ry2},0,0,1,${cx-rx2},${cy} A${rx2},${ry2},0,0,1,${cx+rx2},${cy} Z`
+        break
+      }
+      case 'polyline':
+      case 'polygon': {
+        const pts = (el.getAttribute('points') || '').trim().split(/[\s,]+/).map(Number).filter(n => !isNaN(n))
+        if (pts.length < 4) return
+        const pairs = []
+        for (let j = 0; j < pts.length - 1; j += 2) pairs.push(`${pts[j]},${pts[j+1]}`)
+        pathStr = `M${pairs[0]} L${pairs.slice(1).join(' L')}${tag === 'polygon' ? ' Z' : ''}`
+        break
+      }
+      default: return
+    }
+
+    if (!pathStr) return
+    const plines = svgPathToPolylines(pathStr, ctm2, svgTol)
+    for (const pl of plines) {
+      if (pl.length < 4) continue
+      all.push(pl)
+      for (let i = 0; i < pl.length; i += 2) {
+        if (pl[i] < minX) minX = pl[i]
+        if (pl[i] > maxX) maxX = pl[i]
+        if (pl[i+1] < minY) minY = pl[i+1]
+        if (pl[i+1] > maxY) maxY = pl[i+1]
+      }
+    }
+  }
+
+  processEl(root, [1, 0, 0, 1, 0, 0])
+  if (all.length === 0) return []
+
+  const cW = maxX - minX || 1
+  const cH = maxY - minY || 1
+  svgAspectRatio = cW / cH
+
+  const sx = p.W / cW, sy = p.H / cH
+  const viewMat = [sx, 0, 0, -sy, ox - minX*sx, oy + p.H + minY*sy]
+  const transformed = []
+  for (const pl of all) {
+    const line = []
+    for (let i = 0; i < pl.length; i += 2) {
+      const [x, y] = applyMat(viewMat, pl[i], pl[i+1])
+      line.push(x, y)
+    }
+    if (line.length >= 4) transformed.push(line)
+  }
+  return transformed
+}
+
+function orderPolylines(polylines) {
+  if (polylines.length === 0) return []
+  const result = []
+  const remaining = polylines.slice()
+  result.push(remaining.splice(0, 1)[0])
+  let lastX = result[0][result[0].length - 2]
+  let lastY = result[0][result[0].length - 1]
+  while (remaining.length) {
+    let bestIdx = 0, bestDist = Infinity, bestReverse = false
+    for (let i = 0; i < remaining.length; i++) {
+      const pl = remaining[i]
+      const d1 = dist2(lastX, lastY, pl[0], pl[1])
+      const d2 = dist2(lastX, lastY, pl[pl.length-2], pl[pl.length-1])
+      if (d1 < bestDist) { bestDist = d1; bestIdx = i; bestReverse = false }
+      if (d2 < bestDist) { bestDist = d2; bestIdx = i; bestReverse = true }
+    }
+    let pl = remaining.splice(bestIdx, 1)[0]
+    if (bestReverse) {
+      const rev = []
+      for (let i = pl.length - 2; i >= 0; i -= 2) rev.push(pl[i], pl[i+1])
+      pl = rev
+    }
+    result.push(pl)
+    lastX = pl[pl.length - 2]
+    lastY = pl[pl.length - 1]
+  }
+  return result
+}
+
+function genGCode(polylines, p) {
+  if (!polylines || polylines.length === 0) return ''
+  const lines = []
+  const fmtXY = v => v.toFixed(3)
+  lines.push('G21 G90 G94')
+  lines.push(`G0 Z${fmt(p.penUp)} F${p.zFeed}`)
+  let cx = 0, cy = 0
+  for (const pl of polylines) {
+    const sx = pl[0], sy = pl[1]
+    if (dist2(cx, cy, sx, sy) > 1e-6) lines.push(`G0 X${fmtXY(sx)} Y${fmtXY(sy)} F${p.travelFeed}`)
+    lines.push(`G1 Z${fmt(p.penDown)} F${p.zFeed}`)
+    for (let i = 2; i < pl.length; i += 2) lines.push(`G1 X${fmtXY(pl[i])} Y${fmtXY(pl[i+1])} F${p.drawFeed}`)
+    lines.push(`G1 Z${fmt(p.penUp)} F${p.zFeed}`)
+    cx = pl[pl.length - 2]; cy = pl[pl.length - 1]
+  }
+  if (p.endMove === 'origin') lines.push('G0 X0 Y0')
+  else if (p.endMove === 'park') lines.push('G53 G0 Z-5\nG53 G0 X0 Y0')
+  lines.push('M30')
+  return lines.join('\n')
+}
+
+function computeStats(polylines, p) {
+  const ids = ['s-paths','s-draw','s-travel','s-lifts','s-time']
+  if (!polylines || polylines.length === 0) { ids.forEach(id => document.getElementById(id).textContent = '—'); return }
+  let drawDist = 0, travelDist = 0, lifts = 0
+  let cx = 0, cy = 0
+  for (const pl of polylines) {
+    travelDist += Math.sqrt(dist2(cx, cy, pl[0], pl[1]))
+    for (let i = 2; i < pl.length; i += 2) drawDist += Math.sqrt(dist2(pl[i-2], pl[i-1], pl[i], pl[i+1]))
+    cx = pl[pl.length - 2]; cy = pl[pl.length - 1]
+    lifts++
+  }
+  const penLiftDist = lifts * 2 * Math.abs(p.penUp - p.penDown)
+  const totalSec = drawDist/p.drawFeed*60 + travelDist/p.travelFeed*60 + penLiftDist/p.zFeed*60
+  const m = Math.floor(totalSec / 60), s = Math.round(totalSec % 60)
+  document.getElementById('s-paths').textContent  = polylines.length.toLocaleString()
+  document.getElementById('s-draw').textContent   = Math.round(drawDist) + ' mm'
+  document.getElementById('s-travel').textContent = Math.round(travelDist) + ' mm'
+  document.getElementById('s-lifts').textContent  = lifts.toLocaleString()
+  document.getElementById('s-time').textContent   = m > 0 ? `${m}m${s}s` : `${s}s`
+}
+
+const RULER_SIZE = 22
+let previewTransform = null
+
+function themeColor(name, fallback) {
+  const value = getComputedStyle(document.documentElement).getPropertyValue(name)
+  return value ? value.trim() : fallback
+}
+
+function drawPreview() {
+  const canvas = document.getElementById('preview-canvas')
+  const wrap = document.getElementById('preview-wrap')
+  const dpr = window.devicePixelRatio || 1
+  const ww = (wrap.clientWidth  - RULER_SIZE) || 400
+  const wh = (wrap.clientHeight - RULER_SIZE) || 300
+  canvas.width = ww * dpr; canvas.height = wh * dpr
+  canvas.style.width = ww + 'px'; canvas.style.height = wh + 'px'
+  const ctx = canvas.getContext('2d')
+  ctx.scale(dpr, dpr)
+  const surfaceColor = themeColor('--elevated', '#1a2235')
+  const textMuted = themeColor('--text-muted', '#6a7898')
+  const accentColor = themeColor('--accent', '#f0a030')
+  const borderColor = themeColor('--border', '#222840')
+  ctx.fillStyle = surfaceColor
+  ctx.fillRect(0, 0, ww, wh)
+
+  if (!lastPolylines || lastPolylines.length === 0) {
+    wrap.classList.add('empty')
+    ctx.fillStyle = textMuted
+    ctx.font = '13px ui-sans-serif, system-ui, sans-serif'
+    ctx.textAlign = 'center'; ctx.textBaseline = 'middle'
+    ctx.fillText('Load an SVG to preview', ww / 2, wh / 2)
+    previewTransform = null
+    return
+  }
+  wrap.classList.remove('empty')
+
+  const p = getParams()
+  let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity
+  for (const pl of lastPolylines) {
+    for (let i = 0; i < pl.length; i += 2) {
+      if (pl[i]   < minX) minX = pl[i]
+      if (pl[i]   > maxX) maxX = pl[i]
+      if (pl[i+1] < minY) minY = pl[i+1]
+      if (pl[i+1] > maxY) maxY = pl[i+1]
+    }
+  }
+
+  const PAD = 28
+  const sw = maxX - minX || 1, sh = maxY - minY || 1
+  const scale = Math.min((ww - PAD*2) / sw, (wh - PAD*2) / sh)
+  const dw = sw * scale, dh = sh * scale
+  const oX = (ww - dw) / 2, oY = (wh - dh) / 2
+  const tx = x => oX + (x - minX) * scale
+  const ty = y => oY + dh - (y - minY) * scale
+
+  previewTransform = { minX, minY, maxX, maxY, scale, oX, oY, dw, dh, ww, wh }
+
+  ctx.strokeStyle = borderColor.startsWith('rgb') ? borderColor.replace('rgb', 'rgba').replace(')', ',0.4)') : 'rgba(74,85,120,0.4)'
+  ctx.lineWidth = 0.5
+  let cx = tx(0), cy = ty(0)
+  for (const pl of lastPolylines) {
+    ctx.beginPath(); ctx.moveTo(cx, cy); ctx.lineTo(tx(pl[0]), ty(pl[1])); ctx.stroke()
+    cx = tx(pl[pl.length-2]); cy = ty(pl[pl.length-1])
+  }
+
+  ctx.strokeStyle = accentColor; ctx.lineWidth = 0.9
+  for (const pl of lastPolylines) {
+    ctx.beginPath(); ctx.moveTo(tx(pl[0]), ty(pl[1]))
+    for (let i = 2; i < pl.length; i += 2) ctx.lineTo(tx(pl[i]), ty(pl[i+1]))
+    ctx.stroke()
+  }
+
+  const [fx, fy] = ORIGIN_DOT_XY[p.origin] || [0, 1]
+  const px = oX + fx * dw, py = oY + fy * dh
+  ctx.strokeStyle = accentColor; ctx.lineWidth = 1.5
+  ctx.beginPath()
+  ctx.moveTo(px - 12, py); ctx.lineTo(px + 12, py)
+  ctx.moveTo(px, py - 12); ctx.lineTo(px, py + 12)
+  ctx.stroke()
+  ctx.beginPath(); ctx.arc(px, py, 4, 0, Math.PI * 2)
+  ctx.fillStyle = accentColor; ctx.fill()
+
+  drawRulers()
+}
+
+function drawRulers(cursorCanvasX, cursorCanvasY) {
+  const rulerH = document.getElementById('ruler-h')
+  const rulerV = document.getElementById('ruler-v')
+  const wrap = document.getElementById('preview-wrap')
+  const dpr = window.devicePixelRatio || 1
+  const ww = (wrap.clientWidth  - RULER_SIZE) || 400
+  const wh = (wrap.clientHeight - RULER_SIZE) || 300
+
+  rulerH.width = ww * dpr; rulerH.height = RULER_SIZE * dpr
+  rulerH.style.width = ww + 'px'; rulerH.style.height = RULER_SIZE + 'px'
+  rulerV.width = RULER_SIZE * dpr; rulerV.height = wh * dpr
+  rulerV.style.width = RULER_SIZE + 'px'; rulerV.style.height = wh + 'px'
+
+  const ctxH = rulerH.getContext('2d')
+  const ctxV = rulerV.getContext('2d')
+  ctxH.scale(dpr, dpr)
+  ctxV.scale(dpr, dpr)
+
+  const surfaceColor = themeColor('--surface', '#151c28')
+  const borderColor = themeColor('--border', '#222840')
+  const textMuted = themeColor('--text-muted', '#6a7898')
+  const accentColor = themeColor('--accent', '#f0a030')
+  ctxH.fillStyle = surfaceColor; ctxH.fillRect(0, 0, ww, RULER_SIZE)
+  ctxV.fillStyle = surfaceColor; ctxV.fillRect(0, 0, RULER_SIZE, wh)
+
+  if (!previewTransform) return
+
+  const { minX, minY, maxX, maxY, scale, oX, oY, dw, dh } = previewTransform
+
+  const NICE = [0.5, 1, 2, 5, 10, 25, 50, 100, 250, 500, 1000]
+  const intervalH = NICE.find(v => v * scale >= 45) || 1000
+  const intervalV = NICE.find(v => v * scale >= 45) || 1000
+
+  ctxH.strokeStyle = borderColor
+  ctxH.fillStyle = textMuted
+  ctxH.font = '9px ui-monospace, monospace'
+  ctxH.textAlign = 'center'
+  ctxH.textBaseline = 'top'
+  ctxH.lineWidth = 1
+
+  const x0 = Math.floor(minX / intervalH) * intervalH
+  for (let mm = x0; mm <= maxX + intervalH; mm += intervalH) {
+    const px = oX + (mm - minX) * scale
+    if (px < 0 || px > ww) continue
+    ctxH.beginPath(); ctxH.moveTo(px + 0.5, RULER_SIZE); ctxH.lineTo(px + 0.5, RULER_SIZE - 7); ctxH.stroke()
+    ctxH.fillText(mm, px, 2)
+  }
+
+  ctxV.strokeStyle = borderColor
+  ctxV.fillStyle = textMuted
+  ctxV.font = '9px ui-monospace, monospace'
+  ctxV.textAlign = 'center'
+  ctxV.textBaseline = 'top'
+  ctxV.lineWidth = 1
+
+  const y0 = Math.floor(minY / intervalV) * intervalV
+  for (let mm = y0; mm <= maxY + intervalV; mm += intervalV) {
+    const py = oY + dh - (mm - minY) * scale
+    if (py < 0 || py > wh) continue
+    ctxV.beginPath(); ctxV.moveTo(RULER_SIZE, py + 0.5); ctxV.lineTo(RULER_SIZE - 7, py + 0.5); ctxV.stroke()
+    ctxV.save()
+    ctxV.translate(RULER_SIZE - 9, py)
+    ctxV.rotate(-Math.PI / 2)
+    ctxV.fillText(mm, 0, 0)
+    ctxV.restore()
+  }
+
+  if (cursorCanvasX !== undefined) {
+    const mmX = minX + (cursorCanvasX - oX) / scale
+    const mmY = minY + (oY + dh - cursorCanvasY) / scale
+
+    ctxH.strokeStyle = accentColor; ctxH.lineWidth = 1
+    ctxH.beginPath(); ctxH.moveTo(cursorCanvasX + 0.5, 0); ctxH.lineTo(cursorCanvasX + 0.5, RULER_SIZE); ctxH.stroke()
+    ctxH.fillStyle = accentColor
+    ctxH.textAlign = cursorCanvasX > ww - 30 ? 'right' : 'left'
+    ctxH.fillText(mmX.toFixed(1), cursorCanvasX + (cursorCanvasX > ww - 30 ? -2 : 2), 2)
+
+    ctxV.strokeStyle = accentColor; ctxV.lineWidth = 1
+    ctxV.beginPath(); ctxV.moveTo(0, cursorCanvasY + 0.5); ctxV.lineTo(RULER_SIZE, cursorCanvasY + 0.5); ctxV.stroke()
+    ctxV.save()
+    ctxV.translate(RULER_SIZE - 9, cursorCanvasY + (cursorCanvasY > wh - 30 ? -2 : 2))
+    ctxV.rotate(-Math.PI / 2)
+    ctxV.fillStyle = accentColor
+    ctxV.textAlign = cursorCanvasY > wh - 30 ? 'left' : 'right'
+    ctxV.fillText(mmY.toFixed(1), 0, 0)
+    ctxV.restore()
+  }
+}
+
+document.getElementById('preview-canvas').addEventListener('mousemove', e => {
+  if (!previewTransform) return
+  const rect = e.target.getBoundingClientRect()
+  drawRulers(e.clientX - rect.left, e.clientY - rect.top)
+})
+
+document.getElementById('preview-canvas').addEventListener('mouseleave', () => {
+  drawRulers()
+})
+
+let currentThemeKey = ''
+function getThemeKey() {
+  return ['--surface','--elevated','--border','--accent','--text-muted']
+    .map(name => themeColor(name, '')).join('|')
+}
+function watchThemeChanges() {
+  const next = getThemeKey()
+  if (next !== currentThemeKey) {
+    currentThemeKey = next
+    drawPreview()
+  }
+  window.requestAnimationFrame(watchThemeChanges)
+}
+currentThemeKey = getThemeKey()
+window.requestAnimationFrame(watchThemeChanges)
+
+let refreshTimer = null
+
+function refresh() {
+  clearTimeout(refreshTimer)
+  refreshTimer = setTimeout(_doRefresh, 100)
+}
+
+function _doRefresh() {
+  if (!currentSVGText) {
+    drawPreview()
+    return
+  }
+  const p = getParams()
+  const { ox, oy } = originOffset(p)
+  try {
+    let raw = parseSVGPolylines(currentSVGText, p, ox, oy)
+    if (raw.length > 0 && document.getElementById('lock-ratio').checked) {
+      const idealH = Math.max(1, p.W / svgAspectRatio)
+      if (Math.abs(idealH - p.H) > 0.001) {
+        document.getElementById('H').value = fmt(idealH)
+        p.H = idealH
+        const origin = originOffset(p)
+        raw = parseSVGPolylines(currentSVGText, p, origin.ox, origin.oy)
+      }
+    }
+    if (raw.length === 0) {
+      setStatus('No paths found in SVG.', 'warn')
+      lastPolylines = []
+      computeStats([], p)
+      drawPreview()
+      return
+    }
+    lastPolylines = orderPolylines(raw)
+    setStatus('')
+    computeStats(lastPolylines, p)
+    drawPreview()
+  } catch (e) {
+    setStatus('SVG error: ' + e.message, 'err')
+    lastPolylines = []
+    computeStats([], p)
+    drawPreview()
+  }
+}
+
+async function doSend() {
+  if (!currentSVGText) { setStatus('No SVG loaded.', 'warn'); return }
+  const btn = document.getElementById('send-btn')
+  btn.disabled = true
+  setStatus('Generating G-code…')
+  try {
+    const p = getParams()
+    if (!lastPolylines || lastPolylines.length === 0) {
+      setStatus('No paths to plot.', 'warn')
+      btn.disabled = false
+      return
+    }
+    const code = genGCode(lastPolylines, p)
+    generatedCode = code
+    const stem = defaultFileName()
+    generatedPath = `/sd/${stem}.nc`
+    const saveName = document.getElementById('save-name')
+    saveName.value = stem; saveName.disabled = false
+    const saveBtn = document.getElementById('save-gcode-btn')
+    saveBtn.textContent = 'Save G-code'
+    saveBtn.disabled = false
+    document.getElementById('save-section').style.display = ''
+    document.getElementById('open-saved-btn').style.display = 'none'
+    setStatus(`G-code ready — ${(code.length / 1024).toFixed(1)} KB, ${lastPolylines.length} paths.`, 'ok')
+    await saveSettings()
+  } catch (e) {
+    setStatus('Error: ' + e.message, 'err')
+  } finally {
+    btn.disabled = false
+  }
+}
+
+async function saveGCode() {
+  const btn = document.getElementById('save-gcode-btn')
+  if (btn.textContent === 'Open') {
+    return openSaved()
+  }
+  if (!generatedCode) { setStatus('No G-code to save.', 'warn'); return }
+  const input = document.getElementById('save-name')
+  const stem = sanitizeFileName(input.value.trim()) || defaultFileName()
+  const name = stem + '.nc'
+  const path = `/sd/${name}`
+  btn.disabled = true; btn.textContent = 'Saving…'
+  setStatus(`Saving ${name}…`)
+  try {
+    await call('writeFile', { path, content: generatedCode, fs: 'sd' })
+    generatedPath = path
+    document.getElementById('open-saved-btn').style.display = 'none'
+    btn.textContent = 'Open'
+    btn.disabled = false
+    setStatus(`Saved to ${path}.`, 'ok')
+  } catch (e) {
+    btn.disabled = false; btn.textContent = 'Save G-code'
+    setStatus('Save failed: ' + e.message, 'err')
+  }
+}
+
+async function openSaved() {
+  if (!generatedPath) { setStatus('No saved file.', 'warn'); return }
+  try { await call('openFile', { path: generatedPath }); await call('close') }
+  catch (e) { setStatus('Could not open file: ' + e.message, 'err') }
+}
+
+const SETTINGS_PATH = '/sd/plugins/penplot/settings.json'
+
+async function saveSettings() {
+  const p = getParams()
+  p.lockRatio = document.getElementById('lock-ratio').checked
+  p.penDown = Math.abs(p.penDown)
+  try {
+    await call('writeFile', { path: SETTINGS_PATH, content: JSON.stringify(p), fs: 'sd' })
+  } catch (e) { setStatus('Save error: ' + e.message, 'err') }
+}
+
+async function loadSettings() {
+  try {
+    const text = await call('readFile', { path: SETTINGS_PATH, fs: 'sd' })
+    const c = JSON.parse(text)
+    if (!c || typeof c !== 'object') return
+    if (c.W          !== undefined) document.getElementById('W').value           = c.W
+    if (c.H          !== undefined) document.getElementById('H').value           = c.H
+    if (c.lockRatio  !== undefined) document.getElementById('lock-ratio').checked = c.lockRatio
+    if (c.tolerance  !== undefined) document.getElementById('tolerance').value   = c.tolerance
+    if (c.penUp      !== undefined) document.getElementById('pen-up').value      = c.penUp
+    if (c.penDown    !== undefined) document.getElementById('pen-down').value    = Math.abs(c.penDown)
+    if (c.drawFeed   !== undefined) document.getElementById('draw-feed').value   = c.drawFeed
+    if (c.travelFeed !== undefined) document.getElementById('travel-feed').value = c.travelFeed
+    if (c.zFeed      !== undefined) document.getElementById('z-feed').value      = c.zFeed
+    if (c.origin)    setOrigin(c.origin)
+    if (c.endMove)   document.getElementById('end-move').value = c.endMove
+  } catch (_) {}
+  refresh()
+}
+
+
+new ResizeObserver(() => { if (lastPolylines) drawPreview() }).observe(document.getElementById('preview-wrap'))
+loadSettings()
+</script>
+</body>
+</html>
