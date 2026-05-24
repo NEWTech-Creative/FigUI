@@ -908,7 +908,7 @@ export function JogPad() {
         </div>
       </div>
 
-      <div className="panel flex flex-col">
+      {spindleMax ? <div className="panel flex flex-col">
         <div className="panel-header">
           <span className='text-lg font-bold'>Spindle</span>
           {(() => {
@@ -1005,7 +1005,7 @@ export function JogPad() {
           )}
 
         </div>
-      </div>
+      </div> : null}
     </>
   )
 }

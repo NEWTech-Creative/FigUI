@@ -8,6 +8,7 @@ import { ProbePanel } from './ProbePanel'
 import { OverridesPanel, SpindlePanel } from './JogPad'
 import { PluginLauncher } from './PluginLauncher'
 import type { Plugin } from '../types'
+import { useMachineStore } from '../store'
 
 interface TabletAccordionProps {
   tabletTab: string
@@ -18,6 +19,8 @@ interface TabletAccordionProps {
 export function TabletAccordion({ tabletTab, setTabletTab, onLaunchPanel }: TabletAccordionProps) {
   const [expanded, setExpanded] = useState<'visualizer' | 'controls'>('visualizer')
   const [portraitTab, setPortraitTab] = useState<string>('viewer')
+  const spindleMax = useMachineStore(s => s.controllerSettings.spindleMax)
+  const hasSpindle = Boolean(spindleMax)
 
   const TABS = [
     { id: 'viewer',  label: 'Viewer'  },
@@ -32,7 +35,7 @@ export function TabletAccordion({ tabletTab, setTabletTab, onLaunchPanel }: Tabl
     { id: 'files',     label: 'Files'     },
     { id: 'macros',    label: 'Macros'    },
     { id: 'terminal',  label: 'Terminal'  },
-    { id: 'spindle',   label: 'Spindle'   },
+    ...(hasSpindle ? [{ id: 'spindle', label: 'Spindle' }] : []),
     { id: 'overrides', label: 'Overrides' },
     { id: 'plugins',   label: 'Plugins'   },
   ]
@@ -70,7 +73,7 @@ export function TabletAccordion({ tabletTab, setTabletTab, onLaunchPanel }: Tabl
             {portraitTab === 'files'     && <FileManager isTablet />}
             {portraitTab === 'macros'    && <Macros isTablet />}
             {portraitTab === 'terminal'  && <Terminal />}
-            {portraitTab === 'spindle'   && (
+            {portraitTab === 'spindle' && hasSpindle && (
               <div className="p-5">
                 <SpindlePanel className="border-none shadow-none p-0" isTablet />
               </div>
@@ -142,7 +145,7 @@ export function TabletAccordion({ tabletTab, setTabletTab, onLaunchPanel }: Tabl
               className="panel-header text-left font-bold cursor-pointer flex justify-between items-center text-xl py-4"
               onClick={() => setExpanded('controls')}
             >
-              <span className="uppercase tracking-wide">Spindle & Overrides</span>
+              <span className="uppercase tracking-wide">{hasSpindle ? 'Spindle & Overrides' : 'Overrides'}</span>
               <ChevronRight size={22} />
             </button>
           )}
@@ -152,12 +155,14 @@ export function TabletAccordion({ tabletTab, setTabletTab, onLaunchPanel }: Tabl
                 className="panel-header flex justify-between items-center border-b border-border cursor-pointer hover:text-text-primary shrink-0 text-xl py-3"
                 onClick={() => setExpanded('visualizer')}
               >
-                <span className="uppercase tracking-wide">Spindle</span>
+                <span className="uppercase tracking-wide">{hasSpindle ? 'Spindle & Overrides' : 'Overrides'}</span>
                 <ChevronDown size={22} />
               </button>
               <div className="flex-1 overflow-y-auto flex flex-col gap-0 p-0">
-                <SpindlePanel className="border-none shadow-none p-0" isTablet />
-                <div className="h-px bg-border w-full my-1" />
+                {hasSpindle && <>
+                  <SpindlePanel className="border-none shadow-none p-0" isTablet />
+                  <div className="h-px bg-border w-full my-1" />
+                </>}
                 <OverridesPanel className="border-none shadow-none p-0" isTablet />
               </div>
             </div>
