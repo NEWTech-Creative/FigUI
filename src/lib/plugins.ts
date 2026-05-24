@@ -28,6 +28,14 @@ async function scanFs(fs: 'sd' | 'local'): Promise<Plugin[]> {
       plugins.push({ id: dir.name, manifest, entryUrl, fs })
     } catch {}
   }
+  for (const plugin of plugins) {
+    if (plugin.manifest.icon) {
+      try {
+        const res = await fetch(plugin.manifest.icon)
+        if (res.ok) plugin.manifest.icon = URL.createObjectURL(await res.blob())
+      } catch {}
+    }
+  }
   return plugins
 }
 
