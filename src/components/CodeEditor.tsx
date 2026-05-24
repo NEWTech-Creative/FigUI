@@ -1,6 +1,8 @@
 import { useState, useEffect, useRef, useCallback } from 'react'
 import { CodeJar } from 'codejar'
-import { X, Save, Download, Search, ChevronUp, ChevronDown } from 'lucide-react'
+import { X, Save, Download, Search, ChevronUp, ChevronDown, RotateCcw } from 'lucide-react'
+import { sendCommand } from '../lib/http'
+import { useMachineStore } from '../store'
 
 
 function escapeHtml(s: string) {
@@ -171,6 +173,8 @@ export function CodeEditor({ filename, content, onSave, onClose }: CodeEditorPro
   const searchRef  = useRef<HTMLInputElement>(null)
   const [saving, setSaving]       = useState(false)
   const [dirty, setDirty]         = useState(false)
+  const [savedOnce, setSavedOnce] = useState(false)
+  const isConfig = filename === 'config.yaml'
   const [confirmClose, setConfirmClose] = useState(false)
   const [lineCount, setLineCount] = useState(1)
   const [showSearch, setShowSearch] = useState(false)
@@ -264,10 +268,18 @@ export function CodeEditor({ filename, content, onSave, onClose }: CodeEditorPro
     try {
       await onSave(currentContent.current)
       setDirty(false)
+      if (isConfig) setSavedOnce(true)
     } finally {
       setSaving(false)
     }
-  }, [onSave])
+  }, [onSave, isConfig])
+
+  const handleRestart = useCallback(async () => {
+    if (!confirm('Restart the controller now? The config will take effect after reboot.')) return
+    useMachineStore.getState().setRestarting(true)
+    onClose()
+    sendCommand('[ESP444]RESTART').catch(() => {})
+  }, [])
 
   /** Attempt to close — if dirty, show confirmation; otherwise close immediately */
   function tryClose() {
@@ -396,6 +408,15 @@ export function CodeEditor({ filename, content, onSave, onClose }: CodeEditorPro
             >
               <Save size={12} /><span className="hidden sm:inline"> {saving ? 'Saving…' : 'Save'}</span>
             </button>
+            {isConfig && savedOnce && !dirty && (
+              <button
+                className="btn btn-warn text-sm py-1 px-2"
+                onClick={handleRestart}
+                title="Restart controller to apply config"
+              >
+                <RotateCcw size={12} /><span className="hidden sm:inline"> Restart</span>
+              </button>
+            )}
             <button
               className="p-1.5 rounded text-text-muted hover:text-text-primary hover:bg-elevated transition-colors ml-1"
               onClick={tryClose}
