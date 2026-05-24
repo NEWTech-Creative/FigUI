@@ -553,20 +553,6 @@ async function fetchFirmwareBin(
   return new File([out], image.path.split('/').pop() ?? 'firmware.bin', { type: 'application/octet-stream' })
 }
 
-function startRestartCountdown() {
-  let remaining = 40
-  const iv = setInterval(() => {
-    remaining--
-    if (remaining <= 0) { clearInterval(iv); clearInterval(poll); location.reload() }
-  }, 1000)
-  const poll = setInterval(async () => {
-    try {
-      await getDeviceInfoFast()
-      clearInterval(iv); clearInterval(poll); location.reload()
-    } catch { /* not up yet */ }
-  }, 2000)
-  return { iv, poll, initial: remaining }
-}
 
 function ProgressBar({ value, color = 'accent' }: { value: number; color?: 'accent' | 'ok' }) {
   return (
@@ -606,9 +592,11 @@ function FirmwareTab() {
     (currentVer ? cmpVer(r.tag_name, currentVer) !== 0 : true)
   )
 
-  useEffect(() => {
+  function loadReleases() {
     setPhase('fetching-releases')
     setReleasesError('')
+    setReleases([])
+    setSelectedTag('')
     fetch('https://api.github.com/repos/bdring/FluidNC/releases?per_page=30')
       .then(r => r.ok ? r.json() : Promise.reject(new Error(`GitHub API error (${r.status})`)))
       .then((data: GithubRelease[]) => {
@@ -624,19 +612,23 @@ function FirmwareTab() {
         setReleasesError(e instanceof Error ? e.message : 'Failed to fetch releases')
         setPhase('idle')
       })
-  }, [])
+  }
+
+  useEffect(() => { loadReleases() }, [])
 
   function beginRestart() {
     setPhase('restarting')
     let remaining = 40
     setCountdown(remaining)
-    const { iv, poll } = startRestartCountdown()
+    const poll = setInterval(async () => {
+      try { await getDeviceInfoFast(); clearInterval(poll); clearInterval(tick); location.reload() }
+      catch { /* not up yet */ }
+    }, 2000)
     const tick = setInterval(() => {
       remaining--
       setCountdown(remaining)
-      if (remaining <= 0) clearInterval(tick)
+      if (remaining <= 0) { clearInterval(poll); clearInterval(tick); location.reload() }
     }, 1000)
-    return () => { clearInterval(iv); clearInterval(poll); clearInterval(tick) }
   }
 
   async function flashFile(file: File) {
@@ -693,34 +685,9 @@ function FirmwareTab() {
         {releasesError && (
           <div className="flex flex-col gap-2">
             <div className="p-3 rounded bg-elevated border border-border text-text-muted text-sm">
-              {releasesError.toLowerCase().includes('fetch') || releasesError.toLowerCase().includes('network') || releasesError.toLowerCase().includes('failed')
-                ? 'No internet connection — online updates unavailable.'
-                : releasesError}
+              No internet connection — online updates unavailable.
             </div>
-            <button
-              onClick={() => {
-                setReleasesError('')
-                setReleases([])
-                setSelectedTag('')
-                setPhase('fetching-releases')
-                fetch('https://api.github.com/repos/bdring/FluidNC/releases?per_page=30')
-                  .then(r => r.ok ? r.json() : Promise.reject(new Error(`GitHub API error (${r.status})`)))
-                  .then((data: GithubRelease[]) => {
-                    const filtered = data
-                      .filter(r => !r.draft && cmpVer(r.tag_name, 'v4.0.3') >= 0)
-                      .sort((a, b) => b.id - a.id)
-                    setReleases(filtered)
-                    const stable = filtered.find(r => !r.prerelease)
-                    if (stable) setSelectedTag(stable.tag_name)
-                    setPhase('idle')
-                  })
-                  .catch(e => {
-                    setReleasesError(e instanceof Error ? e.message : 'Failed to fetch releases')
-                    setPhase('idle')
-                  })
-              }}
-              className="flex items-center gap-1.5 text-sm text-text-muted hover:text-text-primary transition-colors"
-            >
+            <button onClick={loadReleases} className="flex items-center gap-1.5 text-sm text-text-muted hover:text-text-primary transition-colors">
               <RefreshCw size={12} />
               Retry
             </button>
