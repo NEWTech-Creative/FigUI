@@ -1,7 +1,7 @@
 import { useState, useEffect, useMemo } from 'react'
 import {
   RefreshCw, Search, Wifi, Globe, Settings, Sliders,
-  Hash, RotateCcw, X, Cpu, Info, Monitor, Upload,
+  Hash, RotateCcw, X, Cpu, Info, Monitor, Upload, Check,
 } from 'lucide-react'
 import type { LucideIcon } from 'lucide-react'
 import { sendCommand, fetchFileContent, saveFileContent, uploadFirmware, getDeviceInfoFast } from '../lib/http'
@@ -479,142 +479,422 @@ async function updateConfigYaml(settingPath: string, value: string): Promise<voi
   }
 }
 
-type FirmwarePhase = 'idle' | 'uploading' | 'restarting' | 'error'
+type FirmwarePhase =
+  | 'idle'
+  | 'fetching-releases'
+  | 'downloading'
+  | 'uploading'
+  | 'restarting'
+  | 'error'
+
+type GithubRelease = { id: number; name: string; tag_name: string; draft: boolean; prerelease: boolean }
+type Chip  = 'esp32' | 'esp32s3'
+type Radio = 'wifi' | 'bt' | 'noradio'
+
+const CHIPS: { id: Chip; label: string }[] = [
+  { id: 'esp32',   label: 'ESP32' },
+  { id: 'esp32s3', label: 'ESP32-S3' },
+]
+const RADIOS: { id: Radio; label: string }[] = [
+  { id: 'wifi',    label: 'WiFi' },
+  { id: 'bt',      label: 'Bluetooth' },
+  { id: 'noradio', label: 'No Radio' },
+]
+
+function parseVer(s: string): [number, number, number] {
+  const m = s.match(/v?(\d+)\.(\d+)\.(\d+)(-\S+)?/)
+  return m ? [+m[1], +m[2], +m[3]] : [0, 0, 0]
+}
+
+function cmpVer(a: string, b: string): number {
+  const av = parseVer(a), bv = parseVer(b)
+  for (let i = 0; i < 3; i++) if (av[i] !== bv[i]) return av[i] - bv[i]
+  return 0
+}
+
+const FLUIDNC_RESOURCES = 'https://raw.githubusercontent.com/bdring/fluidnc-releases/main/releases'
+
+type FirmwareImage = { offset: string; path: string }
+type FirmwareChoice = { 'choice-name'?: string; images?: string[]; choices?: FirmwareChoice[] }
+type ReleaseManifest = { images: Record<string, FirmwareImage>; installable: FirmwareChoice }
+
+async function fetchFirmwareBin(
+  releaseName: string,
+  chip: Chip,
+  radio: Radio,
+  onProgress: (pct: number) => void,
+): Promise<File> {
+  const manifestRes = await fetch(`${FLUIDNC_RESOURCES}/${releaseName}/manifest.json`)
+  if (!manifestRes.ok) throw new Error(`Manifest not found for ${releaseName} (HTTP ${manifestRes.status})`)
+  const manifest: ReleaseManifest = await manifestRes.json()
+
+  const imageKey = `${chip}-${radio}-firmware`
+  const image = manifest.images[imageKey]
+  if (!image) throw new Error(`No firmware found for ${chip} / ${radio} in this release`)
+
+  const url = `${FLUIDNC_RESOURCES}/${releaseName}/${image.path}`
+  const res = await fetch(url)
+  if (!res.ok) throw new Error(`Download failed (HTTP ${res.status})`)
+
+  const total = Number(res.headers.get('content-length') ?? 0)
+  const reader = res.body!.getReader()
+  const chunks: Uint8Array[] = []
+  let received = 0
+  for (;;) {
+    const { done, value } = await reader.read()
+    if (done) break
+    chunks.push(value)
+    received += value.length
+    if (total) onProgress(Math.round((received / total) * 100))
+  }
+  const out = new Uint8Array(received)
+  let off = 0
+  for (const c of chunks) { out.set(c, off); off += c.length }
+  return new File([out], image.path.split('/').pop() ?? 'firmware.bin', { type: 'application/octet-stream' })
+}
+
+function startRestartCountdown() {
+  let remaining = 40
+  const iv = setInterval(() => {
+    remaining--
+    if (remaining <= 0) { clearInterval(iv); clearInterval(poll); location.reload() }
+  }, 1000)
+  const poll = setInterval(async () => {
+    try {
+      await getDeviceInfoFast()
+      clearInterval(iv); clearInterval(poll); location.reload()
+    } catch { /* not up yet */ }
+  }, 2000)
+  return { iv, poll, initial: remaining }
+}
+
+function ProgressBar({ value, color = 'accent' }: { value: number; color?: 'accent' | 'ok' }) {
+  return (
+    <div className="h-2 rounded-full bg-elevated overflow-hidden">
+      <div
+        className={`h-full rounded-full transition-all duration-200 ${color === 'ok' ? 'bg-ok duration-1000' : 'bg-accent'}`}
+        style={{ width: `${value}%` }}
+      />
+    </div>
+  )
+}
 
 function FirmwareTab() {
-  const [file, setFile]         = useState<File | null>(null)
-  const [phase, setPhase]       = useState<FirmwarePhase>('idle')
-  const [progress, setProgress] = useState(0)
+  const espInfo = useMachineStore(s => s.espInfo)
+
+  const [phase, setPhase]         = useState<FirmwarePhase>('idle')
+  const [progress, setProgress]   = useState(0)
+  const [statusMsg, setStatusMsg] = useState('')
   const [countdown, setCountdown] = useState(0)
-  const [errorMsg, setErrorMsg] = useState('')
+  const [errorMsg, setErrorMsg]   = useState('')
+
+  const [releases, setReleases]           = useState<GithubRelease[]>([])
+  const [showPrerelease, setShowPrerelease] = useState(false)
+  const [selectedTag, setSelectedTag]     = useState('')
+  const [chip, setChip]                   = useState<Chip>('esp32')
+  const [radio, setRadio]                 = useState<Radio>('wifi')
+  const [releasesError, setReleasesError] = useState('')
+
+  const [file, setFile]     = useState<File | null>(null)
   const [dragOver, setDragOver] = useState(false)
 
-  function pick(f: File | null | undefined) {
-    if (!f) return
-    setFile(f)
-    setPhase('idle')
-    setErrorMsg('')
+  const busy = phase === 'downloading' || phase === 'uploading' || phase === 'restarting' || phase === 'fetching-releases'
+
+  const currentVer = espInfo?.version ?? ''
+  const visibleReleases = releases.filter(r =>
+    (showPrerelease || !r.prerelease) &&
+    (currentVer ? cmpVer(r.tag_name, currentVer) !== 0 : true)
+  )
+
+  useEffect(() => {
+    setPhase('fetching-releases')
+    setReleasesError('')
+    fetch('https://api.github.com/repos/bdring/FluidNC/releases?per_page=30')
+      .then(r => r.ok ? r.json() : Promise.reject(new Error(`GitHub API error (${r.status})`)))
+      .then((data: GithubRelease[]) => {
+        const filtered = data
+          .filter(r => !r.draft && cmpVer(r.tag_name, 'v4.0.3') >= 0)
+          .sort((a, b) => b.id - a.id)
+        setReleases(filtered)
+        const stable = filtered.find(r => !r.prerelease)
+        if (stable) setSelectedTag(stable.tag_name)
+        setPhase('idle')
+      })
+      .catch(e => {
+        setReleasesError(e instanceof Error ? e.message : 'Failed to fetch releases')
+        setPhase('idle')
+      })
+  }, [])
+
+  function beginRestart() {
+    setPhase('restarting')
+    let remaining = 40
+    setCountdown(remaining)
+    const { iv, poll } = startRestartCountdown()
+    const tick = setInterval(() => {
+      remaining--
+      setCountdown(remaining)
+      if (remaining <= 0) clearInterval(tick)
+    }, 1000)
+    return () => { clearInterval(iv); clearInterval(poll); clearInterval(tick) }
   }
 
-  async function start() {
-    if (!file || phase === 'uploading' || phase === 'restarting') return
-    if (!confirm(`Flash firmware from "${file.name}"? The device will restart after upload.`)) return
+  async function flashFile(file: File) {
     setPhase('uploading')
     setProgress(0)
-    setErrorMsg('')
+    setStatusMsg(`Uploading ${file.name}…`)
     try {
       await uploadFirmware(file, pct => setProgress(pct))
-      setPhase('restarting')
-      let remaining = 40
-      setCountdown(remaining)
-      const iv = setInterval(() => {
-        remaining--
-        setCountdown(remaining)
-        if (remaining <= 0) { clearInterval(iv); clearInterval(poll); location.reload() }
-      }, 1000)
-      const poll = setInterval(async () => {
-        try {
-          await getDeviceInfoFast()
-          clearInterval(iv)
-          clearInterval(poll)
-          location.reload()
-        } catch { /* device not up yet */ }
-      }, 2000)
+      beginRestart()
     } catch (e) {
       setPhase('error')
       setErrorMsg(e instanceof Error ? e.message : 'Upload failed')
     }
   }
 
+  async function downloadAndFlash() {
+    if (!selectedTag) return
+    if (!confirm(`Download and flash FluidNC ${selectedTag} (${chip} / ${radio})?\n\nThe device will restart after flashing.`)) return
+
+    setPhase('downloading')
+    setProgress(0)
+    setStatusMsg(`Downloading firmware…`)
+    setErrorMsg('')
+    try {
+      const binFile = await fetchFirmwareBin(selectedTag, chip, radio, pct => setProgress(pct))
+      await flashFile(binFile)
+    } catch (e) {
+      setPhase('error')
+      setErrorMsg(e instanceof Error ? e.message : 'Update failed')
+    }
+  }
+
+  function pickFile(f: File | null | undefined) {
+    if (!f) return
+    setFile(f)
+    setErrorMsg('')
+  }
+
+  const latestStable = releases.find(r => !r.prerelease)
+  const hasNewerStable = latestStable ? cmpVer(latestStable.tag_name, currentVer) > 0 : false
+
   return (
-    <div className="flex flex-col gap-5 p-5 max-w-lg">
-      <div className="flex items-start gap-2 p-3 rounded bg-warn/10 border border-warn/30 text-sm text-warn">
-        <Info size={14} className="shrink-0 mt-px" />
-        <span>Only upload FluidNC firmware ending in .bin. Do not close this page or exit this tab while the update is in progress.</span>
+    <div className="flex flex-col divide-y divide-border max-w-lg">
+
+      {/* ── Online Update ── */}
+      <div className="flex flex-col gap-4 p-5">
+        <div className="flex items-center justify-between">
+          <h3 className="text-sm font-semibold uppercase tracking-wider text-text-dim">Online Update</h3>
+          {currentVer && (
+            <span className="text-sm text-text-dim font-mono">{currentVer}</span>
+          )}
+        </div>
+
+        {releasesError && (
+          <div className="flex flex-col gap-2">
+            <div className="p-3 rounded bg-elevated border border-border text-text-muted text-sm">
+              {releasesError.toLowerCase().includes('fetch') || releasesError.toLowerCase().includes('network') || releasesError.toLowerCase().includes('failed')
+                ? 'No internet connection — online updates unavailable.'
+                : releasesError}
+            </div>
+            <button
+              onClick={() => {
+                setReleasesError('')
+                setReleases([])
+                setSelectedTag('')
+                setPhase('fetching-releases')
+                fetch('https://api.github.com/repos/bdring/FluidNC/releases?per_page=30')
+                  .then(r => r.ok ? r.json() : Promise.reject(new Error(`GitHub API error (${r.status})`)))
+                  .then((data: GithubRelease[]) => {
+                    const filtered = data
+                      .filter(r => !r.draft && cmpVer(r.tag_name, 'v4.0.3') >= 0)
+                      .sort((a, b) => b.id - a.id)
+                    setReleases(filtered)
+                    const stable = filtered.find(r => !r.prerelease)
+                    if (stable) setSelectedTag(stable.tag_name)
+                    setPhase('idle')
+                  })
+                  .catch(e => {
+                    setReleasesError(e instanceof Error ? e.message : 'Failed to fetch releases')
+                    setPhase('idle')
+                  })
+              }}
+              className="flex items-center gap-1.5 text-sm text-text-muted hover:text-text-primary transition-colors"
+            >
+              <RefreshCw size={12} />
+              Retry
+            </button>
+          </div>
+        )}
+
+        {phase === 'fetching-releases' && (
+          <div className="flex items-center gap-2 text-sm text-text-muted">
+            <RefreshCw size={13} className="animate-spin" />
+            Fetching releases…
+          </div>
+        )}
+
+        {!releasesError && phase !== 'fetching-releases' && visibleReleases.length === 0 && releases.length > 0 && (
+          <div className="flex items-center gap-2 p-2.5 rounded bg-ok/10 border border-ok/30 text-ok text-sm">
+            <Check size={13} className="shrink-0" />
+            You&apos;re on the latest version ({currentVer}).
+          </div>
+        )}
+
+        {!releasesError && phase !== 'fetching-releases' && visibleReleases.length > 0 && (
+          <>
+            {hasNewerStable && latestStable && (
+              <div className="flex items-center gap-2 p-2.5 rounded bg-ok/10 border border-ok/30 text-ok text-sm">
+                <Upload size={13} className="shrink-0" />
+                Update available: {latestStable.tag_name}
+              </div>
+            )}
+
+            <div className="flex flex-col gap-3">
+              <div className="flex items-center gap-3">
+                <div className="flex-1 flex flex-col gap-1">
+                  <label className="text-xs text-text-dim uppercase tracking-wider">Version</label>
+                  <select
+                    value={selectedTag}
+                    onChange={e => setSelectedTag(e.target.value)}
+                    disabled={busy}
+                    className="input-field py-1.5 text-sm"
+                  >
+                    {visibleReleases.map(r => (
+                      <option key={r.id} value={r.tag_name}>
+                        {r.tag_name}{r.prerelease ? ' (pre-release)' : r.tag_name === latestStable?.tag_name ? ' (latest)' : ''}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+                <div className="flex-1 flex flex-col gap-1">
+                  <label className="text-xs text-text-dim uppercase tracking-wider">Chip</label>
+                  <select
+                    value={chip}
+                    onChange={e => setChip(e.target.value as Chip)}
+                    disabled={busy}
+                    className="input-field py-1.5 text-sm"
+                  >
+                    {CHIPS.map(c => <option key={c.id} value={c.id}>{c.label}</option>)}
+                  </select>
+                </div>
+                <div className="flex-1 flex flex-col gap-1">
+                  <label className="text-xs text-text-dim uppercase tracking-wider">Radio</label>
+                  <select
+                    value={radio}
+                    onChange={e => setRadio(e.target.value as Radio)}
+                    disabled={busy}
+                    className="input-field py-1.5 text-sm"
+                  >
+                    {RADIOS.map(r => <option key={r.id} value={r.id}>{r.label}</option>)}
+                  </select>
+                </div>
+              </div>
+
+              <label className="flex items-center gap-2 text-sm text-text-muted cursor-pointer select-none">
+                <input
+                  type="checkbox"
+                  checked={showPrerelease}
+                  onChange={e => setShowPrerelease(e.target.checked)}
+                  className="accent-[var(--accent)]"
+                />
+                Show pre-releases
+              </label>
+            </div>
+
+            {!busy && (
+              <button
+                onClick={downloadAndFlash}
+                disabled={!selectedTag}
+                className="flex items-center justify-center gap-2 px-4 py-2.5 rounded text-sm font-medium
+                           bg-accent text-white hover:bg-accent/90 transition-colors
+                           disabled:opacity-40 disabled:cursor-not-allowed"
+              >
+                <Upload size={14} />
+                Download &amp; Flash
+              </button>
+            )}
+          </>
+        )}
+
+        {(phase === 'downloading' || phase === 'uploading') && (
+          <div className="flex flex-col gap-2">
+            <div className="flex justify-between text-sm text-text-muted">
+              <span>{phase === 'uploading' && progress === 100 ? 'Writing to flash…' : statusMsg}</span>
+              <span>{progress}%</span>
+            </div>
+            <ProgressBar value={progress} />
+          </div>
+        )}
       </div>
 
-      {phase !== 'uploading' && phase !== 'restarting' && (
-        <label
-          className={`flex flex-col items-center justify-center gap-2 p-8 rounded-lg border-2 border-dashed
-                      cursor-pointer transition-colors ${
-            dragOver
-              ? 'border-accent bg-accent/10'
-              : 'border-border hover:border-accent/50 hover:bg-elevated/40'
-          }`}
-          onDragOver={e => { e.preventDefault(); setDragOver(true) }}
-          onDragLeave={() => setDragOver(false)}
-          onDrop={e => { e.preventDefault(); setDragOver(false); pick(e.dataTransfer.files[0]) }}
-        >
-          <input
-            type="file"
-            accept=".bin"
-            className="sr-only"
-            onChange={e => pick(e.target.files?.[0])}
-          />
-          <Upload size={32} className="text-text-dim" />
-          {file
-            ? <span className="text-base text-text-primary font-mono">{file.name}</span>
-            : <span className="text-base text-text-muted">Drop .bin file here or click to browse</span>
-          }
-          {file && (
-            <span className="text-sm text-text-dim">
-              {file.size < 1048576
-                ? `${(file.size / 1024).toFixed(1)} KB`
-                : `${(file.size / 1048576).toFixed(2)} MB`}
-            </span>
-          )}
-        </label>
-      )}
-
-      {phase === 'uploading' && (
-        <div className="flex flex-col gap-2">
-          <div className="flex justify-between text-sm text-text-muted">
-            <span>Uploading {file?.name}</span>
-            <span>{progress}%</span>
-          </div>
-          <div className="h-2 rounded-full bg-elevated overflow-hidden">
-            <div
-              className="h-full bg-accent rounded-full transition-all duration-200"
-              style={{ width: `${progress}%` }}
-            />
-          </div>
-        </div>
-      )}
-
+      {/* ── Restart progress (shared) ── */}
       {phase === 'restarting' && (
-        <div className="flex flex-col gap-2">
+        <div className="flex flex-col gap-2 p-5">
           <div className="flex justify-between text-sm text-text-muted">
             <span>Restarting device…</span>
             <span>{countdown}s</span>
           </div>
-          <div className="h-2 rounded-full bg-elevated overflow-hidden">
-            <div
-              className="h-full bg-ok rounded-full transition-all duration-1000"
-              style={{ width: `${(1 - countdown / 40) * 100}%` }}
-            />
-          </div>
+          <ProgressBar value={(1 - countdown / 40) * 100} color="ok" />
           <p className="text-sm text-text-dim">Page will reload automatically when ready.</p>
         </div>
       )}
 
       {phase === 'error' && (
-        <div className="p-3 rounded bg-danger/10 border border-danger/30 text-danger text-sm">
-          {errorMsg}
+        <div className="p-5">
+          <div className="p-3 rounded bg-danger/10 border border-danger/30 text-danger text-sm">
+            {errorMsg}
+          </div>
         </div>
       )}
 
-      {phase !== 'uploading' && phase !== 'restarting' && (
-        <button
-          disabled={!file}
-          onClick={start}
-          className="flex items-center justify-center gap-2 px-4 py-2.5 rounded text-sm font-medium
-                     bg-accent text-white hover:bg-accent/90 transition-colors
-                     disabled:opacity-40 disabled:cursor-not-allowed"
-        >
-          <Upload size={15} />
-          Flash Firmware
-        </button>
-      )}
+      {/* ── Manual Flash ── */}
+      <div className="flex flex-col gap-4 p-5">
+        <h3 className="text-sm font-semibold uppercase tracking-wider text-text-dim">Manual Flash</h3>
+
+        {!busy && (
+          <label
+            className={`flex flex-col items-center justify-center gap-2 p-6 rounded-lg border-2 border-dashed
+                        cursor-pointer transition-colors ${
+              dragOver
+                ? 'border-accent bg-accent/10'
+                : 'border-border hover:border-accent/50 hover:bg-elevated/40'
+            }`}
+            onDragOver={e => { e.preventDefault(); setDragOver(true) }}
+            onDragLeave={() => setDragOver(false)}
+            onDrop={e => { e.preventDefault(); setDragOver(false); pickFile(e.dataTransfer.files[0]) }}
+          >
+            <input type="file" accept=".bin" className="sr-only" onChange={e => pickFile(e.target.files?.[0])} />
+            <Upload size={28} className="text-text-dim" />
+            {file
+              ? <span className="text-sm text-text-primary font-mono">{file.name}</span>
+              : <span className="text-sm text-text-muted">Drop .bin file or click to browse</span>
+            }
+            {file && (
+              <span className="text-xs text-text-dim">
+                {file.size < 1048576 ? `${(file.size / 1024).toFixed(1)} KB` : `${(file.size / 1048576).toFixed(2)} MB`}
+              </span>
+            )}
+          </label>
+        )}
+
+        {!busy && (
+          <button
+            disabled={!file}
+            onClick={() => {
+              if (!file) return
+              if (!confirm(`Flash firmware from "${file.name}"? The device will restart.`)) return
+              flashFile(file)
+            }}
+            className="flex items-center justify-center gap-2 px-4 py-2.5 rounded text-sm font-medium
+                       bg-accent text-white hover:bg-accent/90 transition-colors
+                       disabled:opacity-40 disabled:cursor-not-allowed"
+          >
+            <Upload size={14} />
+            Flash Firmware
+          </button>
+        )}
+      </div>
     </div>
   )
 }

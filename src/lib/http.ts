@@ -208,14 +208,35 @@ export function uploadFirmware(
     fd.append(`/${file.name}S`, String(file.size))
     fd.append('myfile[]', file, `/${file.name}`)
 
+    let settled = false
+    const settle = (fn: () => void) => {
+      if (settled) return
+      settled = true
+      clearInterval(stallTimer)
+      fn()
+    }
+
+    let lastLoaded = 0
+    let lastMoveTime = Date.now()
+    const stallTimer = setInterval(() => {
+      if (Date.now() - lastMoveTime > 30_000)
+        settle(() => { xhr.abort(); reject(new Error('Upload stalled — no progress for 30 s. The device may be busy; try again.')) })
+    }, 5_000)
+
     if (onProgress) {
       xhr.upload.onprogress = e => {
-        if (e.lengthComputable) onProgress(Math.round((e.loaded / e.total) * 100))
+        if (e.lengthComputable) {
+          if (e.loaded !== lastLoaded) { lastLoaded = e.loaded; lastMoveTime = Date.now() }
+          onProgress(Math.round((e.loaded / e.total) * 100))
+        }
       }
     }
 
-    xhr.onload = () => (xhr.status < 300 ? resolve() : reject(new Error(`Upload failed (${xhr.status})`)))
-    xhr.onerror = () => reject(new Error('Upload failed'))
+    xhr.onload    = () => settle(() => xhr.status < 300 ? resolve() : reject(new Error(`Upload failed (${xhr.status})`)))
+    xhr.onerror   = () => settle(() => reject(new Error('Upload failed')))
+    xhr.ontimeout = () => settle(() => reject(new Error('Upload timed out')))
+    xhr.onabort   = () => settle(() => {})
+    xhr.timeout   = 120_000
     xhr.open('POST', `${base}/updatefw`)
     xhr.send(fd)
   })
