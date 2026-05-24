@@ -6,7 +6,11 @@ import { fileURLToPath } from 'url'
 export default defineConfig(({ mode }) => ({
   resolve: {
     alias: {
-      'lucide-react': fileURLToPath(new URL('./src/icons.tsx', import.meta.url)),
+      'react':             'preact/compat',
+      'react-dom':         'preact/compat',
+      'react-dom/client':  'preact/compat/client',
+      'react/jsx-runtime': 'preact/jsx-runtime',
+      'lucide-react':      fileURLToPath(new URL('./src/icons.tsx', import.meta.url)),
     },
   },
   base: mode === 'demo' ? '/FigUI/' : '/',
@@ -15,7 +19,7 @@ export default defineConfig(({ mode }) => ({
     ...(mode === 'esp32' ? [viteSingleFile()] : []),
   ],
   build: {
-    target: 'es2015',
+    target: 'es2022',
     ...(mode === 'esp32' ? {
       assetsInlineLimit: 100_000_000,
       cssCodeSplit: false,
