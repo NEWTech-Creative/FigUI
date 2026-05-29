@@ -2,7 +2,7 @@ import { useState, useEffect, useRef, useCallback } from 'react'
 import {
   Folder, File, Upload, Trash2, RefreshCw,
   ChevronRight, HardDrive, FolderPlus, X, Pencil,
-  Check, Download, Server, FileCode, FilePlus,
+  Check, Download, Server, FileCode, FilePlus, Search,
 } from 'lucide-react'
 import { listFiles, deleteFile, deleteDir, uploadFile, createDir, renameFile, getBase, fetchFileContent, saveFileContent } from '../lib/http'
 import { CodeEditor, isEditable } from './CodeEditor'
@@ -332,7 +332,9 @@ export function FileManager({ isTablet }: { isTablet?: boolean }) {
   const [editing, setEditing]       = useState<{ path: string; filename: string; content: string } | null>(null)
   const [editLoading, setEditLoading] = useState(false)
   const [dragOver, setDragOver] = useState(false)
+  const [search, setSearch] = useState('')
   const fileInput = useRef<HTMLInputElement>(null)
+  const searchRef = useRef<HTMLInputElement>(null)
 
   const sdRoot    = primarySd
   const localRoot = '/'
@@ -387,9 +389,10 @@ export function FileManager({ isTablet }: { isTablet?: boolean }) {
     load(root, newFs)
   }
 
-  function navigate(p: string) { load(p, fs) }
+  function navigate(p: string) { setSearch(''); load(p, fs) }
 
   function goUp() {
+    setSearch('')
     const root = fs === 'sd' ? sdRoot : localRoot
     const trimmed = path.replace(/\/$/, '')
     const parts = trimmed.split('/')
@@ -578,6 +581,23 @@ export function FileManager({ isTablet }: { isTablet?: boolean }) {
         </div>
       )}
 
+      <div className="flex items-center gap-2 px-3 py-2 border-b border-border">
+        <Search size={13} className="text-text-dim shrink-0" />
+        <input
+          ref={searchRef}
+          className="input-field flex-1 py-1 text-base"
+          placeholder="Filter files…"
+          value={search}
+          onChange={e => setSearch(e.target.value)}
+          onKeyDown={e => { if (e.key === 'Escape') setSearch('') }}
+        />
+        {search && (
+          <button className="text-text-muted hover:text-text-primary" onClick={() => setSearch('')}>
+            <X size={13} />
+          </button>
+        )}
+      </div>
+
       {uploading && (
         <div className="px-3 py-2 bg-info/5 border-b border-info/20">
           <div className="flex justify-between text-base text-info mb-1">
@@ -629,7 +649,7 @@ export function FileManager({ isTablet }: { isTablet?: boolean }) {
           </button>
         )}
 
-        {result?.files?.slice().sort((a, b) => {
+        {result?.files?.slice().filter(e => !search || e.name.toLowerCase().includes(search.toLowerCase())).sort((a, b) => {
           if (a.isDir !== b.isDir) return a.isDir ? -1 : 1
           return a.name.localeCompare(b.name)
         }).map(entry => (
@@ -646,9 +666,9 @@ export function FileManager({ isTablet }: { isTablet?: boolean }) {
           </div>
         ))}
 
-        {result && !result.files?.length && (
+        {result && !result.files?.filter(e => !search || e.name.toLowerCase().includes(search.toLowerCase())).length && (
           <div className="flex items-center justify-center h-24 text-text-muted text-xl">
-            Empty directory
+            {search ? 'No matches' : 'Empty directory'}
           </div>
         )}
       </div>
