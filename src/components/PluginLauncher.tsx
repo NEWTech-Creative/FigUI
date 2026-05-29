@@ -82,6 +82,9 @@ export function PluginLauncher({ isTablet, onLaunchPanel, activeLayout }: { isTa
 
   // Upload folder state
   const folderInputRef = useRef<HTMLInputElement>(null)
+  useEffect(() => {
+    folderInputRef.current?.setAttribute('webkitdirectory', '')
+  }, [])
   const [progress, setProgress] = useState<ProgressState | null>(null)
   const [uploadDone, setUploadDone] = useState(false)
 
@@ -503,8 +506,6 @@ export function PluginLauncher({ isTablet, onLaunchPanel, activeLayout }: { isTa
       <input
         ref={folderInputRef}
         type="file"
-        // @ts-ignore
-        webkitdirectory=""
         multiple
         className="hidden"
         onChange={handleFolderSelect}
