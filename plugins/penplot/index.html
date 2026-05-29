@@ -538,13 +538,14 @@ function svgPathToPolylines(d, fullMat, tol) {
   const moveTo = (lx, ly) => {
     if (cur && cur.length >= 4) polylines.push(cur)
     cur = null; pushL(lx, ly); x = mx = lx; y = my = ly
+    lcx = lx; lcy = ly; lqx = lx; lqy = ly
   }
 
-  const lineTo = (lx, ly) => { pushL(lx, ly); x = lx; y = ly }
+  const lineTo = (lx, ly) => { pushL(lx, ly); x = lx; y = ly; lcx = lx; lcy = ly; lqx = lx; lqy = ly }
 
   const closePath = () => {
     if (cur) { pushL(mx, my); polylines.push(cur); cur = null }
-    x = mx; y = my
+    x = mx; y = my; lcx = mx; lcy = my; lqx = mx; lqy = my
   }
 
   const cubicTo = (cx1, cy1, cx2, cy2, ex, ey) => {
@@ -631,35 +632,89 @@ function parseSVGPolylines(svgText, p, ox, oy) {
 
   let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity
   const svgTol = p.tolerance * vbW / p.W
-
   const all = []
   const SKIP = new Set(['defs','style','script','title','desc','metadata','marker','symbol','pattern','clippath','mask'])
 
-  function processEl(el, ctm) {
+  const cssRules = {}
+  for (const styleEl of doc.querySelectorAll('style')) {
+    const text = styleEl.textContent || ''
+    const re = /([^{}]+)\{([^}]*)\}/g
+    let m
+    while ((m = re.exec(text)) !== null) {
+      const props = {}
+      for (const decl of m[2].split(';')) {
+        const ci = decl.indexOf(':')
+        if (ci < 0) continue
+        const k = decl.slice(0, ci).trim().toLowerCase()
+        const v = decl.slice(ci + 1).trim()
+        if (k && v) props[k] = v
+      }
+      if (!Object.keys(props).length) continue
+      for (let sel of m[1].split(',')) {
+        sel = sel.trim()
+        if (!sel || /[\s>+~\[:]/.test(sel)) continue
+        if (!cssRules[sel]) cssRules[sel] = {}
+        Object.assign(cssRules[sel], props)
+      }
+    }
+  }
+
+  function elStyle(el, prop) {
+    const style = el.getAttribute('style') || ''
+    if (style) {
+      const re = new RegExp(`(?:^|;)\\s*${prop}\\s*:\\s*([^;]+)`, 'i')
+      const m = style.match(re)
+      if (m) return m[1].trim()
+    }
+    const classes = (el.getAttribute('class') || '').trim().split(/\s+/).filter(Boolean)
+    for (const cls of classes) {
+      const r = cssRules['.' + cls]
+      if (r && prop in r) return r[prop]
+    }
+    const id = el.getAttribute('id')
+    if (id && cssRules['#' + id] && prop in cssRules['#' + id]) return cssRules['#' + id][prop]
+    const tag = (el.tagName || '').replace(/^.*:/, '').toLowerCase()
+    if (tag && cssRules[tag] && prop in cssRules[tag]) return cssRules[tag][prop]
+    const attr = el.getAttribute(prop)
+    if (attr != null) return attr.trim()
+    return null
+  }
+
+  function processEl(el, ctm, iStroke, iFill, iOpacity) {
     const raw = el.tagName || ''
     const tag = raw.replace(/^.*:/, '').toLowerCase()
     if (!tag || SKIP.has(tag)) return
 
-    const styleAttr = el.getAttribute('style') || ''
-    const displayAttr = el.getAttribute('display') || ''
-    if (displayAttr === 'none' || /display\s*:\s*none/.test(styleAttr)) return
-    if (/visibility\s*:\s*(hidden|collapse)/.test(styleAttr) || el.getAttribute('visibility') === 'hidden') return
+    const display = elStyle(el, 'display')
+    if (display === 'none') return
+    const visibility = elStyle(el, 'visibility')
+    if (visibility === 'hidden' || visibility === 'collapse') return
 
-    const _strokeAttr = (el.getAttribute('stroke') || '').trim()
-    const _fillAttr   = (el.getAttribute('fill')   || '').trim()
-    const _styleStroke = ((styleAttr.match(/(?:^|;)\s*stroke\s*:\s*([^;]+)/) || [])[1] || '').trim()
-    const _styleFill   = ((styleAttr.match(/(?:^|;)\s*fill\s*:\s*([^;]+)/)   || [])[1] || '').trim()
-    const _stroke = _styleStroke || _strokeAttr
-    const _fill   = _styleFill   || _fillAttr
-    if (_stroke === 'none' && _fill !== 'none' && _fill !== '') return
+    const opacityRaw = elStyle(el, 'opacity')
+    const opacity = opacityRaw != null ? parseFloat(opacityRaw) : iOpacity
+    if (isNaN(opacity) || opacity < 0.05) return
+
+    const strokeRaw = elStyle(el, 'stroke')
+    const fillRaw   = elStyle(el, 'fill')
+    const stroke = strokeRaw !== null ? strokeRaw : iStroke
+    const fill   = fillRaw   !== null ? fillRaw   : iFill
 
     const local = parseTransformStr(el.getAttribute('transform'))
     const ctm2 = mulMat(ctm, local)
 
     if (['g', 'svg', 'a', 'switch', 'foreignobject'].includes(tag)) {
-      for (const child of el.children) processEl(child, ctm2)
+      for (const child of el.children) processEl(child, ctm2, stroke, fill, opacity)
       return
     }
+
+    if (stroke === 'none') return
+
+    const swRaw = elStyle(el, 'stroke-width')
+    const strokeWidth = swRaw != null ? parseFloat(swRaw) : 1
+    if (!isNaN(strokeWidth) && strokeWidth <= 0) return
+    const soRaw = elStyle(el, 'stroke-opacity')
+    const strokeOpacity = soRaw != null ? parseFloat(soRaw) : 1
+    if (!isNaN(strokeOpacity) && strokeOpacity < 0.05) return
 
     let pathStr = ''
 
@@ -732,7 +787,7 @@ function parseSVGPolylines(svgText, p, ox, oy) {
     }
   }
 
-  processEl(root, [1, 0, 0, 1, 0, 0])
+  processEl(root, [1, 0, 0, 1, 0, 0], null, 'black', 1)
   if (all.length === 0) return []
 
   const cW = maxX - minX || 1
@@ -881,11 +936,8 @@ function drawPreview() {
 
   previewTransform = { minX, minY, maxX, maxY, scale, oX, oY, dw, dh, ww, wh }
 
-  ctx.strokeStyle = borderColor.startsWith('rgb') ? borderColor.replace('rgb', 'rgba').replace(')', ',0.4)') : 'rgba(74,85,120,0.4)'
-  ctx.lineWidth = 0.5
   let cx = tx(0), cy = ty(0)
   for (const pl of lastPolylines) {
-    ctx.beginPath(); ctx.moveTo(cx, cy); ctx.lineTo(tx(pl[0]), ty(pl[1])); ctx.stroke()
     cx = tx(pl[pl.length-2]); cy = ty(pl[pl.length-1])
   }
 
