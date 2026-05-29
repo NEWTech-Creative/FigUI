@@ -81,7 +81,8 @@ export async function uploadFolderPlugin(
 
   for (let i = 0; i < rootFiles.length; i++) {
     const file = rootFiles[i]
-    const filename = file.webkitRelativePath.split('/')[1]
+    const parts = file.webkitRelativePath.split('/')
+    const filename = parts.length > 1 ? parts[1] : file.name
     onProgress(i + 1, rootFiles.length, filename)
     await uploadFile(targetDir, new File([file], filename, { type: file.type }), fs)
   }
