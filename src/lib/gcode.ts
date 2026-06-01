@@ -35,6 +35,7 @@ export function parseGCode(text: string): GCodeModel {
   let arcMode: 0 | 2 | 3 = 0   // 0 = linear, 2 = CW arc, 3 = CCW arc
   let plane = 17               // G17=XY, G18=ZX, G19=YZ
   let incremental = false
+  let inchMode = false         // G20=inches, G21=mm
   let spindleOn = false        // Track spindle state
   let spindleEverOn = false    // Whether spindle was ever activated (false = no spindle machine e.g. pen plotter)
   let feedMmPerMin = 0
@@ -88,11 +89,20 @@ export function parseGCode(text: string): GCodeModel {
     for (const g of gCodes) {
       if (g === 90) { incremental = false; continue }
       if (g === 91) { incremental = true; continue }
+      if (g === 20) { inchMode = true; continue }
+      if (g === 21) { inchMode = false; continue }
       if (g === 17 || g === 18 || g === 19) { plane = g; continue }
       if (g === 0) { rapid = true; arcMode = 0 }
       else if (g === 1) { rapid = false; arcMode = 0 }
       else if (g === 2) { rapid = false; arcMode = 2 }
       else if (g === 3) { rapid = false; arcMode = 3 }
+    }
+
+    if (inchMode) {
+      for (const key of ['X', 'Y', 'Z', 'I', 'J', 'K', 'R'] as const) {
+        if (key in words) words[key] *= 25.4
+      }
+      if (Number.isFinite(words.F)) words.F *= 25.4
     }
 
     if (Number.isFinite(words.F) && words.F > 0) {
@@ -173,10 +183,32 @@ export function parseGCode(text: string): GCodeModel {
         // Skip arcs with zero radius (degenerate)
         const r = Math.sqrt(i * i + j * j + k * k)
         if (r > 1e-6) {
-          // Expand bounds for arc extent (approximate with center + radius)
-          const cx = x0 + i, cy = y0 + j, cz = z0 + k
-          expandBounds(cx - r, cy - r, cz - r)
-          expandBounds(cx + r, cy + r, cz + r)
+          // Expand bounds to include only the cardinal extremes (0deg/90deg/180deg/270deg)
+          // that actually fall within the arc's angular sweep.
+          const cx = x0 + i, cy = y0 + j
+          const isFullCircle = Math.abs(x0 - x) < 1e-4 && Math.abs(y0 - y) < 1e-4
+          if (isFullCircle) {
+            expandBounds(cx + r, cy, z0)
+            expandBounds(cx - r, cy, z0)
+            expandBounds(cx, cy + r, z0)
+            expandBounds(cx, cy - r, z0)
+          } else {
+            const sa = Math.atan2(y0 - cy, x0 - cx)
+            const ea = Math.atan2(y - cy, x - cx)
+            const TAU = Math.PI * 2
+            const sweep = cw
+              ? ((sa - ea) % TAU + TAU) % TAU
+              : ((ea - sa) % TAU + TAU) % TAU
+            for (let n = 0; n < 4; n++) {
+              const angle = n * Math.PI / 2
+              const delta = cw
+                ? ((sa - angle) % TAU + TAU) % TAU
+                : ((angle - sa) % TAU + TAU) % TAU
+              if (delta <= sweep + 1e-9) {
+                expandBounds(cx + Math.cos(angle) * r, cy + Math.sin(angle) * r, z0)
+              }
+            }
+          }
           segments.push({ x0, y0, z0, x1: x, y1: y, z1: z, moveType, i, j, k, cw, ...feedData })
         } else {
           // Treat degenerate arc as a line
