@@ -848,9 +848,55 @@ function drawToolPosition(
 interface Props {
   className?: string
   isTablet?: boolean
+  showOverrides?: boolean
 }
 
-export function GCodeViewer({ className, isTablet }: Props) {
+function ViewerOverrideControl({
+  label,
+  value,
+  onMinus,
+  onReset,
+  onPlus,
+}: {
+  label: string
+  value: number
+  onMinus: () => void
+  onReset: () => void
+  onPlus: () => void
+}) {
+  const colorClass = value > 100 ? 'text-ok' : value < 100 ? 'text-warn' : 'text-accent'
+
+  return (
+    <div className="flex-1 min-w-0 flex flex-col gap-1 rounded border border-border bg-elevated/50 p-1.5">
+      <span className="text-xs font-semibold uppercase tracking-wide text-text-muted text-center">{label}</span>
+      <div className="flex items-center gap-1">
+        <button
+          className="h-9 w-9 shrink-0 rounded border border-border bg-surface text-lg text-text-primary active:bg-elevated"
+          onClick={onMinus}
+          aria-label={`Decrease ${label.toLowerCase()} override`}
+        >
+          −
+        </button>
+        <button
+          className={`h-9 flex-1 min-w-0 rounded border border-border bg-surface font-mono text-base font-semibold ${colorClass}`}
+          onClick={onReset}
+          title={`Reset ${label.toLowerCase()} override to 100%`}
+        >
+          {value}%
+        </button>
+        <button
+          className="h-9 w-9 shrink-0 rounded border border-border bg-surface text-lg text-text-primary active:bg-elevated"
+          onClick={onPlus}
+          aria-label={`Increase ${label.toLowerCase()} override`}
+        >
+          +
+        </button>
+      </div>
+    </div>
+  )
+}
+
+export function GCodeViewer({ className, isTablet, showOverrides }: Props) {
   const canvasRef = useRef<HTMLCanvasElement>(null)
   const webglCanvasRef = useRef<HTMLCanvasElement>(null)
   const containerRef = useRef<HTMLDivElement>(null)
@@ -2261,6 +2307,25 @@ export function GCodeViewer({ className, isTablet }: Props) {
                 <span>Total {formatRuntime(runtime.totalSeconds)}</span>
               </div>
             )}
+          </div>
+        )}
+
+        {showOverrides && (
+          <div className="flex gap-2">
+            <ViewerOverrideControl
+              label="Feed"
+              value={status.feedOverride}
+              onMinus={() => sendRealtime(0x92)}
+              onReset={() => sendRealtime(0x90)}
+              onPlus={() => sendRealtime(0x91)}
+            />
+            <ViewerOverrideControl
+              label="Speed"
+              value={status.spindleOverride}
+              onMinus={() => sendRealtime(0x9B)}
+              onReset={() => sendRealtime(0x99)}
+              onPlus={() => sendRealtime(0x9A)}
+            />
           </div>
         )}
 
