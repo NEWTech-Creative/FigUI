@@ -15,25 +15,24 @@ function highlightGcode(editor: HTMLElement) {
   editor.innerHTML = code
     .split('\n')
     .map(line => {
-      const safe = escapeHtml(line)
       let result = ''
       let last = 0
       const re = new RegExp(TOKEN.source, 'gi')
       let m: RegExpExecArray | null
-      while ((m = re.exec(safe)) !== null) {
-        result += safe.slice(last, m.index)
-        if      (m[1])  result += `<span class="hl-comment">${m[1]}</span>`
-        else if (m[2])  result += `<span class="hl-comment">${m[2]}</span>`
-        else if (m[3])  result += `<span class="hl-line-num">${m[3]}</span>`
-        else if (m[4])  result += `<span class="hl-gcode">${m[4]}</span>`
-        else if (m[5])  result += `<span class="hl-mcode">${m[5]}</span>`
-        else if (m[6])  result += `<span class="hl-coord">${m[6]}</span><span class="hl-number">${m[7]}</span>`
-        else if (m[8])  result += `<span class="hl-feed">${m[8]}</span><span class="hl-number">${m[9]}</span>`
-        else if (m[10]) result += `<span class="hl-gcode">${m[10]}</span>`
-        else            result += m[0]
+      while ((m = re.exec(line)) !== null) {
+        result += escapeHtml(line.slice(last, m.index))
+        if      (m[1])  result += `<span class="hl-comment">${escapeHtml(m[1])}</span>`
+        else if (m[2])  result += `<span class="hl-comment">${escapeHtml(m[2])}</span>`
+        else if (m[3])  result += `<span class="hl-line-num">${escapeHtml(m[3])}</span>`
+        else if (m[4])  result += `<span class="hl-gcode">${escapeHtml(m[4])}</span>`
+        else if (m[5])  result += `<span class="hl-mcode">${escapeHtml(m[5])}</span>`
+        else if (m[6])  result += `<span class="hl-coord">${escapeHtml(m[6])}</span><span class="hl-number">${escapeHtml(m[7])}</span>`
+        else if (m[8])  result += `<span class="hl-feed">${escapeHtml(m[8])}</span><span class="hl-number">${escapeHtml(m[9])}</span>`
+        else if (m[10]) result += `<span class="hl-gcode">${escapeHtml(m[10])}</span>`
+        else            result += escapeHtml(m[0])
         last = m.index + m[0].length
       }
-      result += safe.slice(last)
+      result += escapeHtml(line.slice(last))
       return result
     })
     .join('\n')
