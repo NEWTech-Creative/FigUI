@@ -2,6 +2,7 @@ import { useState, useEffect, useMemo } from 'react'
 import {
   RefreshCw, Search, Wifi, Globe, Settings, Sliders,
   Hash, RotateCcw, X, Cpu, Info, Monitor, Upload, Check,
+  Radio, Trash2, Square,
 } from 'lucide-react'
 import type { LucideIcon } from 'lucide-react'
 import { sendCommand, fetchFileContent, saveFileContent, uploadFirmware, getDeviceInfoFast } from '../lib/http'
@@ -35,6 +36,7 @@ const CAT_DEFS: Record<string, { label: string; icon: LucideIcon; order: number 
   system:    { label: 'System',          icon: Settings,     order: 2 },
   machine:   { label: 'Machine',         icon: Sliders,      order: 3 },
   config:    { label: 'Machine Config',  icon: Cpu,          order: 4 },
+  espnow:    { label: 'ESP-NOW',          icon: Radio,       order: 5 },
   other:     { label: 'Other',           icon: Hash,         order: 99 },
   firmware:  { label: 'Firmware Update', icon: Upload,  order: 100 },
 }
@@ -870,6 +872,263 @@ interface SettingsPanelProps {
   onClose?: () => void
 }
 
+interface ESPNowPendant {
+  index: number
+  mac: string
+}
+
+function parseESPNowPendants(raw: string): ESPNowPendant[] {
+  const pendants: ESPNowPendant[] = []
+  for (const line of raw.split(/\r?\n/)) {
+    const match = line.match(/\b(\d+):\s*([0-9a-f]{2}(?::[0-9a-f]{2}){5})\b/i)
+    if (match) {
+      pendants.push({ index: Number(match[1]), mac: match[2].toLowerCase() })
+    }
+  }
+  return pendants
+}
+
+function ESPNowPendantsTab() {
+  const [pendants, setPendants] = useState<ESPNowPendant[]>([])
+  const [loading, setLoading] = useState(true)
+  const [busy, setBusy] = useState('')
+  const [error, setError] = useState('')
+  const [pairingUntil, setPairingUntil] = useState(0)
+  const [secondsLeft, setSecondsLeft] = useState(0)
+  const [pairingBaseline, setPairingBaseline] = useState<string[]>([])
+  const [pairingFeedback, setPairingFeedback] = useState('')
+
+  async function refresh() {
+    setLoading(true)
+    setError('')
+    try {
+      setPendants(parseESPNowPendants(await sendCommand('$ESPNow/List')))
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Failed to list ESP-NOW pendants')
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  useEffect(() => { refresh() }, [])
+
+  useEffect(() => {
+    if (!pairingUntil) {
+      setSecondsLeft(0)
+      return
+    }
+    const update = () => {
+      const remaining = Math.max(0, Math.ceil((pairingUntil - Date.now()) / 1000))
+      setSecondsLeft(remaining)
+      if (remaining === 0) {
+        setPairingUntil(0)
+        setPairingFeedback('Pairing window expired')
+      }
+    }
+    update()
+    const timer = window.setInterval(update, 250)
+    return () => window.clearInterval(timer)
+  }, [pairingUntil])
+
+  useEffect(() => {
+    if (!pairingUntil) return
+
+    let stopped = false
+    const baseline = new Set(pairingBaseline)
+    const poll = async () => {
+      try {
+        const current = parseESPNowPendants(await sendCommand('$ESPNow/List'))
+        if (stopped) return
+        setPendants(current)
+        const added = current.find(pendant => !baseline.has(pendant.mac))
+        if (added) {
+          setPairingUntil(0)
+          setPairingFeedback(`Paired successfully: ${added.mac}`)
+        }
+      } catch {
+        // A transient request failure should not cancel the controller's window.
+      }
+    }
+
+    const timer = window.setInterval(poll, 1000)
+    poll()
+    return () => {
+      stopped = true
+      window.clearInterval(timer)
+    }
+  }, [pairingUntil, pairingBaseline])
+
+  async function run(action: string, command: string, after?: () => void) {
+    setBusy(action)
+    setError('')
+    try {
+      await sendCommand(command)
+      after?.()
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'ESP-NOW command failed')
+    } finally {
+      setBusy('')
+    }
+  }
+
+  async function startPairing() {
+    setBusy('pair')
+    setError('')
+    setPairingFeedback('')
+    try {
+      const current = parseESPNowPendants(await sendCommand('$ESPNow/List'))
+      setPendants(current)
+      setPairingBaseline(current.map(pendant => pendant.mac))
+      await sendCommand('$ESPNow/Pair')
+      setPairingUntil(Date.now() + 60_000)
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Failed to start ESP-NOW pairing')
+    } finally {
+      setBusy('')
+    }
+  }
+
+  function cancelPairing() {
+    run('cancel', '$ESPNow/Cancel', () => {
+      setPairingUntil(0)
+      setPairingFeedback('Pairing cancelled')
+    })
+  }
+
+  function removePendant(pendant: ESPNowPendant) {
+    if (!confirm(`Unpair ESP-NOW pendant ${pendant.mac}?`)) return
+    run(`remove-${pendant.index}`, `$ESPNow/Unpair=${pendant.index}`, refresh)
+  }
+
+  function clearPendants() {
+    if (!confirm('Unpair all ESP-NOW pendants?')) return
+    run('clear', '$ESPNow/Unpair=0', refresh)
+  }
+
+  const disabled = busy !== ''
+
+  return (
+    <div>
+      <div className="flex flex-wrap items-center gap-2 px-5 py-3.5 border-b border-border">
+        {secondsLeft > 0 ? (
+          <>
+            <div className="flex items-center gap-2 mr-auto text-sm text-text-primary">
+              <span className="w-2 h-2 rounded-full bg-ok animate-pulse" />
+              Pairing active
+              <span className="font-mono text-text-muted">{secondsLeft}s</span>
+            </div>
+            <button
+              onClick={cancelPairing}
+              disabled={disabled}
+              className="flex items-center gap-1.5 px-3 py-2 rounded text-sm font-medium
+                         border border-border text-text-muted hover:text-text-primary
+                         hover:bg-elevated transition-colors disabled:opacity-40"
+            >
+              <Square size={13} />
+              Cancel Pairing
+            </button>
+          </>
+        ) : (
+          <>
+            <div className="mr-auto text-sm text-text-muted">
+              Open a 60-second pairing window for nearby ESP-NOW pendants & peripherals.
+            </div>
+            <button
+              onClick={startPairing}
+              disabled={disabled}
+              className="flex items-center gap-1.5 px-3 py-2 rounded text-sm font-medium
+                         bg-accent text-white hover:bg-accent/90
+                         transition-colors disabled:opacity-40"
+            >
+              <Radio size={14} />
+              Pair Pendant
+            </button>
+          </>
+        )}
+      </div>
+
+      {pairingFeedback && (
+        <div className={`mx-4 mt-4 p-3 rounded border text-sm ${
+          pairingFeedback.startsWith('Paired successfully')
+            ? 'bg-ok/10 border-ok/30 text-ok'
+            : 'bg-elevated border-border text-text-muted'
+        }`}>
+          {pairingFeedback}
+        </div>
+      )}
+
+      {error && (
+        <div className="m-4 p-3 rounded bg-danger/10 border border-danger/30 text-danger text-sm">
+          {error}
+        </div>
+      )}
+
+      <div className="flex items-center justify-between px-5 py-3 border-b border-border">
+        <div>
+          <div className="text-sm font-medium text-text-primary">Paired pendants</div>
+          <div className="text-xs text-text-dim">
+            {loading ? 'Loading...' : `${pendants.length} paired`}
+          </div>
+        </div>
+        <div className="flex items-center gap-1">
+          <button
+            onClick={refresh}
+            disabled={loading || disabled}
+            className="p-2 rounded text-text-muted hover:text-text-primary hover:bg-elevated
+                       transition-colors disabled:opacity-40"
+            title="Refresh paired pendants"
+          >
+            <RefreshCw size={14} className={loading ? 'animate-spin' : ''} />
+          </button>
+          {pendants.length > 0 && (
+            <button
+              onClick={clearPendants}
+              disabled={disabled}
+              className="flex items-center gap-1.5 px-2.5 py-1.5 rounded text-sm
+                         text-text-muted hover:text-danger hover:bg-danger/10
+                         transition-colors disabled:opacity-40"
+            >
+              <Trash2 size={13} />
+              Unpair All
+            </button>
+          )}
+        </div>
+      </div>
+
+      {!loading && pendants.length === 0 && !error && (
+        <div className="flex flex-col items-center justify-center h-32 gap-2 text-text-dim text-sm">
+          <Radio size={22} />
+          No ESP-NOW pendants paired
+        </div>
+      )}
+
+      {pendants.map(pendant => (
+        <div
+          key={pendant.mac}
+          className="flex items-center gap-3 px-5 py-3.5 border-b border-border"
+        >
+          <Radio size={16} className="text-accent shrink-0" />
+          <div className="min-w-0 flex-1">
+            <div className="text-sm font-medium text-text-primary">
+              Pendant {pendant.index}
+            </div>
+            <div className="font-mono text-xs text-text-muted">{pendant.mac}</div>
+          </div>
+          <button
+            onClick={() => removePendant(pendant)}
+            disabled={disabled}
+            className="p-2 rounded text-text-muted hover:text-danger hover:bg-danger/10
+                       transition-colors disabled:opacity-40"
+            title={`Unpair ${pendant.mac}`}
+          >
+            <Trash2 size={14} />
+          </button>
+        </div>
+      ))}
+    </div>
+  )
+}
+
 export function SettingsPanel({ onClose }: SettingsPanelProps) {
   const espInfo = useMachineStore(s => s.espInfo)
   const units = useMachineStore(s => s.units)
@@ -1192,6 +1451,7 @@ export function SettingsPanel({ onClose }: SettingsPanelProps) {
           <div className="flex-1 overflow-y-auto min-h-0">
 
             {!isSearching && category === 'firmware' && <FirmwareTab />}
+            {!isSearching && category === 'espnow' && <ESPNowPendantsTab />}
 
             {!isSearching && category === 'workspace' && (
               <div className="divide-y divide-border">
@@ -1254,20 +1514,20 @@ export function SettingsPanel({ onClose }: SettingsPanelProps) {
               </div>
             )}
 
-            {(isSearching || (category !== 'workspace' && category !== 'firmware')) && error && (
+            {(isSearching || (category !== 'workspace' && category !== 'firmware' && category !== 'espnow')) && error && (
               <div className="m-4 p-3 rounded bg-danger/10 border border-danger/30 text-danger text-sm leading-relaxed whitespace-pre-wrap font-mono">
                 {error}
               </div>
             )}
 
-            {(isSearching || (category !== 'workspace' && category !== 'firmware')) && loading && !error && (
+            {(isSearching || (category !== 'workspace' && category !== 'firmware' && category !== 'espnow')) && loading && !error && (
               <div className="flex items-center justify-center h-32 gap-2 text-text-muted text-sm">
                 <RefreshCw size={14} className="animate-spin" />
                 Loading settings…
               </div>
             )}
 
-            {(isSearching || (category !== 'workspace' && category !== 'firmware')) && !loading && !error && visibleSettings.length === 0 && (
+            {(isSearching || (category !== 'workspace' && category !== 'firmware' && category !== 'espnow')) && !loading && !error && visibleSettings.length === 0 && (
               <div className="flex flex-col items-center justify-center h-32 gap-2 text-text-dim text-sm">
                 {isSearching
                   ? <>No settings match <span className="font-mono">"{filter}"</span></>
@@ -1276,7 +1536,7 @@ export function SettingsPanel({ onClose }: SettingsPanelProps) {
               </div>
             )}
 
-            {(isSearching || (category !== 'workspace' && category !== 'firmware')) && groupedItems.map((item, i) =>
+            {(isSearching || (category !== 'workspace' && category !== 'firmware' && category !== 'espnow')) && groupedItems.map((item, i) =>
               item.type === 'header'
                 ? <SectionHeader key={`h-${i}`} label={item.label} level={item.level} />
                 : <SettingRow
@@ -1303,6 +1563,7 @@ function buildCategories(settings: Setting[]) {
   return [
     { id: 'workspace', ...CAT_DEFS.workspace },
     ...deviceCats,
+    { id: 'espnow', ...CAT_DEFS.espnow },
     { id: 'firmware', ...CAT_DEFS.firmware },
   ]
 }
