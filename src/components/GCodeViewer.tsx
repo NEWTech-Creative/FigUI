@@ -1,5 +1,5 @@
 import { useRef, useEffect, useLayoutEffect, useState, useCallback } from 'react'
-import { Eye, Axis3D, Maximize2, Crosshair, Navigation, Play, Pause, Square, CloudDrizzle, Waves, PowerOff, Box, Zap } from 'lucide-react'
+import { Eye, Axis3D, Maximize2, Crosshair, Navigation, Play, Pause, Square, CloudDrizzle, Waves, PowerOff, Box, Zap, Orbit, Hand } from 'lucide-react'
 import { type GCodeModel, type Segment } from '../lib/gcode'
 import { useMachineStore } from '../store'
 import { useGCodeStore } from '../store/gcode'
@@ -44,6 +44,7 @@ interface OrbitState {
 }
 
 type ProjectionMode = 'perspective' | 'orthographic'
+type DragMode = 'orbit' | 'pan'
 
 interface ScreenAnchor {
   ndcX: number
@@ -877,7 +878,7 @@ export function GCodeViewer({ className, isTablet }: Props) {
   const showToolRef = useRef(true)
   const transformRef = useRef<Transform>({ ox: 0, oy: 0, scale: 1 })
   const dragRef = useRef<{ sx: number; sy: number; ox: number; oy: number } | null>(null)
-  const activePointersRef = useRef<Map<number, { x: number; y: number }>>(new Map())
+  const activePointersRef = useRef<Map<number, { x: number; y: number; dragMode: DragMode }>>(new Map())
   const lastPinchDistRef = useRef<number | null>(null)
   const animRef = useRef(0)
   const renderRef = useRef<() => void>(() => {})
@@ -888,6 +889,7 @@ export function GCodeViewer({ className, isTablet }: Props) {
 
   const [is3D, setIs3D] = useState(false)
   const [projectionMode, setProjectionMode] = useState<ProjectionMode>('orthographic')
+  const [dragMode, setDragMode] = useState<DragMode>('orbit')
   const rendererRef = useRef<WebGLRenderer | null>(null)
   const cameraRef = useRef<Camera>({
     position: { x: 100, y: 100, z: 100 },
@@ -908,6 +910,14 @@ export function GCodeViewer({ className, isTablet }: Props) {
     target: { x: 0, y: 0, z: 0 },
   })
   const orbitDragRef = useRef<{ sx: number; sy: number; theta: number; phi: number } | null>(null)
+  const panDragRef = useRef<{
+    sx: number
+    sy: number
+    target: Vector3
+    right: Vector3
+    screenUp: Vector3
+    worldUnitsPerPixel: number
+  } | null>(null)
   const snapAnimRef = useRef<{ frameId: number } | null>(null)
 
   function cancelSnapAnimation() {
@@ -1118,6 +1128,38 @@ export function GCodeViewer({ className, isTablet }: Props) {
         z: target.z + oldOffset.z - newOffset.z,
       },
     }
+  }
+
+  function start3DDrag(clientX: number, clientY: number, mode: DragMode) {
+    cancelSnapAnimation()
+
+    if (mode === 'pan') {
+      const containerHeight = Math.max(containerRef.current?.clientHeight ?? 0, 1)
+      const camera = cameraRef.current
+      const { right, screenUp } = getOrbitCameraBasis(orbitState, camera.up)
+      const halfHeight = projectionMode === 'orthographic'
+        ? orbitState.orthoSize
+        : Math.tan(camera.fov / 2) * orbitState.radius
+
+      panDragRef.current = {
+        sx: clientX,
+        sy: clientY,
+        target: { ...orbitState.target },
+        right,
+        screenUp,
+        worldUnitsPerPixel: (halfHeight * 2) / containerHeight,
+      }
+      orbitDragRef.current = null
+      return
+    }
+
+    orbitDragRef.current = {
+      sx: clientX,
+      sy: clientY,
+      theta: orbitState.theta,
+      phi: orbitState.phi,
+    }
+    panDragRef.current = null
   }
 
   function createVertexData(
@@ -1757,17 +1799,12 @@ export function GCodeViewer({ className, isTablet }: Props) {
 
   function onPointerDown(e: React.PointerEvent) {
     ;(e.target as HTMLElement).setPointerCapture(e.pointerId)
-    activePointersRef.current.set(e.pointerId, { x: e.clientX, y: e.clientY })
+    const pointerDragMode = is3D && e.button === 2 ? 'pan' : dragMode
+    activePointersRef.current.set(e.pointerId, { x: e.clientX, y: e.clientY, dragMode: pointerDragMode })
 
     if (activePointersRef.current.size === 1) {
       if (is3D) {
-        cancelSnapAnimation()
-        orbitDragRef.current = {
-          sx: e.clientX,
-          sy: e.clientY,
-          theta: orbitState.theta,
-          phi: orbitState.phi
-        }
+        start3DDrag(e.clientX, e.clientY, pointerDragMode)
       } else {
         const t = transformRef.current
         dragRef.current = { sx: e.clientX, sy: e.clientY, ox: t.ox, oy: t.oy }
@@ -1775,12 +1812,15 @@ export function GCodeViewer({ className, isTablet }: Props) {
     } else {
       dragRef.current = null
       orbitDragRef.current = null
+      panDragRef.current = null
       lastPinchDistRef.current = null
     }
   }
 
   function onPointerMove(e: React.PointerEvent) {
-    activePointersRef.current.set(e.pointerId, { x: e.clientX, y: e.clientY })
+    const activePointer = activePointersRef.current.get(e.pointerId)
+    if (!activePointer) return
+    activePointersRef.current.set(e.pointerId, { ...activePointer, x: e.clientX, y: e.clientY })
     const pointers = Array.from(activePointersRef.current.values())
 
     if (pointers.length === 2) {
@@ -1819,6 +1859,19 @@ export function GCodeViewer({ className, isTablet }: Props) {
           phi: newPhi
         }))
         scheduleRender()
+      } else if (is3D && panDragRef.current) {
+        const d = panDragRef.current
+        const dx = (e.clientX - d.sx) * d.worldUnitsPerPixel
+        const dy = (e.clientY - d.sy) * d.worldUnitsPerPixel
+
+        setOrbitState(prev => ({
+          ...prev,
+          target: addVectors(
+            d.target,
+            addVectors(scaleVector(d.right, -dx), scaleVector(d.screenUp, dy)),
+          ),
+        }))
+        scheduleRender()
       } else if (!is3D && dragRef.current) {
         const d = dragRef.current
         const t = transformRef.current
@@ -1836,13 +1889,7 @@ export function GCodeViewer({ className, isTablet }: Props) {
     if (activePointersRef.current.size === 1) {
       const [remaining] = Array.from(activePointersRef.current.values())
       if (is3D) {
-        cancelSnapAnimation()
-        orbitDragRef.current = {
-          sx: remaining.x,
-          sy: remaining.y,
-          theta: orbitState.theta,
-          phi: orbitState.phi
-        }
+        start3DDrag(remaining.x, remaining.y, remaining.dragMode)
       } else {
         const t = transformRef.current
         dragRef.current = { sx: remaining.x, sy: remaining.y, ox: t.ox, oy: t.oy }
@@ -1850,6 +1897,7 @@ export function GCodeViewer({ className, isTablet }: Props) {
     } else if (activePointersRef.current.size === 0) {
       dragRef.current = null
       orbitDragRef.current = null
+      panDragRef.current = null
     }
   }
 
@@ -1927,14 +1975,26 @@ export function GCodeViewer({ className, isTablet }: Props) {
             <span>3D</span>
           </button>
           {is3D && (
-            <button
-              className={`${btnCls} ${projectionMode === 'orthographic' ? 'text-info bg-info/10' : 'text-text-dim bg-elevated hover:text-text-primary'}`}
-              onClick={() => setProjectionMode(mode => mode === 'perspective' ? 'orthographic' : 'perspective')}
-              title={projectionMode === 'orthographic' ? 'Switch to perspective projection' : 'Switch to orthographic projection'}
-            >
-              <Axis3D size={iconSize} />
-              <span>{projectionMode === 'orthographic' ? 'Ortho' : 'Persp'}</span>
-            </button>
+            <>
+              <button
+                className={`${btnCls} ${projectionMode === 'orthographic' ? 'text-info bg-info/10' : 'text-text-dim bg-elevated hover:text-text-primary'}`}
+                onClick={() => setProjectionMode(mode => mode === 'perspective' ? 'orthographic' : 'perspective')}
+                title={projectionMode === 'orthographic' ? 'Switch to perspective projection' : 'Switch to orthographic projection'}
+              >
+                <Axis3D size={iconSize} />
+                <span>{projectionMode === 'orthographic' ? 'Ortho' : 'Persp'}</span>
+              </button>
+              <button
+                className={`${btnCls} ${dragMode === 'pan' ? 'text-info bg-info/10' : 'text-text-dim bg-elevated hover:text-text-primary'}`}
+                onClick={() => setDragMode(mode => mode === 'orbit' ? 'pan' : 'orbit')}
+                title={dragMode === 'orbit'
+                  ? 'Drag to orbit. Right-drag to pan.'
+                  : 'Drag to pan. Right-drag also pans.'}
+              >
+                {dragMode === 'orbit' ? <Orbit size={iconSize} /> : <Hand size={iconSize} />}
+                <span>{dragMode === 'orbit' ? 'Orbit' : 'Pan'}</span>
+              </button>
+            </>
           )}
           <button
             className={`${btnCls} ${showRapids ? 'text-accent bg-accent/10' : 'text-text-dim bg-elevated hover:text-text-primary'}`}
@@ -1981,6 +2041,7 @@ export function GCodeViewer({ className, isTablet }: Props) {
         style={{ touchAction: 'none' }}
         onDrop={onDrop}
         onDragOver={onDragOver}
+        onContextMenu={e => { if (is3D) e.preventDefault() }}
       >
         <canvas
           ref={canvasRef}
@@ -1988,6 +2049,7 @@ export function GCodeViewer({ className, isTablet }: Props) {
           onPointerDown={onPointerDown}
           onPointerMove={onPointerMove}
           onPointerUp={onPointerUp}
+          onPointerCancel={onPointerUp}
         />
         <canvas
           ref={webglCanvasRef}
@@ -1995,6 +2057,7 @@ export function GCodeViewer({ className, isTablet }: Props) {
           onPointerDown={onPointerDown}
           onPointerMove={onPointerMove}
           onPointerUp={onPointerUp}
+          onPointerCancel={onPointerUp}
         />
 
         {loading && (
