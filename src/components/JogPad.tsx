@@ -1320,13 +1320,14 @@ export function TabletJogPad({ onSwitchStyle }: { onSwitchStyle?: () => void } =
   const jobRunning = useJobRunningWithLinger(status.state)
   const jogDisabled = !canJog || jobRunning
   const { keyboardJog, setKeyboardJog } = useKeyboardJog(continuous, canJog, xyFeed, zFeed)
+  const commandStepSize = displayToMm(stepSize, units)
 
-  const { start: startYp, stop: stopYp } = useHoldJog('Y', 1, xyFeed, stepSize, continuous, jogDisabled)
-  const { start: startYm, stop: stopYm } = useHoldJog('Y', -1, xyFeed, stepSize, continuous, jogDisabled)
-  const { start: startXp, stop: stopXp } = useHoldJog('X', 1, xyFeed, stepSize, continuous, jogDisabled)
-  const { start: startXm, stop: stopXm } = useHoldJog('X', -1, xyFeed, stepSize, continuous, jogDisabled)
-  const { start: startZp, stop: stopZp } = useHoldJog('Z', 1, zFeed, stepSize, continuous, jogDisabled)
-  const { start: startZm, stop: stopZm } = useHoldJog('Z', -1, zFeed, stepSize, continuous, jogDisabled)
+  const { start: startYp, stop: stopYp } = useHoldJog('Y', 1, xyFeed, commandStepSize, continuous, jogDisabled)
+  const { start: startYm, stop: stopYm } = useHoldJog('Y', -1, xyFeed, commandStepSize, continuous, jogDisabled)
+  const { start: startXp, stop: stopXp } = useHoldJog('X', 1, xyFeed, commandStepSize, continuous, jogDisabled)
+  const { start: startXm, stop: stopXm } = useHoldJog('X', -1, xyFeed, commandStepSize, continuous, jogDisabled)
+  const { start: startZp, stop: stopZp } = useHoldJog('Z', 1, zFeed, commandStepSize, continuous, jogDisabled)
+  const { start: startZm, stop: stopZm } = useHoldJog('Z', -1, zFeed, commandStepSize, continuous, jogDisabled)
 
   const steps = units === 'in' ? [0.001, 0.01, 0.1, 1] : [0.1, 1, 10, 100]
 
