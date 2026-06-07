@@ -120,6 +120,61 @@ function buildSpindlePresets(min: number, max?: number): number[] {
   return [...new Set(raw.map(value => Math.max(safeMin, Math.round(value))))]
 }
 
+interface SpindleRpmInputProps {
+  value: number
+  onChange: (value: number) => void
+  className: string
+}
+
+function SpindleRpmInput({ value, onChange, className }: SpindleRpmInputProps) {
+  const [draft, setDraft] = useState(String(value))
+  const [editing, setEditing] = useState(false)
+  const cancelBlurRef = useRef(false)
+
+  useEffect(() => {
+    if (!editing) setDraft(String(value))
+  }, [value, editing])
+
+  function commit() {
+    if (cancelBlurRef.current) {
+      cancelBlurRef.current = false
+      setDraft(String(value))
+      setEditing(false)
+      return
+    }
+
+    const parsed = draft.trim() === '' ? Number.NaN : Number(draft)
+    const next = Number.isFinite(parsed) ? parsed : value
+    onChange(next)
+    setDraft(String(next))
+    setEditing(false)
+  }
+
+  return (
+    <input
+      type="number"
+      value={draft}
+      onFocus={e => {
+        setEditing(true)
+        e.currentTarget.select()
+      }}
+      onChange={e => setDraft(e.target.value)}
+      onBlur={commit}
+      onKeyDown={e => {
+        if (e.key === 'Enter') e.currentTarget.blur()
+        if (e.key === 'Escape') {
+          cancelBlurRef.current = true
+          setDraft(String(value))
+          e.currentTarget.blur()
+        }
+      }}
+      step={100}
+      className={className}
+      placeholder="0"
+    />
+  )
+}
+
 
 function useHoldJog(
   axis: string, sign: 1 | -1, feed: number,
@@ -724,6 +779,7 @@ export function JogPad() {
   const controllerSettings = useMachineStore(s => s.controllerSettings)
   const setActiveStepJog = useMachineStore(s => s.setActiveStepJog)
   const [spindleTarget, setSpindleTarget] = useState(24000)
+  const [selectedSpindlePreset, setSelectedSpindlePreset] = useState<number | null>(null)
   const [spindleOverrideState, setSpindleOverrideState] = useState<'on' | 'off' | null>(null)
   const [xyFeed, setXyFeed] = useState(() => loadPersistedJogFeed('jog.xyFeed', 1000))
   const [zFeed, setZFeed]   = useState(() => loadPersistedJogFeed('jog.zFeed', 200))
@@ -934,24 +990,13 @@ export function JogPad() {
 
           <div className="flex items-center gap-2">
             <span className="text-base text-text-muted font-medium shrink-0">RPM</span>
-            <input
-              type="number"
+            <SpindleRpmInput
               value={spindleTarget}
-              onChange={e => {
-                const next = Number(e.target.value)
-                if (!Number.isFinite(next)) {
-                  setSpindleTarget(spindleMin)
-                  return
-                }
-                setSpindleTarget(spindleMax != null
-                  ? clamp(next, spindleMin, spindleMax)
-                  : Math.max(spindleMin, next))
+              onChange={value => {
+                setSpindleTarget(value)
+                setSelectedSpindlePreset(null)
               }}
-              min={spindleMin}
-              max={spindleMax}
-              step={100}
               className="input-field py-1.5 text-base font-mono text-right flex-1"
-              placeholder="0"
             />
           </div>
 
@@ -961,13 +1006,14 @@ export function JogPad() {
                 key={rpm}
                 onClick={() => {
                   setSpindleTarget(rpm)
+                  setSelectedSpindlePreset(rpm)
                   if (spindleActive) {
                     sendRaw(`M3 S${rpm}`)
                     sendRealtime(0x99)
                   }
                 }}
                 className={`btn py-2 text-lg font-medium justify-center ${
-                  spindleTarget === rpm
+                  selectedSpindlePreset === rpm
                     ? 'bg-accent/20 border-accent/60 text-accent'
                     : 'btn-ghost'
                 }`}
@@ -1017,6 +1063,7 @@ export function SpindlePanel({ className, isTablet }: { className?: string; isTa
   const spindleMax = controllerSettings.spindleMax
 
   const [spindleTarget, setSpindleTarget] = useState(24000)
+  const [selectedSpindlePreset, setSelectedSpindlePreset] = useState<number | null>(null)
   const [spindleOverrideState, setSpindleOverrideState] = useState<'on' | 'off' | null>(null)
 
   const spindlePresetValues = buildSpindlePresets(spindleMin, spindleMax)
@@ -1079,24 +1126,13 @@ export function SpindlePanel({ className, isTablet }: { className?: string; isTa
 
           <div className="flex items-center gap-2">
             <span className={`${isTablet ? 'text-base' : 'text-base'} text-text-muted font-medium shrink-0`}>RPM</span>
-            <input
-              type="number"
+            <SpindleRpmInput
               value={spindleTarget}
-              onChange={e => {
-                const next = Number(e.target.value)
-                if (!Number.isFinite(next)) {
-                  setSpindleTarget(spindleMin)
-                  return
-                }
-                setSpindleTarget(spindleMax != null
-                  ? clamp(next, spindleMin, spindleMax)
-                  : Math.max(spindleMin, next))
+              onChange={value => {
+                setSpindleTarget(value)
+                setSelectedSpindlePreset(null)
               }}
-              min={spindleMin}
-              max={spindleMax}
-              step={100}
               className={`input-field font-mono text-right flex-1 ${isTablet ? 'py-2 text-xl' : 'py-1.5 text-base'}`}
-              placeholder="0"
             />
           </div>
 
@@ -1106,13 +1142,14 @@ export function SpindlePanel({ className, isTablet }: { className?: string; isTa
                 key={rpm}
                 onClick={() => {
                   setSpindleTarget(rpm)
+                  setSelectedSpindlePreset(rpm)
                   if (spindleActive) {
                     sendRaw(`M3 S${rpm}`)
                     sendRealtime(0x99)
                   }
                 }}
                 className={`btn font-medium justify-center ${isTablet ? 'text-lg py-2' : 'text-base py-2'} ${
-                  spindleTarget === rpm
+                  selectedSpindlePreset === rpm
                     ? 'bg-accent/20 border-accent/60 text-accent'
                     : 'btn-ghost'
                 }`}
