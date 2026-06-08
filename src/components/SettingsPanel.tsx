@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo } from 'react'
+import { useState, useEffect, useMemo, useRef } from 'react'
 import {
   RefreshCw, Search, Wifi, Globe, Settings, Sliders,
   Hash, RotateCcw, X, Cpu, Info, Monitor, Upload, Check,
@@ -483,7 +483,6 @@ async function updateConfigYaml(settingPath: string, value: string): Promise<voi
 
 type FirmwarePhase =
   | 'idle'
-  | 'fetching-releases'
   | 'downloading'
   | 'uploading'
   | 'restarting'
@@ -581,12 +580,14 @@ function FirmwareTab() {
   const [selectedTag, setSelectedTag]     = useState('')
   const [chip, setChip]                   = useState<Chip>('esp32')
   const [radio, setRadio]                 = useState<Radio>('wifi')
+  const [releasesLoading, setReleasesLoading] = useState(false)
   const [releasesError, setReleasesError] = useState('')
+  const releaseRequestRef = useRef<AbortController | null>(null)
 
   const [file, setFile]     = useState<File | null>(null)
   const [dragOver, setDragOver] = useState(false)
 
-  const busy = phase === 'downloading' || phase === 'uploading' || phase === 'restarting' || phase === 'fetching-releases'
+  const busy = phase === 'downloading' || phase === 'uploading' || phase === 'restarting'
 
   const currentVer = espInfo?.version ?? ''
   const visibleReleases = releases.filter(r =>
@@ -594,29 +595,53 @@ function FirmwareTab() {
     (currentVer ? cmpVer(r.tag_name, currentVer) !== 0 : true)
   )
 
-  function loadReleases() {
-    setPhase('fetching-releases')
+  async function loadReleases() {
+    releaseRequestRef.current?.abort()
+    const controller = new AbortController()
+    releaseRequestRef.current = controller
+    const timeout = window.setTimeout(() => controller.abort(), 10_000)
+
+    setReleasesLoading(true)
     setReleasesError('')
-    setReleases([])
-    setSelectedTag('')
-    fetch('https://api.github.com/repos/bdring/FluidNC/releases?per_page=30')
-      .then(r => r.ok ? r.json() : Promise.reject(new Error(`GitHub API error (${r.status})`)))
-      .then((data: GithubRelease[]) => {
-        const filtered = data
-          .filter(r => !r.draft && cmpVer(r.tag_name, 'v4.0.3') >= 0)
-          .sort((a, b) => b.id - a.id)
-        setReleases(filtered)
-        const stable = filtered.find(r => !r.prerelease)
-        if (stable) setSelectedTag(stable.tag_name)
-        setPhase('idle')
+    try {
+      const response = await fetch('https://api.github.com/repos/bdring/FluidNC/releases?per_page=30', {
+        signal: controller.signal,
       })
-      .catch(e => {
-        setReleasesError(e instanceof Error ? e.message : 'Failed to fetch releases')
-        setPhase('idle')
-      })
+      if (!response.ok) throw new Error(`GitHub API error (${response.status})`)
+
+      const data: GithubRelease[] = await response.json()
+      const filtered = data
+        .filter(r => !r.draft && cmpVer(r.tag_name, 'v4.0.3') >= 0)
+        .sort((a, b) => b.id - a.id)
+      setReleases(filtered)
+      const stable = filtered.find(r => !r.prerelease)
+      setSelectedTag(stable?.tag_name ?? '')
+    } catch (e) {
+      if (releaseRequestRef.current !== controller) return
+      const offline = typeof navigator !== 'undefined' && !navigator.onLine
+      const timedOut = e instanceof DOMException && e.name === 'AbortError'
+      setReleasesError(
+        offline
+          ? 'No internet connection. Online updates are unavailable.'
+          : timedOut
+            ? 'Could not fetch updates. Check your internet connection and try again.'
+            : e instanceof Error
+              ? `Could not check GitHub: ${e.message}`
+              : 'Could not check GitHub for updates.',
+      )
+    } finally {
+      window.clearTimeout(timeout)
+      if (releaseRequestRef.current === controller) {
+        releaseRequestRef.current = null
+        setReleasesLoading(false)
+      }
+    }
   }
 
-  useEffect(() => { loadReleases() }, [])
+  useEffect(() => {
+    loadReleases()
+    return () => releaseRequestRef.current?.abort()
+  }, [])
 
   function beginRestart() {
     setPhase('restarting')
@@ -687,30 +712,35 @@ function FirmwareTab() {
         {releasesError && (
           <div className="flex flex-col gap-2">
             <div className="p-3 rounded bg-elevated border border-border text-text-muted text-sm">
-              No internet connection — online updates unavailable.
+              {releasesError}
             </div>
-            <button onClick={loadReleases} className="flex items-center gap-1.5 text-sm text-text-muted hover:text-text-primary transition-colors">
+            <button
+              onClick={loadReleases}
+              disabled={releasesLoading}
+              className="flex items-center gap-1.5 text-sm text-text-muted hover:text-text-primary
+                         transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+            >
               <RefreshCw size={12} />
               Retry
             </button>
           </div>
         )}
 
-        {phase === 'fetching-releases' && (
+        {releasesLoading && (
           <div className="flex items-center gap-2 text-sm text-text-muted">
             <RefreshCw size={13} className="animate-spin" />
             Fetching releases…
           </div>
         )}
 
-        {!releasesError && phase !== 'fetching-releases' && visibleReleases.length === 0 && releases.length > 0 && (
+        {!releasesError && !releasesLoading && visibleReleases.length === 0 && releases.length > 0 && (
           <div className="flex items-center gap-2 p-2.5 rounded bg-ok/10 border border-ok/30 text-ok text-sm">
             <Check size={13} className="shrink-0" />
             You&apos;re on the latest version ({currentVer}).
           </div>
         )}
 
-        {!releasesError && phase !== 'fetching-releases' && visibleReleases.length > 0 && (
+        {!releasesError && !releasesLoading && visibleReleases.length > 0 && (
           <>
             {hasNewerStable && latestStable && (
               <div className="flex items-center gap-2 p-2.5 rounded bg-ok/10 border border-ok/30 text-ok text-sm">
@@ -821,48 +851,60 @@ function FirmwareTab() {
       <div className="flex flex-col gap-4 p-5">
         <h3 className="text-sm font-semibold uppercase tracking-wider text-text-dim">Manual Flash</h3>
 
-        {!busy && (
-          <label
-            className={`flex flex-col items-center justify-center gap-2 p-6 rounded-lg border-2 border-dashed
-                        cursor-pointer transition-colors ${
-              dragOver
-                ? 'border-accent bg-accent/10'
-                : 'border-border hover:border-accent/50 hover:bg-elevated/40'
-            }`}
-            onDragOver={e => { e.preventDefault(); setDragOver(true) }}
-            onDragLeave={() => setDragOver(false)}
-            onDrop={e => { e.preventDefault(); setDragOver(false); pickFile(e.dataTransfer.files[0]) }}
-          >
-            <input type="file" accept=".bin" className="sr-only" onChange={e => pickFile(e.target.files?.[0])} />
-            <Upload size={28} className="text-text-dim" />
-            {file
-              ? <span className="text-sm text-text-primary font-mono">{file.name}</span>
-              : <span className="text-sm text-text-muted">Drop .bin file or click to browse</span>
-            }
-            {file && (
-              <span className="text-xs text-text-dim">
-                {file.size < 1048576 ? `${(file.size / 1024).toFixed(1)} KB` : `${(file.size / 1048576).toFixed(2)} MB`}
-              </span>
-            )}
-          </label>
-        )}
+        <label
+          className={`flex flex-col items-center justify-center gap-2 p-6 rounded-lg border-2 border-dashed
+                      transition-colors ${
+            busy
+              ? 'border-border opacity-50 cursor-not-allowed'
+              : dragOver
+                ? 'border-accent bg-accent/10 cursor-pointer'
+                : 'border-border hover:border-accent/50 hover:bg-elevated/40 cursor-pointer'
+          }`}
+          onDragOver={e => {
+            if (busy) return
+            e.preventDefault()
+            setDragOver(true)
+          }}
+          onDragLeave={() => setDragOver(false)}
+          onDrop={e => {
+            e.preventDefault()
+            setDragOver(false)
+            if (!busy) pickFile(e.dataTransfer.files[0])
+          }}
+        >
+          <input
+            type="file"
+            accept=".bin"
+            disabled={busy}
+            className="sr-only"
+            onChange={e => pickFile(e.target.files?.[0])}
+          />
+          <Upload size={28} className="text-text-dim" />
+          {file
+            ? <span className="text-sm text-text-primary font-mono">{file.name}</span>
+            : <span className="text-sm text-text-muted">Drop .bin file or click to browse</span>
+          }
+          {file && (
+            <span className="text-xs text-text-dim">
+              {file.size < 1048576 ? `${(file.size / 1024).toFixed(1)} KB` : `${(file.size / 1048576).toFixed(2)} MB`}
+            </span>
+          )}
+        </label>
 
-        {!busy && (
-          <button
-            disabled={!file}
-            onClick={() => {
-              if (!file) return
-              if (!confirm(`Flash firmware from "${file.name}"? The device will restart.`)) return
-              flashFile(file)
-            }}
-            className="flex items-center justify-center gap-2 px-4 py-2.5 rounded text-sm font-medium
-                       bg-accent text-white hover:bg-accent/90 transition-colors
-                       disabled:opacity-40 disabled:cursor-not-allowed"
-          >
-            <Upload size={14} />
-            Flash Firmware
-          </button>
-        )}
+        <button
+          disabled={!file || busy}
+          onClick={() => {
+            if (!file) return
+            if (!confirm(`Flash firmware from "${file.name}"? The device will restart.`)) return
+            flashFile(file)
+          }}
+          className="flex items-center justify-center gap-2 px-4 py-2.5 rounded text-sm font-medium
+                     bg-accent text-white hover:bg-accent/90 transition-colors
+                     disabled:opacity-40 disabled:cursor-not-allowed"
+        >
+          <Upload size={14} />
+          Flash Firmware
+        </button>
       </div>
     </div>
   )
