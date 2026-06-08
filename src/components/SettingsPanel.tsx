@@ -2,12 +2,13 @@ import { useState, useEffect, useMemo, useRef } from 'react'
 import {
   RefreshCw, Search, Wifi, Globe, Settings, Sliders,
   Hash, RotateCcw, X, Cpu, Info, Monitor, Upload, Check,
-  Radio, Trash2, Square, AlertTriangle,
+  Radio, Trash2, Square, AlertTriangle, Target,
 } from 'lucide-react'
 import type { LucideIcon } from 'lucide-react'
 import { sendCommand, fetchFileContent, saveFileContent, uploadFirmware, getDeviceInfoFast } from '../lib/http'
 import { useMachineStore } from '../store'
 import type { Theme } from '../store'
+import { LimitsTab } from './LimitsTab'
 
 interface Setting {
   F?: string  // 'nvs' | 'tree'
@@ -36,7 +37,8 @@ const CAT_DEFS: Record<string, { label: string; icon: LucideIcon; order: number 
   system:    { label: 'System',          icon: Settings,     order: 2 },
   machine:   { label: 'Machine',         icon: Sliders,      order: 3 },
   config:    { label: 'Machine Config',  icon: Cpu,          order: 4 },
-  espnow:    { label: 'ESP-NOW',          icon: Radio,       order: 5 },
+  limits:    { label: 'Limits',           icon: Target,       order: 5 },
+  espnow:    { label: 'ESP-NOW',          icon: Radio,       order: 6 },
   other:     { label: 'Other',           icon: Hash,         order: 99 },
   firmware:  { label: 'Firmware Update', icon: Upload,  order: 100 },
 }
@@ -1363,8 +1365,8 @@ export function SettingsPanel({ onClose }: SettingsPanelProps) {
             className="p-1.5 rounded hover:bg-elevated text-text-muted hover:text-text-primary
                        transition-colors disabled:opacity-40"
             onClick={load}
-            disabled={loading}
-            title="Reload settings"
+            disabled={loading || category === 'limits'}
+            title={category === 'limits' ? 'Unavailable while monitoring limits' : 'Reload settings'}
           >
             <RefreshCw size={14} className={loading ? 'animate-spin' : ''} />
           </button>
@@ -1522,6 +1524,7 @@ export function SettingsPanel({ onClose }: SettingsPanelProps) {
 
             {!isSearching && category === 'firmware' && <FirmwareTab />}
             {!isSearching && category === 'espnow' && <ESPNowPendantsTab />}
+            {!isSearching && category === 'limits' && <LimitsTab settings={settings} />}
 
             {!isSearching && category === 'workspace' && (
               <div className="divide-y divide-border">
@@ -1584,20 +1587,20 @@ export function SettingsPanel({ onClose }: SettingsPanelProps) {
               </div>
             )}
 
-            {(isSearching || (category !== 'workspace' && category !== 'firmware' && category !== 'espnow')) && error && (
+            {(isSearching || (category !== 'workspace' && category !== 'firmware' && category !== 'espnow' && category !== 'limits')) && error && (
               <div className="m-4 p-3 rounded bg-danger/10 border border-danger/30 text-danger text-sm leading-relaxed whitespace-pre-wrap font-mono">
                 {error}
               </div>
             )}
 
-            {(isSearching || (category !== 'workspace' && category !== 'firmware' && category !== 'espnow')) && loading && !error && (
+            {(isSearching || (category !== 'workspace' && category !== 'firmware' && category !== 'espnow' && category !== 'limits')) && loading && !error && (
               <div className="flex items-center justify-center h-32 gap-2 text-text-muted text-sm">
                 <RefreshCw size={14} className="animate-spin" />
                 Loading settings…
               </div>
             )}
 
-            {(isSearching || (category !== 'workspace' && category !== 'firmware' && category !== 'espnow')) && !loading && !error && visibleSettings.length === 0 && (
+            {(isSearching || (category !== 'workspace' && category !== 'firmware' && category !== 'espnow' && category !== 'limits')) && !loading && !error && visibleSettings.length === 0 && (
               <div className="flex flex-col items-center justify-center h-32 gap-2 text-text-dim text-sm">
                 {isSearching
                   ? <>No settings match <span className="font-mono">"{filter}"</span></>
@@ -1606,7 +1609,7 @@ export function SettingsPanel({ onClose }: SettingsPanelProps) {
               </div>
             )}
 
-            {(isSearching || (category !== 'workspace' && category !== 'firmware' && category !== 'espnow')) && groupedItems.map((item, i) =>
+            {(isSearching || (category !== 'workspace' && category !== 'firmware' && category !== 'espnow' && category !== 'limits')) && groupedItems.map((item, i) =>
               item.type === 'header'
                 ? <SectionHeader key={`h-${i}`} label={item.label} level={item.level} />
                 : <SettingRow
@@ -1633,6 +1636,7 @@ function buildCategories(settings: Setting[]) {
   return [
     { id: 'workspace', ...CAT_DEFS.workspace },
     ...deviceCats,
+    { id: 'limits', ...CAT_DEFS.limits },
     { id: 'espnow', ...CAT_DEFS.espnow },
     { id: 'firmware', ...CAT_DEFS.firmware },
   ]
