@@ -159,6 +159,93 @@ body {
   -webkit-font-smoothing: antialiased;
 }
 
+.release-notes-section + .release-notes-section {
+  border-top: 1px solid var(--border);
+  margin-top: 14px;
+  padding-top: 14px;
+}
+
+.release-notes-version {
+  color: var(--accent);
+  font-size: 14px;
+  font-weight: 700;
+  margin-bottom: 6px;
+}
+
+.release-notes-markdown {
+  color: var(--text-muted);
+  font-size: 12px;
+  line-height: 1.6;
+  overflow-wrap: anywhere;
+}
+
+.release-notes-markdown :where(h1, h2, h3, h4, h5, h6) {
+  color: var(--text-primary);
+  font-size: 13px;
+  font-weight: 600;
+  margin: 10px 0 4px;
+}
+
+.release-notes-markdown :where(p, ul, ol, blockquote, pre, table) {
+  margin: 5px 0;
+}
+
+.release-notes-markdown :where(ul, ol) {
+  padding-left: 20px;
+}
+
+.release-notes-markdown ul {
+  list-style: disc;
+}
+
+.release-notes-markdown ol {
+  list-style: decimal;
+}
+
+.release-notes-markdown a {
+  color: var(--accent);
+  text-decoration: underline;
+}
+
+.release-notes-markdown :where(code, pre) {
+  background: var(--surface);
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+}
+
+.release-notes-markdown code {
+  border-radius: 3px;
+  padding: 1px 4px;
+}
+
+.release-notes-markdown pre {
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  overflow-x: auto;
+  padding: 8px;
+  white-space: pre-wrap;
+}
+
+.release-notes-markdown pre code {
+  background: transparent;
+  padding: 0;
+}
+
+.release-notes-markdown blockquote {
+  border-left: 3px solid var(--border-strong);
+  padding-left: 10px;
+}
+
+.release-notes-markdown table {
+  border-collapse: collapse;
+  width: 100%;
+}
+
+.release-notes-markdown :where(th, td) {
+  border: 1px solid var(--border);
+  padding: 4px 6px;
+  text-align: left;
+}
+
 /* iOS Safari touch handling improvements for jog controls */
 svg path, svg rect, svg circle, svg g {
   touch-action: none !important;
