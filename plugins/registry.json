@@ -40,6 +40,22 @@
       "version": "1.0.1",
       "author": "Myles (NEWTech Creative)",
       "base": "https://raw.githubusercontent.com/figamore/FigUI/main/plugins/centre-probe/"
+    },
+    {
+      "id": "penplot",
+      "name": "Pen Plot",
+      "description": "Convert SVG, DXF, HPGL/PLT vector images to pen plotter G-code.",
+      "version": "1.1.0",
+      "author": "figamore",
+      "base": "https://raw.githubusercontent.com/figamore/FigUI/main/plugins/penplot/"
+    },
+    {
+      "id": "rasterburn",
+      "name": "Raster Burn",
+      "description": "Laser engraving of a grayscale/B&W image by line-by-line scan, with B/W threshold and grayscale modes, LUT curve editor, and origin picker.",
+      "version": "1.0.0",
+      "author": "lirinar",
+      "base": "https://raw.githubusercontent.com/figamore/FigUI/main/plugins/rasterburn/"
     }
   ]
 }

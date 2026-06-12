@@ -24,7 +24,7 @@ export function getArcGeometry(seg: Segment) {
   let sweep = seg.cw
     ? normalizeAngle(startAngle - endAngle)
     : normalizeAngle(endAngle - startAngle)
-  if (fullCircle || sweep < 1e-6) sweep = TAU
+  if (fullCircle) sweep = TAU
   return { cx, cy, r, startAngle, endAngle, sweep, fullCircle }
 }
 

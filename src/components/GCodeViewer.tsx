@@ -1,5 +1,5 @@
 import { useRef, useEffect, useLayoutEffect, useState, useCallback } from 'react'
-import { Eye, Axis3D, Maximize2, Crosshair, Navigation, Play, Pause, Square, CloudDrizzle, Waves, PowerOff, Box, Zap } from 'lucide-react'
+import { Eye, Axis3D, Maximize2, Crosshair, Navigation, Play, Pause, Square, CloudDrizzle, Waves, PowerOff, Box, Zap, Orbit, Hand } from 'lucide-react'
 import { type GCodeModel, type Segment } from '../lib/gcode'
 import { useMachineStore } from '../store'
 import { useGCodeStore } from '../store/gcode'
@@ -44,6 +44,7 @@ interface OrbitState {
 }
 
 type ProjectionMode = 'perspective' | 'orthographic'
+type DragMode = 'orbit' | 'pan'
 
 interface ScreenAnchor {
   ndcX: number
@@ -847,9 +848,55 @@ function drawToolPosition(
 interface Props {
   className?: string
   isTablet?: boolean
+  showOverrides?: boolean
 }
 
-export function GCodeViewer({ className, isTablet }: Props) {
+function ViewerOverrideControl({
+  label,
+  value,
+  onMinus,
+  onReset,
+  onPlus,
+}: {
+  label: string
+  value: number
+  onMinus: () => void
+  onReset: () => void
+  onPlus: () => void
+}) {
+  const colorClass = value > 100 ? 'text-ok' : value < 100 ? 'text-warn' : 'text-accent'
+
+  return (
+    <div className="flex-1 min-w-0 flex flex-col gap-1 rounded border border-border bg-elevated/50 p-1.5">
+      <span className="text-xs font-semibold uppercase tracking-wide text-text-muted text-center">{label}</span>
+      <div className="flex items-center gap-1">
+        <button
+          className="h-9 w-9 shrink-0 rounded border border-border bg-surface text-lg text-text-primary active:bg-elevated"
+          onClick={onMinus}
+          aria-label={`Decrease ${label.toLowerCase()} override`}
+        >
+          −
+        </button>
+        <button
+          className={`h-9 flex-1 min-w-0 rounded border border-border bg-surface font-mono text-base font-semibold ${colorClass}`}
+          onClick={onReset}
+          title={`Reset ${label.toLowerCase()} override to 100%`}
+        >
+          {value}%
+        </button>
+        <button
+          className="h-9 w-9 shrink-0 rounded border border-border bg-surface text-lg text-text-primary active:bg-elevated"
+          onClick={onPlus}
+          aria-label={`Increase ${label.toLowerCase()} override`}
+        >
+          +
+        </button>
+      </div>
+    </div>
+  )
+}
+
+export function GCodeViewer({ className, isTablet, showOverrides }: Props) {
   const canvasRef = useRef<HTMLCanvasElement>(null)
   const webglCanvasRef = useRef<HTMLCanvasElement>(null)
   const containerRef = useRef<HTMLDivElement>(null)
@@ -877,7 +924,7 @@ export function GCodeViewer({ className, isTablet }: Props) {
   const showToolRef = useRef(true)
   const transformRef = useRef<Transform>({ ox: 0, oy: 0, scale: 1 })
   const dragRef = useRef<{ sx: number; sy: number; ox: number; oy: number } | null>(null)
-  const activePointersRef = useRef<Map<number, { x: number; y: number }>>(new Map())
+  const activePointersRef = useRef<Map<number, { x: number; y: number; dragMode: DragMode }>>(new Map())
   const lastPinchDistRef = useRef<number | null>(null)
   const animRef = useRef(0)
   const renderRef = useRef<() => void>(() => {})
@@ -888,6 +935,7 @@ export function GCodeViewer({ className, isTablet }: Props) {
 
   const [is3D, setIs3D] = useState(false)
   const [projectionMode, setProjectionMode] = useState<ProjectionMode>('orthographic')
+  const [dragMode, setDragMode] = useState<DragMode>('orbit')
   const rendererRef = useRef<WebGLRenderer | null>(null)
   const cameraRef = useRef<Camera>({
     position: { x: 100, y: 100, z: 100 },
@@ -908,6 +956,14 @@ export function GCodeViewer({ className, isTablet }: Props) {
     target: { x: 0, y: 0, z: 0 },
   })
   const orbitDragRef = useRef<{ sx: number; sy: number; theta: number; phi: number } | null>(null)
+  const panDragRef = useRef<{
+    sx: number
+    sy: number
+    target: Vector3
+    right: Vector3
+    screenUp: Vector3
+    worldUnitsPerPixel: number
+  } | null>(null)
   const snapAnimRef = useRef<{ frameId: number } | null>(null)
 
   function cancelSnapAnimation() {
@@ -1118,6 +1174,38 @@ export function GCodeViewer({ className, isTablet }: Props) {
         z: target.z + oldOffset.z - newOffset.z,
       },
     }
+  }
+
+  function start3DDrag(clientX: number, clientY: number, mode: DragMode) {
+    cancelSnapAnimation()
+
+    if (mode === 'pan') {
+      const containerHeight = Math.max(containerRef.current?.clientHeight ?? 0, 1)
+      const camera = cameraRef.current
+      const { right, screenUp } = getOrbitCameraBasis(orbitState, camera.up)
+      const halfHeight = projectionMode === 'orthographic'
+        ? orbitState.orthoSize
+        : Math.tan(camera.fov / 2) * orbitState.radius
+
+      panDragRef.current = {
+        sx: clientX,
+        sy: clientY,
+        target: { ...orbitState.target },
+        right,
+        screenUp,
+        worldUnitsPerPixel: (halfHeight * 2) / containerHeight,
+      }
+      orbitDragRef.current = null
+      return
+    }
+
+    orbitDragRef.current = {
+      sx: clientX,
+      sy: clientY,
+      theta: orbitState.theta,
+      phi: orbitState.phi,
+    }
+    panDragRef.current = null
   }
 
   function createVertexData(
@@ -1757,17 +1845,12 @@ export function GCodeViewer({ className, isTablet }: Props) {
 
   function onPointerDown(e: React.PointerEvent) {
     ;(e.target as HTMLElement).setPointerCapture(e.pointerId)
-    activePointersRef.current.set(e.pointerId, { x: e.clientX, y: e.clientY })
+    const pointerDragMode = is3D && e.button === 2 ? 'pan' : dragMode
+    activePointersRef.current.set(e.pointerId, { x: e.clientX, y: e.clientY, dragMode: pointerDragMode })
 
     if (activePointersRef.current.size === 1) {
       if (is3D) {
-        cancelSnapAnimation()
-        orbitDragRef.current = {
-          sx: e.clientX,
-          sy: e.clientY,
-          theta: orbitState.theta,
-          phi: orbitState.phi
-        }
+        start3DDrag(e.clientX, e.clientY, pointerDragMode)
       } else {
         const t = transformRef.current
         dragRef.current = { sx: e.clientX, sy: e.clientY, ox: t.ox, oy: t.oy }
@@ -1775,12 +1858,15 @@ export function GCodeViewer({ className, isTablet }: Props) {
     } else {
       dragRef.current = null
       orbitDragRef.current = null
+      panDragRef.current = null
       lastPinchDistRef.current = null
     }
   }
 
   function onPointerMove(e: React.PointerEvent) {
-    activePointersRef.current.set(e.pointerId, { x: e.clientX, y: e.clientY })
+    const activePointer = activePointersRef.current.get(e.pointerId)
+    if (!activePointer) return
+    activePointersRef.current.set(e.pointerId, { ...activePointer, x: e.clientX, y: e.clientY })
     const pointers = Array.from(activePointersRef.current.values())
 
     if (pointers.length === 2) {
@@ -1819,6 +1905,19 @@ export function GCodeViewer({ className, isTablet }: Props) {
           phi: newPhi
         }))
         scheduleRender()
+      } else if (is3D && panDragRef.current) {
+        const d = panDragRef.current
+        const dx = (e.clientX - d.sx) * d.worldUnitsPerPixel
+        const dy = (e.clientY - d.sy) * d.worldUnitsPerPixel
+
+        setOrbitState(prev => ({
+          ...prev,
+          target: addVectors(
+            d.target,
+            addVectors(scaleVector(d.right, -dx), scaleVector(d.screenUp, dy)),
+          ),
+        }))
+        scheduleRender()
       } else if (!is3D && dragRef.current) {
         const d = dragRef.current
         const t = transformRef.current
@@ -1836,13 +1935,7 @@ export function GCodeViewer({ className, isTablet }: Props) {
     if (activePointersRef.current.size === 1) {
       const [remaining] = Array.from(activePointersRef.current.values())
       if (is3D) {
-        cancelSnapAnimation()
-        orbitDragRef.current = {
-          sx: remaining.x,
-          sy: remaining.y,
-          theta: orbitState.theta,
-          phi: orbitState.phi
-        }
+        start3DDrag(remaining.x, remaining.y, remaining.dragMode)
       } else {
         const t = transformRef.current
         dragRef.current = { sx: remaining.x, sy: remaining.y, ox: t.ox, oy: t.oy }
@@ -1850,6 +1943,7 @@ export function GCodeViewer({ className, isTablet }: Props) {
     } else if (activePointersRef.current.size === 0) {
       dragRef.current = null
       orbitDragRef.current = null
+      panDragRef.current = null
     }
   }
 
@@ -1927,14 +2021,26 @@ export function GCodeViewer({ className, isTablet }: Props) {
             <span>3D</span>
           </button>
           {is3D && (
-            <button
-              className={`${btnCls} ${projectionMode === 'orthographic' ? 'text-info bg-info/10' : 'text-text-dim bg-elevated hover:text-text-primary'}`}
-              onClick={() => setProjectionMode(mode => mode === 'perspective' ? 'orthographic' : 'perspective')}
-              title={projectionMode === 'orthographic' ? 'Switch to perspective projection' : 'Switch to orthographic projection'}
-            >
-              <Axis3D size={iconSize} />
-              <span>{projectionMode === 'orthographic' ? 'Ortho' : 'Persp'}</span>
-            </button>
+            <>
+              <button
+                className={`${btnCls} ${projectionMode === 'orthographic' ? 'text-info bg-info/10' : 'text-text-dim bg-elevated hover:text-text-primary'}`}
+                onClick={() => setProjectionMode(mode => mode === 'perspective' ? 'orthographic' : 'perspective')}
+                title={projectionMode === 'orthographic' ? 'Switch to perspective projection' : 'Switch to orthographic projection'}
+              >
+                <Axis3D size={iconSize} />
+                <span>{projectionMode === 'orthographic' ? 'Ortho' : 'Persp'}</span>
+              </button>
+              <button
+                className={`${btnCls} ${dragMode === 'pan' ? 'text-info bg-info/10' : 'text-text-dim bg-elevated hover:text-text-primary'}`}
+                onClick={() => setDragMode(mode => mode === 'orbit' ? 'pan' : 'orbit')}
+                title={dragMode === 'orbit'
+                  ? 'Drag to orbit. Right-drag to pan.'
+                  : 'Drag to pan. Right-drag also pans.'}
+              >
+                {dragMode === 'orbit' ? <Orbit size={iconSize} /> : <Hand size={iconSize} />}
+                <span>{dragMode === 'orbit' ? 'Orbit' : 'Pan'}</span>
+              </button>
+            </>
           )}
           <button
             className={`${btnCls} ${showRapids ? 'text-accent bg-accent/10' : 'text-text-dim bg-elevated hover:text-text-primary'}`}
@@ -1981,6 +2087,7 @@ export function GCodeViewer({ className, isTablet }: Props) {
         style={{ touchAction: 'none' }}
         onDrop={onDrop}
         onDragOver={onDragOver}
+        onContextMenu={e => { if (is3D) e.preventDefault() }}
       >
         <canvas
           ref={canvasRef}
@@ -1988,6 +2095,7 @@ export function GCodeViewer({ className, isTablet }: Props) {
           onPointerDown={onPointerDown}
           onPointerMove={onPointerMove}
           onPointerUp={onPointerUp}
+          onPointerCancel={onPointerUp}
         />
         <canvas
           ref={webglCanvasRef}
@@ -1995,6 +2103,7 @@ export function GCodeViewer({ className, isTablet }: Props) {
           onPointerDown={onPointerDown}
           onPointerMove={onPointerMove}
           onPointerUp={onPointerUp}
+          onPointerCancel={onPointerUp}
         />
 
         {loading && (
@@ -2201,34 +2310,54 @@ export function GCodeViewer({ className, isTablet }: Props) {
           </div>
         )}
 
+        {showOverrides && (
+          <div className="flex gap-2">
+            <ViewerOverrideControl
+              label="Feed"
+              value={status.feedOverride}
+              onMinus={() => sendRealtime(0x92)}
+              onReset={() => sendRealtime(0x90)}
+              onPlus={() => sendRealtime(0x91)}
+            />
+            <ViewerOverrideControl
+              label="Speed"
+              value={status.spindleOverride}
+              onMinus={() => sendRealtime(0x9B)}
+              onReset={() => sendRealtime(0x99)}
+              onPlus={() => sendRealtime(0x9A)}
+            />
+          </div>
+        )}
+
         <div className="flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-3">
-        <div className="flex gap-1.5 sm:flex-[6]">
-          <button
-            onClick={() => { sendRealtime(0xA0); setCoolantState('mist') }}
-            className={`btn gap-1.5 ${isTablet ? 'text-xl py-3' : 'text-lg'} justify-center flex-1 ${coolantState === 'mist' ? 'border-accent/50 text-accent' : 'btn-ghost'}`}
-          >
-            <CloudDrizzle size={isTablet ? 18 : 13} />
-            Mist
-          </button>
-          <button
-            onClick={() => { sendRealtime(0xA1); setCoolantState('flood') }}
-            className={`btn gap-1.5 ${isTablet ? 'text-xl py-3' : 'text-lg'} justify-center flex-1 ${coolantState === 'flood' ? 'border-info/50 text-info' : 'btn-ghost'}`}
-          >
-            <Waves size={isTablet ? 18 : 13} />
-            Flood
-          </button>
-          <button
-            onClick={() => { sendRaw('M9'); setCoolantState('off') }}
-            className={`btn gap-1.5 ${isTablet ? 'text-xl py-3' : 'text-lg'} justify-center flex-1 ${coolantState === 'off' ? 'border-danger/50 text-danger' : 'btn-ghost'}`}
-          >
-            <PowerOff size={isTablet ? 18 : 13} />
-            Off
-          </button>
-        </div>
+        {(controllerSettings.hasMist || controllerSettings.hasFlood) && <>
+          <div className="flex gap-1.5 sm:flex-[6]">
+            {controllerSettings.hasMist && <button
+              onClick={() => { sendRealtime(0xA0); setCoolantState('mist') }}
+              className={`btn gap-1.5 ${isTablet ? 'text-xl py-3' : 'text-lg'} justify-center flex-1 ${coolantState === 'mist' ? 'border-accent/50 text-accent' : 'btn-ghost'}`}
+            >
+              <CloudDrizzle size={isTablet ? 18 : 13} />
+              Mist
+            </button>}
+            {controllerSettings.hasFlood && <button
+              onClick={() => { sendRealtime(0xA1); setCoolantState('flood') }}
+              className={`btn gap-1.5 ${isTablet ? 'text-xl py-3' : 'text-lg'} justify-center flex-1 ${coolantState === 'flood' ? 'border-info/50 text-info' : 'btn-ghost'}`}
+            >
+              <Waves size={isTablet ? 18 : 13} />
+              Flood
+            </button>}
+            <button
+              onClick={() => { sendRaw('M9'); setCoolantState('off') }}
+              className={`btn gap-1.5 ${isTablet ? 'text-xl py-3' : 'text-lg'} justify-center flex-1 ${coolantState === 'off' ? 'border-danger/50 text-danger' : 'btn-ghost'}`}
+            >
+              <PowerOff size={isTablet ? 18 : 13} />
+              Off
+            </button>
+          </div>
+          <div className="hidden sm:block w-px bg-border self-stretch" />
+        </>}
 
-        <div className="hidden sm:block w-px bg-border self-stretch" />
-
-        <div className="flex gap-1.5 sm:flex-[3]">
+        <div className={`flex gap-1.5 ${(controllerSettings.hasMist || controllerSettings.hasFlood) ? 'sm:flex-[3]' : 'sm:ml-auto'}`}>
           {!isJobRunning && !isJobHeld && (
             <button
               className={`btn btn-ok-solid gap-2 justify-center font-bold ${isTablet ? 'text-xl py-3' : 'text-base'} flex-1`}

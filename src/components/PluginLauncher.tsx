@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { Puzzle, RefreshCw, Upload, Store, HardDrive, Server, Trash2, Download, AlertCircle, X, CheckCircle } from 'lucide-react'
+import { Puzzle, RefreshCw, Upload, Store, HardDrive, Server, Trash2, Download, AlertCircle, X, CheckCircle, Search } from 'lucide-react'
 import { discoverPlugins, uploadFolderPlugin, deletePlugin, fetchRegistry, installStorePlugin } from '../lib/plugins'
 import { PluginFrame } from './PluginFrame'
 import type { Plugin, StoreEntry, ActiveLayout } from '../types'
@@ -74,6 +74,7 @@ export function PluginLauncher({ isTablet, onLaunchPanel, activeLayout }: { isTa
   const [plugins, setPlugins] = useState<Plugin[]>(pluginsCache ?? [])
   const [scanning, setScanning] = useState(pluginsCache === null)
   const [activePlugin, setActivePlugin] = useState<Plugin | null>(null)
+  const [query, setQuery] = useState('')
 
   const [destFs, setDestFs] = useState<FsDest>('local')
   const [showAddPicker, setShowAddPicker] = useState(false)
@@ -81,6 +82,9 @@ export function PluginLauncher({ isTablet, onLaunchPanel, activeLayout }: { isTa
 
   // Upload folder state
   const folderInputRef = useRef<HTMLInputElement>(null)
+  useEffect(() => {
+    folderInputRef.current?.setAttribute('webkitdirectory', '')
+  }, [])
   const [progress, setProgress] = useState<ProgressState | null>(null)
   const [uploadDone, setUploadDone] = useState(false)
 
@@ -200,6 +204,14 @@ export function PluginLauncher({ isTablet, onLaunchPanel, activeLayout }: { isTa
   const hasStoreUpdate = (entry: StoreEntry, plugin?: Plugin) =>
     Boolean(entry.version && plugin?.manifest.version && semverGt(entry.version, plugin.manifest.version))
 
+  const q = query.trim().toLowerCase()
+  const filteredPlugins = q
+    ? plugins.filter(p => p.manifest.name.toLowerCase().includes(q) || p.manifest.description?.toLowerCase().includes(q))
+    : plugins
+  const filteredStore = q
+    ? (storeEntries ?? []).filter(e => e.name.toLowerCase().includes(q) || e.description?.toLowerCase().includes(q))
+    : (storeEntries ?? [])
+
   const pad = isTablet ? 'p-5' : 'p-4'
 
   return (
@@ -251,6 +263,28 @@ export function PluginLauncher({ isTablet, onLaunchPanel, activeLayout }: { isTa
           ))}
         </div>
 
+        {/* Search */}
+        <div className="px-3 py-2 border-b border-border shrink-0">
+          <div className="relative">
+            <Search size={12} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-text-dim pointer-events-none" />
+            <input
+              type="text"
+              value={query}
+              onChange={e => setQuery(e.target.value)}
+              placeholder="Search plugins…"
+              className="w-full bg-elevated border border-border rounded pl-7 pr-7 py-1.5 text-sm text-text-primary placeholder:text-text-dim focus:outline-none focus:border-accent"
+            />
+            {query && (
+              <button
+                onClick={() => setQuery('')}
+                className="absolute right-2 top-1/2 -translate-y-1/2 text-text-dim hover:text-text-primary"
+              >
+                <X size={12} />
+              </button>
+            )}
+          </div>
+        </div>
+
         {/* Content */}
         <div className="flex-1 overflow-y-auto min-h-0">
 
@@ -287,17 +321,21 @@ export function PluginLauncher({ isTablet, onLaunchPanel, activeLayout }: { isTa
               <div className="flex-1 flex items-center justify-center py-16">
                 <RefreshCw size={22} className="text-text-muted animate-spin" />
               </div>
-            ) : plugins.length === 0 ? (
+            ) : filteredPlugins.length === 0 ? (
               <div className="flex flex-col items-center justify-center gap-3 text-center px-6 py-12">
                 <Puzzle size={32} className="text-text-dim" />
-                <p className="text-base font-medium text-text-muted">No plugins installed</p>
-                <p className="text-sm text-text-dim leading-relaxed">
-                  Click <strong className="text-text-muted">Add</strong> to install from a folder, or visit the <strong className="text-text-muted">Store</strong> tab.
+                <p className="text-base font-medium text-text-muted">
+                  {q ? 'No plugins match your search' : 'No plugins installed'}
                 </p>
+                {!q && (
+                  <p className="text-sm text-text-dim leading-relaxed">
+                    Click <strong className="text-text-muted">Add</strong> to install from a folder, or visit the <strong className="text-text-muted">Store</strong> tab.
+                  </p>
+                )}
               </div>
             ) : (
               <div className={`flex flex-col gap-3 ${pad}`}>
-                {plugins.map(plugin => (
+                {filteredPlugins.map(plugin => (
                   <div key={`${plugin.id}:${plugin.fs}`} className="panel flex flex-col gap-2 p-3">
                     <div className="flex items-center gap-3">
                       <button
@@ -364,14 +402,16 @@ export function PluginLauncher({ isTablet, onLaunchPanel, activeLayout }: { isTa
                   Retry
                 </button>
               </div>
-            ) : (storeEntries ?? []).length === 0 ? (
+            ) : filteredStore.length === 0 ? (
               <div className="flex flex-col items-center justify-center gap-3 text-center px-6 py-12">
                 <Store size={28} className="text-text-dim" />
-                <p className="text-base text-text-muted">No plugins in the store yet</p>
+                <p className="text-base text-text-muted">
+                  {q ? 'No plugins match your search' : 'No plugins in the store yet'}
+                </p>
               </div>
             ) : (
               <div className={`flex flex-col gap-3 ${pad}`}>
-                {(storeEntries ?? []).map(entry => {
+                {filteredStore.map(entry => {
                   const installedPlugin = installedPluginFor(entry)
                   const installed = Boolean(installedPlugin)
                   const updateAvailable = hasStoreUpdate(entry, installedPlugin)
@@ -466,8 +506,6 @@ export function PluginLauncher({ isTablet, onLaunchPanel, activeLayout }: { isTa
       <input
         ref={folderInputRef}
         type="file"
-        // @ts-ignore
-        webkitdirectory=""
         multiple
         className="hidden"
         onChange={handleFolderSelect}

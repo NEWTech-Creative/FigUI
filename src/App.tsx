@@ -473,7 +473,7 @@ export function App() {
         )}
 
         <div className={`h-[calc(100dvh-3rem)] flex flex-col gap-3 p-3 pb-[4.5rem] overflow-hidden ${mobilePanel !== 'viewer' ? 'hidden' : ''}`}>
-          <GCodeViewer className="flex-1 min-h-0" />
+          <GCodeViewer className="flex-1 min-h-0" showOverrides />
         </div>
 
         {mobilePanel === 'right' && (

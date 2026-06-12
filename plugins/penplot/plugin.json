@@ -1,0 +1,10 @@
+{
+  "name": "Pen Plot",
+  "description": "Convert SVG, DXF, HPGL/PLT vector images to pen plotter G-code.",
+  "version": "1.1.0",
+  "layout": "full",
+  "layoutTablet": "full",
+  "entry": "index.html",
+  "icon": "icon.png",
+  "files": ["index.html", "icon.png"]
+}

@@ -1,0 +1,1594 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Pen Plot</title>
+<style>
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+body {
+  background: var(--bg, #0c1018);
+  color: var(--text-primary, #e2e6f4);
+  font-family: ui-sans-serif, system-ui, sans-serif;
+  font-size: 16px;
+  height: 100vh;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
+
+.layout { display: flex; flex: 1; overflow: hidden; }
+
+.sidebar {
+  width: 264px; min-width: 264px;
+  background: var(--surface, #151c28);
+  border-right: 1px solid var(--border, #222840);
+  overflow-y: auto;
+  display: flex; flex-direction: column;
+}
+
+.section {
+  border-bottom: 1px solid var(--border, #222840);
+  padding: 10px 12px;
+  display: flex; flex-direction: column; gap: 6px;
+}
+
+.section-title {
+  font-size: 16px; font-weight: 700;
+  letter-spacing: .08em; text-transform: uppercase;
+  color: var(--text-muted, #6a7898);
+  margin-bottom: 2px;
+}
+
+label { color: var(--text-muted, #6a7898); font-size: 16px; margin-top: 2px; }
+
+label.check-label {
+  display: flex; align-items: center; gap: 6px;
+  color: var(--text-primary, #e2e6f4); font-size: 16px; cursor: pointer; margin-top: 0;
+}
+
+input[type=number] {
+  width: 100%;
+  background: var(--elevated, #1a2235);
+  border: 1px solid var(--border, #222840);
+  border-radius: 4px;
+  color: var(--text-primary, #e2e6f4);
+  font-size: 16px; padding: 4px 8px; outline: none;
+}
+input[type=number]:focus { border-color: var(--accent, #f0a030); }
+
+input[type=checkbox] { accent-color: var(--accent, #f0a030); width: 14px; height: 14px; cursor: pointer; flex-shrink: 0; }
+
+.load-btn {
+  padding: 7px 10px;
+  background: var(--elevated, #1a2235);
+  border: 1px solid var(--border, #222840);
+  color: var(--text-primary, #e2e6f4);
+  border-radius: 6px; font-size: 16px; cursor: pointer;
+}
+.load-btn:hover { border-color: var(--accent, #f0a030); }
+
+.file-name {
+  font-size: 16px; color: var(--text-muted, #6a7898);
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+
+.origin-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 3px; }
+.og-btn {
+  padding: 5px 0;
+  background: var(--elevated, #1a2235);
+  border: 1px solid var(--border, #222840);
+  border-radius: 4px;
+  color: var(--text-muted, #6a7898);
+  font-size: 16px; cursor: pointer; text-align: center; line-height: 1;
+}
+.og-btn:hover { border-color: var(--accent, #f0a030); }
+.og-btn.active { background: var(--accent, #f0a030); border-color: var(--accent, #f0a030); color: #000; }
+
+select {
+  width: 100%;
+  background: var(--elevated, #1a2235);
+  border: 1px solid var(--border, #222840);
+  border-radius: 4px;
+  color: var(--text-primary, #e2e6f4);
+  font-size: 16px; padding: 4px 8px; outline: none; cursor: pointer;
+}
+select:focus { border-color: var(--accent, #f0a030); }
+
+.send-btn {
+  margin: 12px 12px 4px; padding: 10px;
+  background: var(--accent, #f0a030); color: #000;
+  border: none; border-radius: 6px;
+  font-size: 16px; font-weight: 700; cursor: pointer;
+}
+.send-btn:hover { filter: brightness(1.1); }
+.send-btn:disabled { opacity: .4; cursor: default; filter: none; }
+
+
+.main { flex: 1; display: flex; flex-direction: column; overflow: hidden; }
+
+.stats-bar {
+  padding: 7px 14px;
+  background: var(--surface, #151c28);
+  border-bottom: 1px solid var(--border, #222840);
+  display: flex; gap: 20px; flex-shrink: 0; flex-wrap: wrap;
+}
+.stat { display: flex; flex-direction: column; gap: 1px; }
+.stat-label { font-size: 16px; text-transform: uppercase; letter-spacing: .08em; color: var(--text-muted, #6a7898); }
+.stat-value { font-size: 16px; font-weight: 600; color: var(--accent, #f0a030); font-family: ui-monospace, monospace; }
+
+.preview-wrap {
+  flex: 1; overflow: hidden;
+  display: grid;
+  grid-template-columns: 22px 1fr;
+  grid-template-rows: 22px 1fr;
+}
+.preview-wrap.empty {
+  grid-template-columns: 0 1fr;
+  grid-template-rows: 0 1fr;
+}
+.preview-wrap.empty .ruler-corner,
+.preview-wrap.empty #ruler-h,
+.preview-wrap.empty #ruler-v {
+  display: none;
+}
+.ruler-corner {
+  background: var(--surface, #151c28);
+  border-right: 1px solid var(--border, #222840);
+  border-bottom: 1px solid var(--border, #222840);
+}
+#ruler-h { display: block; border-bottom: 1px solid var(--border, #222840); background: var(--surface, #151c28); }
+#ruler-v { display: block; border-right: 1px solid var(--border, #222840); background: var(--surface, #151c28); }
+#preview-canvas { display: block; background: var(--elevated, #1a2235); }
+
+.bottom-bar {
+  padding: 8px 12px;
+  background: var(--surface, #151c28);
+  border-top: 1px solid var(--border, #222840);
+  display: flex; align-items: center; gap: 8px; flex-shrink: 0;
+}
+.save-btn {
+  padding: 7px 14px;
+  background: var(--elevated, #1a2235);
+  border: 1px solid var(--border, #222840);
+  color: var(--text-primary, #e2e6f4);
+  border-radius: 6px; font-size: 16px; font-weight: 600; cursor: pointer;
+}
+.save-btn:hover { border-color: var(--accent, #f0a030); }
+
+.save-name-input {
+  width: 220px;
+  background: var(--elevated, #1a2235);
+  border: 1px solid var(--border, #222840);
+  border-radius: 6px;
+  color: var(--text-primary, #e2e6f4);
+  font-size: 16px; padding: 7px 10px; outline: none;
+}
+.save-name-input:focus { border-color: var(--accent, #f0a030); }
+.save-name-ext { font-size: 16px; color: var(--text-muted, #6a7898); font-family: ui-monospace, monospace; white-space: nowrap; padding-left: 2px; }
+
+#status { font-size: 16px; color: var(--text-muted, #6a7898); flex: 1; text-align: right; }
+#status.ok   { color: var(--ok,     #22c55e); }
+#status.err  { color: var(--danger, #ef4444); }
+#status.warn { color: var(--warn,   #f59e0b); }
+</style>
+</head>
+<body>
+
+<div class="layout">
+  <div class="sidebar">
+
+    <div class="section">
+      <div class="section-title">File</div>
+      <input type="file" id="file-input" accept=".svg,image/svg+xml,.plt,.hpgl,.dxf" style="display:none" onchange="onFileChange(event)">
+      <button class="load-btn" onclick="document.getElementById('file-input').click()">Load File…</button>
+      <div class="file-name" id="file-name">—</div>
+    </div>
+
+    <div class="section">
+      <div class="section-title">Output Size</div>
+      <div style="display:flex; gap:8px">
+        <div style="flex:1; display:flex; flex-direction:column; gap:4px">
+          <label>Width (mm)</label>
+          <input type="number" id="W" value="100" min="1" max="2000" step="1" oninput="onSizeChange('W')">
+        </div>
+        <div style="flex:1; display:flex; flex-direction:column; gap:4px">
+          <label>Height (mm)</label>
+          <input type="number" id="H" value="100" min="1" max="2000" step="1" oninput="onSizeChange('H')">
+        </div>
+      </div>
+      <label class="check-label">
+        <input type="checkbox" id="lock-ratio" checked> Lock Ratio
+      </label>
+      <label>Flatten Tolerance (mm)</label>
+      <div style="display:flex; gap:6px; align-items:center">
+        <input type="number" id="tolerance" value="0.05" min="0.001" max="1" step="0.005" oninput="refresh()" style="flex:1">
+        <button class="og-btn" onclick="document.getElementById('tolerance').value='0.05';refresh()" title="Reset to default" style="width:28px;flex-shrink:0">↺</button>
+      </div>
+    </div>
+
+    <div class="section">
+      <div class="section-title">Pen</div>
+      <label>Pen-Up Z Travel (mm)</label>
+      <input type="number" id="pen-up" value="3" min="0.5" max="20" step="0.5" oninput="refresh()">
+      <label>Pen-Down Z Travel (mm)</label>
+      <input type="number" id="pen-down" value="0" min="-5" max="5" step="0.1" oninput="refresh()">
+      <label>Draw Speed (mm/min)</label>
+      <input type="number" id="draw-feed" value="3000" min="100" max="20000" step="100" oninput="refresh()">
+      <label>Travel Speed (mm/min)</label>
+      <input type="number" id="travel-feed" value="6000" min="100" max="20000" step="100" oninput="refresh()">
+      <label>Z Speed (mm/min)</label>
+      <input type="number" id="z-feed" value="500" min="50" max="3000" step="50" oninput="refresh()">
+    </div>
+
+    <div class="section" style="border-bottom:none">
+      <div class="section-title">Machine</div>
+      <label>Origin (G-code 0,0)</label>
+      <div class="origin-grid">
+        <button class="og-btn" data-v="tl"     onclick="setOrigin('tl')">↖</button>
+        <button class="og-btn" data-v="t"      onclick="setOrigin('t')">↑</button>
+        <button class="og-btn" data-v="tr"     onclick="setOrigin('tr')">↗</button>
+        <button class="og-btn" data-v="l"      onclick="setOrigin('l')">←</button>
+        <button class="og-btn" data-v="center" onclick="setOrigin('center')">✕</button>
+        <button class="og-btn" data-v="r"      onclick="setOrigin('r')">→</button>
+        <button class="og-btn active" data-v="bl" onclick="setOrigin('bl')">↙</button>
+        <button class="og-btn" data-v="b"      onclick="setOrigin('b')">↓</button>
+        <button class="og-btn" data-v="br"     onclick="setOrigin('br')">↘</button>
+      </div>
+      <label>End Position</label>
+      <select id="end-move" onchange="refresh()">
+        <option value="none">None (stay)</option>
+        <option value="origin">Origin (X0 Y0)</option>
+        <option value="park">Park (machine home)</option>
+      </select>
+    </div>
+
+    <button class="send-btn" id="send-btn" onclick="doSend()" disabled>Generate</button>
+
+  </div>
+
+  <div class="main">
+    <div class="stats-bar">
+      <div class="stat"><div class="stat-label">Paths</div><div class="stat-value" id="s-paths">—</div></div>
+      <div class="stat"><div class="stat-label">Pen-Down</div><div class="stat-value" id="s-draw">—</div></div>
+      <div class="stat"><div class="stat-label">Travel</div><div class="stat-value" id="s-travel">—</div></div>
+      <div class="stat"><div class="stat-label">Lifts</div><div class="stat-value" id="s-lifts">—</div></div>
+      <div class="stat"><div class="stat-label">Est. Time</div><div class="stat-value" id="s-time">—</div></div>
+    </div>
+    <div class="preview-wrap empty" id="preview-wrap">
+      <div class="ruler-corner"></div>
+      <canvas id="ruler-h"></canvas>
+      <canvas id="ruler-v"></canvas>
+      <canvas id="preview-canvas"></canvas>
+    </div>
+    <div class="bottom-bar">
+      <div id="save-section" style="display:none; flex-direction:column; gap:6px;">
+        <div style="display:flex; align-items:center; gap:0;">
+          <input id="save-name" class="save-name-input" type="text" placeholder="penplot" disabled>
+          <span class="save-name-ext">.nc</span>
+        </div>
+        <div style="display:flex; gap:8px;">
+          <button class="save-btn" id="save-gcode-btn" onclick="saveGCode()" disabled>Save G-code</button>
+          <button class="save-btn" id="open-saved-btn" onclick="openSaved()" style="display:none">Open</button>
+        </div>
+      </div>
+      <span id="status"></span>
+    </div>
+  </div>
+</div>
+
+<script>
+let msgId = 0
+const pending = {}
+
+function call(method, params) {
+  return new Promise((resolve, reject) => {
+    const id = String(++msgId)
+    pending[id] = { resolve, reject }
+    window.parent.postMessage({ type: 'fluid-request', id, method, params: params ?? {} }, '*')
+  })
+}
+
+window.addEventListener('message', e => {
+  if (e.data?.type === 'fluid-response') {
+    const p = pending[e.data.id]
+    if (p) { delete pending[e.data.id]; e.data.error ? p.reject(new Error(e.data.error)) : p.resolve(e.data.result) }
+  }
+})
+
+let currentSVGText = null
+let svgFileName = 'penplot'
+let svgAspectRatio = 1
+let currentOrigin = 'bl'
+let lastPolylines = null
+let generatedCode = ''
+let generatedPath = ''
+let currentFileType = 'svg'
+
+function setStatus(msg, cls = '') {
+  const el = document.getElementById('status')
+  el.textContent = msg; el.className = cls
+}
+
+function fmt(v) {
+  const r = Math.round(v * 1000) / 1000
+  if (r === 0 || Object.is(r, -0)) return '0'
+  const s = r.toString()
+  return s.includes('.') ? s.replace(/0+$/, '').replace(/\.$/, '') : s
+}
+
+function dist2(ax, ay, bx, by) {
+  const dx = bx - ax, dy = by - ay
+  return dx * dx + dy * dy
+}
+
+const ORIGIN_DOT_XY = {
+  tl: [0, 0], t: [0.5, 0], tr: [1, 0],
+  l: [0, 0.5], center: [0.5, 0.5], r: [1, 0.5],
+  bl: [0, 1], b: [0.5, 1], br: [1, 1]
+}
+
+function originOffset(p) {
+  const map = {
+    tl: [0, -p.H],    t: [-p.W/2, -p.H],   tr: [-p.W, -p.H],
+    l:  [0, -p.H/2],  center: [-p.W/2, -p.H/2], r: [-p.W, -p.H/2],
+    bl: [0,  0],      b: [-p.W/2,  0],      br: [-p.W,  0]
+  }
+  const [ox, oy] = map[p.origin] || [0, 0]
+  return { ox, oy }
+}
+
+function setOrigin(o) {
+  currentOrigin = o
+  document.querySelectorAll('.og-btn').forEach(b => b.classList.toggle('active', b.dataset.v === o))
+  refresh()
+}
+
+function onFileChange(e) {
+  const file = e.target.files[0]
+  if (!file) return
+  const ext = file.name.split('.').pop().toLowerCase()
+  currentFileType = ext === 'dxf' ? 'dxf' : (ext === 'plt' || ext === 'hpgl') ? 'hpgl' : 'svg'
+  const reader = new FileReader()
+  reader.onload = evt => {
+    const text = evt.target.result
+    currentSVGText = text
+    svgFileName = file.name.replace(/\.[^.]+$/, '')
+    document.getElementById('file-name').textContent = file.name
+    document.getElementById('send-btn').disabled = false
+    if (currentFileType === 'svg') {
+      let vbW = 100, vbH = 100
+      try {
+        const doc = new DOMParser().parseFromString(text, 'image/svg+xml')
+        const root = doc.documentElement
+        const vb = root.getAttribute('viewBox')
+        if (vb) {
+          const n = vb.trim().split(/[\s,]+/).map(Number)
+          if (n.length >= 4 && n[2] > 0 && n[3] > 0) { vbW = n[2]; vbH = n[3] }
+        } else {
+          vbW = parseFloat(root.getAttribute('width')) || 100
+          vbH = parseFloat(root.getAttribute('height')) || 100
+        }
+      } catch (_) {}
+      svgAspectRatio = vbW / vbH
+    } else {
+      svgAspectRatio = 1
+    }
+    const W = parseFloat(document.getElementById('W').value) || 100
+    document.getElementById('H').value = fmt(W / svgAspectRatio)
+    document.getElementById('lock-ratio').checked = true
+    refresh()
+  }
+  reader.onerror = () => setStatus('Cannot read file.', 'err')
+  reader.readAsText(file)
+}
+
+function onSizeChange(changed) {
+  if (document.getElementById('lock-ratio').checked) {
+    if (changed === 'W') {
+      const w = parseFloat(document.getElementById('W').value)
+      if (w > 0) document.getElementById('H').value = fmt(w / svgAspectRatio)
+    } else {
+      const h = parseFloat(document.getElementById('H').value)
+      if (h > 0) document.getElementById('W').value = fmt(h * svgAspectRatio)
+    }
+  }
+  refresh()
+}
+
+function getParams() {
+  return {
+    W:          Math.max(1,     parseFloat(document.getElementById('W').value)          || 100),
+    H:          Math.max(1,     parseFloat(document.getElementById('H').value)          || 100),
+    tolerance:  Math.max(0.001, parseFloat(document.getElementById('tolerance').value)  || 0.05),
+    penUp:      parseFloat(document.getElementById('pen-up').value)                     ?? 3,
+    penDown:    -Math.abs(parseFloat(document.getElementById('pen-down').value)           || 0),
+    drawFeed:   Math.max(100,   parseInt(document.getElementById('draw-feed').value)    || 3000),
+    travelFeed: Math.max(100,   parseInt(document.getElementById('travel-feed').value)  || 6000),
+    zFeed:      Math.max(50,    parseInt(document.getElementById('z-feed').value)       || 500),
+    origin:     currentOrigin,
+    endMove:    document.getElementById('end-move').value,
+  }
+}
+
+function sanitizeFileName(name) {
+  return name.replace(/[^a-zA-Z0-9._-]+/g, '_').replace(/^_+|_+$/g, '')
+}
+
+function defaultFileName() {
+  return sanitizeFileName(svgFileName || 'penplot') || 'penplot'
+}
+
+function mulMat([a1, b1, c1, d1, e1, f1], [a2, b2, c2, d2, e2, f2]) {
+  return [
+    a1*a2 + c1*b2, b1*a2 + d1*b2,
+    a1*c2 + c1*d2, b1*c2 + d1*d2,
+    a1*e2 + c1*f2 + e1, b1*e2 + d1*f2 + f1
+  ]
+}
+
+function applyMat([a, b, c, d, e, f], x, y) {
+  return [a*x + c*y + e, b*x + d*y + f]
+}
+
+function parseTransformStr(str) {
+  if (!str) return [1, 0, 0, 1, 0, 0]
+  let m = [1, 0, 0, 1, 0, 0]
+  const re = /(matrix|translate|scale|rotate|skewX|skewY)\s*\(([^)]*)\)/g
+  let match
+  while ((match = re.exec(str)) !== null) {
+    const args = match[2].trim().split(/[\s,]+/).map(Number)
+    let t
+    switch (match[1]) {
+      case 'matrix':    t = [args[0], args[1], args[2], args[3], args[4], args[5]]; break
+      case 'translate': t = [1, 0, 0, 1, args[0] || 0, args[1] || 0]; break
+      case 'scale': {
+        const sx = args[0] || 1, sy = args[1] !== undefined ? args[1] : sx
+        t = [sx, 0, 0, sy, 0, 0]; break
+      }
+      case 'rotate': {
+        const a = args[0] * Math.PI / 180, c = Math.cos(a), s = Math.sin(a)
+        if (args.length >= 3) {
+          const cx = args[1], cy = args[2]
+          t = [c, s, -s, c, cx*(1-c) + cy*s, cy*(1-c) - cx*s]
+        } else { t = [c, s, -s, c, 0, 0] }
+        break
+      }
+      case 'skewX': { const tv = Math.tan(args[0]*Math.PI/180); t = [1, 0, tv, 1, 0, 0]; break }
+      case 'skewY': { const tv = Math.tan(args[0]*Math.PI/180); t = [1, tv, 0, 1, 0, 0]; break }
+      default: continue
+    }
+    m = mulMat(m, t)
+  }
+  return m
+}
+
+function joinPolylines(polylines, eps) {
+  const n = polylines.length
+  if (n === 0) return []
+
+  const snap = v => Math.round(v / eps)
+  const key = (x, y) => `${snap(x)},${snap(y)}`
+
+  const map = new Map()
+  const addE = (k, packed) => { const a = map.get(k); if (a) a.push(packed); else map.set(k, [packed]) }
+  const rmE  = (k, packed) => { const a = map.get(k); if (!a) return; const i = a.indexOf(packed); if (i >= 0) a.splice(i, 1); if (a.length === 0) map.delete(k) }
+  const pack = (idx, end) => idx | (end << 20)
+  const unpack = v => ({ idx: v & 0xFFFFF, end: v >> 20 })
+
+  for (let i = 0; i < n; i++) {
+    const pl = polylines[i]
+    addE(key(pl[0], pl[1]), pack(i, 0))
+    addE(key(pl[pl.length-2], pl[pl.length-1]), pack(i, 1))
+  }
+
+  const used = new Uint8Array(n)
+
+  const pop = (x, y) => {
+    const a = map.get(key(x, y)); if (!a) return null
+    for (const v of a) { const { idx } = unpack(v); if (!used[idx]) return unpack(v) }
+    return null
+  }
+
+  const consume = (idx) => {
+    used[idx] = true
+    const pl = polylines[idx]
+    rmE(key(pl[0], pl[1]), pack(idx, 0))
+    rmE(key(pl[pl.length-2], pl[pl.length-1]), pack(idx, 1))
+    return pl
+  }
+
+  const result = []
+
+  for (let i = 0; i < n; i++) {
+    if (used[i]) continue
+    let chain = consume(i).slice()
+
+    let grow = true
+    while (grow) {
+      grow = false
+      const ex = chain[chain.length-2], ey = chain[chain.length-1]
+      const nx = pop(ex, ey); if (!nx) continue
+      const npl = consume(nx.idx)
+      if (nx.end === 0) { for (let k = 2; k < npl.length; k++) chain.push(npl[k]) }
+      else { for (let k = npl.length-4; k >= 0; k -= 2) chain.push(npl[k], npl[k+1]) }
+      grow = true
+    }
+
+    grow = true
+    while (grow) {
+      grow = false
+      const sx = chain[0], sy = chain[1]
+      const px = pop(sx, sy); if (!px) continue
+      const ppl = consume(px.idx)
+      if (px.end === 1) { chain = ppl.slice(0, ppl.length-2).concat(chain) }
+      else {
+        const rev = []
+        for (let k = ppl.length-2; k >= 2; k -= 2) rev.push(ppl[k], ppl[k+1])
+        chain = rev.concat(chain)
+      }
+      grow = true
+    }
+
+    if (chain.length >= 4) result.push(chain)
+  }
+  return result
+}
+
+function evalBSpline(degree, knots, pts) {
+  const n = pts.length
+  if (n < 2) return []
+  const tMin = knots[degree], tMax = knots[knots.length - degree - 1]
+  if (tMax <= tMin) return []
+  const findSpan = t => {
+    if (t >= tMax) return knots.length - degree - 2
+    for (let k = degree; k < knots.length - degree - 1; k++) { if (t < knots[k + 1]) return k }
+    return degree
+  }
+  const steps = Math.max(n * 8, 64)
+  const result = []
+  for (let s = 0; s <= steps; s++) {
+    const t = tMin + (tMax - tMin) * s / steps
+    const span = findSpan(t)
+    const d = []
+    for (let j = 0; j <= degree; j++) {
+      const idx = span - degree + j
+      d[j] = idx >= 0 && idx < n ? [pts[idx][0], pts[idx][1]] : [0, 0]
+    }
+    for (let r = 1; r <= degree; r++) {
+      for (let j = degree; j >= r; j--) {
+        const ki = j + span - degree
+        const denom = knots[ki + degree - r + 1] - knots[ki]
+        if (Math.abs(denom) < 1e-12) continue
+        const alpha = (t - knots[ki]) / denom
+        d[j][0] = (1 - alpha) * d[j-1][0] + alpha * d[j][0]
+        d[j][1] = (1 - alpha) * d[j-1][1] + alpha * d[j][1]
+      }
+    }
+    result.push(d[degree][0], d[degree][1])
+  }
+  return result
+}
+
+function parseHPGLPolylines(text, p, ox, oy) {
+  const all = []
+  let px = 0, py = 0, penDown = false, cur = null
+
+  const commit = () => { if (cur && cur.length >= 4) { all.push(cur); cur = null } }
+  const penMove = (nx, ny) => {
+    if (penDown) { if (!cur) cur = [px, py]; cur.push(nx, ny) }
+    else commit()
+    px = nx; py = ny
+  }
+
+  for (const token of text.replace(/\r/g, '').split(';')) {
+    const t = token.trim()
+    if (!t) continue
+    const cmd = t.slice(0, 2).toUpperCase()
+    const nums = t.slice(2).trim().split(/[\s,]+/).map(Number).filter(n => !isNaN(n))
+
+    switch (cmd) {
+      case 'IN': px = 0; py = 0; penDown = false; commit(); break
+      case 'PU':
+        commit(); penDown = false
+        for (let i = 0; i + 1 < nums.length; i += 2) { px = nums[i]; py = nums[i+1] }
+        break
+      case 'PD':
+        if (!cur) cur = [px, py]
+        penDown = true
+        for (let i = 0; i + 1 < nums.length; i += 2) { cur.push(nums[i], nums[i+1]); px = nums[i]; py = nums[i+1] }
+        break
+      case 'PA': for (let i = 0; i + 1 < nums.length; i += 2) penMove(nums[i], nums[i+1]); break
+      case 'PR': for (let i = 0; i + 1 < nums.length; i += 2) penMove(px + nums[i], py + nums[i+1]); break
+      case 'CI': {
+        const r = nums[0] ?? 0
+        if (r <= 0) break
+        commit()
+        const steps = Math.max(16, Math.ceil(2 * Math.PI * r / Math.max(r * 0.02, 0.5)))
+        const pl = []
+        for (let j = 0; j <= steps; j++) { const a = 2*Math.PI*j/steps; pl.push(px+r*Math.cos(a), py+r*Math.sin(a)) }
+        if (pl.length >= 4) all.push(pl)
+        break
+      }
+      case 'AA':
+      case 'AR': {
+        if (nums.length < 3) break
+        const acx = cmd === 'AA' ? nums[0] : px + nums[0]
+        const acy = cmd === 'AA' ? nums[1] : py + nums[1]
+        const sweepRad = nums[2] * Math.PI / 180
+        const r = Math.sqrt((px-acx)**2 + (py-acy)**2)
+        if (r < 1e-10) break
+        const startAngle = Math.atan2(py - acy, px - acx)
+        const steps = Math.max(4, Math.ceil(Math.abs(sweepRad) / (Math.PI / 32)))
+        if (!cur) cur = [px, py]
+        for (let j = 1; j <= steps; j++) {
+          const a = startAngle + sweepRad * j / steps
+          px = acx + r * Math.cos(a); py = acy + r * Math.sin(a)
+          cur.push(px, py)
+        }
+        break
+      }
+    }
+  }
+  commit()
+  if (all.length === 0) return []
+
+  let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity
+  for (const pl of all) for (let i = 0; i < pl.length; i += 2) {
+    if (pl[i] < minX) minX = pl[i]; if (pl[i] > maxX) maxX = pl[i]
+    if (pl[i+1] < minY) minY = pl[i+1]; if (pl[i+1] > maxY) maxY = pl[i+1]
+  }
+
+  const joined = joinPolylines(all, Math.max(0.5, (maxX - minX + maxY - minY) * 1e-5))
+
+  minX = Infinity; minY = Infinity; maxX = -Infinity; maxY = -Infinity
+  for (const pl of joined) for (let i = 0; i < pl.length; i += 2) {
+    if (pl[i] < minX) minX = pl[i]; if (pl[i] > maxX) maxX = pl[i]
+    if (pl[i+1] < minY) minY = pl[i+1]; if (pl[i+1] > maxY) maxY = pl[i+1]
+  }
+
+  const cW = maxX - minX || 1, cH = maxY - minY || 1
+  svgAspectRatio = cW / cH
+  const sx = p.W / cW, sy = p.H / cH
+  const viewMat = [sx, 0, 0, sy, ox - minX*sx, oy - minY*sy]
+  const transformed = []
+  for (const pl of joined) {
+    const line = []
+    for (let i = 0; i < pl.length; i += 2) { const [x, y] = applyMat(viewMat, pl[i], pl[i+1]); line.push(x, y) }
+    if (line.length >= 4) transformed.push(line)
+  }
+  return transformed
+}
+
+function parseDXFPolylines(text, p, ox, oy) {
+  const lines = text.replace(/\r\n/g, '\n').replace(/\r/g, '\n').split('\n')
+  const pairs = []
+  for (let i = 0; i < lines.length; i += 2) {
+    const code = parseInt(lines[i])
+    const val = (lines[i+1] || '').trim()
+    if (!isNaN(code)) pairs.push([code, val])
+  }
+
+  let entStart = -1, entEnd = pairs.length
+  for (let i = 0; i < pairs.length - 1; i++) {
+    if (pairs[i][0] === 0 && pairs[i][1] === 'SECTION' && pairs[i+1][0] === 2 && pairs[i+1][1] === 'ENTITIES') entStart = i + 2
+    if (entStart >= 0 && pairs[i][0] === 0 && pairs[i][1] === 'ENDSEC') { entEnd = i; break }
+  }
+  if (entStart < 0) return []
+
+  const ARRAY_CODES = new Set([10, 11, 12, 13, 20, 21, 22, 23, 40, 41, 42])
+  const entities = []
+  let cur = null
+  for (let i = entStart; i < entEnd; i++) {
+    const [code, val] = pairs[i]
+    if (code === 0) {
+      if (cur) entities.push(cur)
+      cur = { type: val, g: {} }
+    } else if (cur) {
+      const num = parseFloat(val)
+      const v = isNaN(num) ? val : num
+      if (ARRAY_CODES.has(code)) { if (!cur.g[code]) cur.g[code] = []; cur.g[code].push(v) }
+      else cur.g[code] = v
+    }
+  }
+  if (cur) entities.push(cur)
+
+  const all = []
+
+  const arcPts = (cx, cy, r, a1, a2) => {
+    let da = a2 - a1; if (da <= 0) da += 2 * Math.PI
+    const steps = Math.max(4, Math.ceil(da / (Math.PI / 32)))
+    const pl = []
+    for (let j = 0; j <= steps; j++) { const a = a1 + da * j / steps; pl.push(cx + r * Math.cos(a), cy + r * Math.sin(a)) }
+    return pl
+  }
+
+  const g1 = (g, code) => Array.isArray(g[code]) ? (g[code][0] ?? 0) : (g[code] ?? 0)
+
+  let inPoly = false, polyPts = [], polyClosed = false
+
+  for (const ent of entities) {
+    const { type, g } = ent
+
+    if (type === 'POLYLINE') {
+      inPoly = true; polyPts = []; polyClosed = !!((g[70] ?? 0) & 1); continue
+    }
+    if (type === 'VERTEX' && inPoly) { polyPts.push(g1(g, 10), g1(g, 20)); continue }
+    if (type === 'SEQEND') {
+      if (inPoly && polyPts.length >= 4) { if (polyClosed) polyPts.push(polyPts[0], polyPts[1]); all.push(polyPts) }
+      inPoly = false; polyPts = []; continue
+    }
+    if (type !== 'VERTEX') inPoly = false
+
+    switch (type) {
+      case 'LINE': {
+        const x1 = g1(g,10), y1 = g1(g,20), x2 = g1(g,11), y2 = g1(g,21)
+        if (x1 !== x2 || y1 !== y2) all.push([x1, y1, x2, y2])
+        break
+      }
+      case 'LWPOLYLINE': {
+        const xs = g[10] || [], ys = g[20] || []
+        const closed = !!((g[70] ?? 0) & 1)
+        const pl = []
+        for (let i = 0; i < xs.length; i++) pl.push(xs[i], ys[i] ?? 0)
+        if (closed && pl.length >= 4) pl.push(pl[0], pl[1])
+        if (pl.length >= 4) all.push(pl)
+        break
+      }
+      case 'ARC': {
+        const r = g1(g, 40); if (r <= 0) break
+        const pl = arcPts(g1(g,10), g1(g,20), r, (g[50]??0)*Math.PI/180, (g[51]??360)*Math.PI/180)
+        if (pl.length >= 4) all.push(pl)
+        break
+      }
+      case 'CIRCLE': {
+        const r = g1(g, 40); if (r <= 0) break
+        const cx = g1(g,10), cy = g1(g,20)
+        const pl = []
+        for (let j = 0; j <= 64; j++) { const a = 2*Math.PI*j/64; pl.push(cx+r*Math.cos(a), cy+r*Math.sin(a)) }
+        if (pl.length >= 4) all.push(pl)
+        break
+      }
+      case 'ELLIPSE': {
+        const mex = g1(g,11), mey = g1(g,21)
+        const ma = Math.sqrt(mex*mex + mey*mey); if (ma < 1e-10) break
+        const mb = ma * g1(g, 40), rot = Math.atan2(mey, mex)
+        const a1 = g1(g, 41), a2r = g1(g, 42) || (2*Math.PI)
+        let da = a2r - a1; if (da <= 0) da += 2*Math.PI
+        const steps = Math.max(8, Math.ceil(da / (Math.PI / 32)))
+        const cx = g1(g,10), cy = g1(g,20)
+        const pl = []
+        for (let j = 0; j <= steps; j++) {
+          const t = a1 + da * j / steps
+          pl.push(
+            cx + ma*Math.cos(t)*Math.cos(rot) - mb*Math.sin(t)*Math.sin(rot),
+            cy + ma*Math.cos(t)*Math.sin(rot) + mb*Math.sin(t)*Math.cos(rot)
+          )
+        }
+        if (pl.length >= 4) all.push(pl)
+        break
+      }
+      case 'SPLINE': {
+        const fxs = g[11] || [], fys = g[21] || []
+        const cxs = g[10] || [], cys = g[20] || []
+        const knots = g[40] || []
+        if (fxs.length >= 2) {
+          const pl = []; for (let i = 0; i < fxs.length; i++) pl.push(fxs[i], fys[i] ?? 0)
+          if (pl.length >= 4) all.push(pl)
+        } else if (cxs.length >= 2) {
+          const degree = g[71] ?? 3
+          if (knots.length >= cxs.length + degree + 1) {
+            const pl = evalBSpline(degree, knots, cxs.map((x, i) => [x, cys[i] ?? 0]))
+            if (pl.length >= 4) all.push(pl)
+          } else {
+            const pl = []; for (let i = 0; i < cxs.length; i++) pl.push(cxs[i], cys[i] ?? 0)
+            if (pl.length >= 4) all.push(pl)
+          }
+        }
+        break
+      }
+    }
+  }
+
+  if (all.length === 0) return []
+
+  let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity
+  for (const pl of all) for (let i = 0; i < pl.length; i += 2) {
+    if (pl[i] < minX) minX = pl[i]; if (pl[i] > maxX) maxX = pl[i]
+    if (pl[i+1] < minY) minY = pl[i+1]; if (pl[i+1] > maxY) maxY = pl[i+1]
+  }
+
+  const joined = joinPolylines(all, Math.max(1e-6, (maxX - minX + maxY - minY) * 1e-5))
+
+  minX = Infinity; minY = Infinity; maxX = -Infinity; maxY = -Infinity
+  for (const pl of joined) for (let i = 0; i < pl.length; i += 2) {
+    if (pl[i] < minX) minX = pl[i]; if (pl[i] > maxX) maxX = pl[i]
+    if (pl[i+1] < minY) minY = pl[i+1]; if (pl[i+1] > maxY) maxY = pl[i+1]
+  }
+
+  const cW = maxX - minX || 1, cH = maxY - minY || 1
+  svgAspectRatio = cW / cH
+  const sx = p.W / cW, sy = p.H / cH
+  const viewMat = [sx, 0, 0, sy, ox - minX*sx, oy - minY*sy]
+  const transformed = []
+  for (const pl of joined) {
+    const line = []
+    for (let i = 0; i < pl.length; i += 2) { const [x, y] = applyMat(viewMat, pl[i], pl[i+1]); line.push(x, y) }
+    if (line.length >= 4) transformed.push(line)
+  }
+  return transformed
+}
+
+// Path flattening approach inspired by svg2gcode (MIT) — https://github.com/sameer/svg2gcode
+function flattenCubic(x0, y0, x1, y1, x2, y2, x3, y3, tol, pts, depth) {
+  depth = depth || 0
+  if (depth > 16) { pts.push(x3, y3); return }
+  const d = Math.sqrt((x3-x0)**2 + (y3-y0)**2)
+  if (d < 1e-10) { pts.push(x3, y3); return }
+  const nx = (y0-y3)/d, ny = (x3-x0)/d
+  if (Math.abs(nx*(x1-x0) + ny*(y1-y0)) + Math.abs(nx*(x2-x0) + ny*(y2-y0)) <= tol) {
+    pts.push(x3, y3); return
+  }
+  const m01x=(x0+x1)/2, m01y=(y0+y1)/2
+  const m12x=(x1+x2)/2, m12y=(y1+y2)/2
+  const m23x=(x2+x3)/2, m23y=(y2+y3)/2
+  const m012x=(m01x+m12x)/2, m012y=(m01y+m12y)/2
+  const m123x=(m12x+m23x)/2, m123y=(m12y+m23y)/2
+  const mx=(m012x+m123x)/2, my=(m012y+m123y)/2
+  flattenCubic(x0,y0, m01x,m01y, m012x,m012y, mx,my, tol, pts, depth+1)
+  flattenCubic(mx,my, m123x,m123y, m23x,m23y, x3,y3, tol, pts, depth+1)
+}
+
+function flattenQuadratic(x0, y0, x1, y1, x2, y2, tol, pts, depth) {
+  depth = depth || 0
+  if (depth > 16) { pts.push(x2, y2); return }
+  const d = Math.sqrt((x2-x0)**2 + (y2-y0)**2)
+  if (d < 1e-10) { pts.push(x2, y2); return }
+  const nx = (y0-y2)/d, ny = (x2-x0)/d
+  if (Math.abs(nx*(x1-x0) + ny*(y1-y0)) <= tol) { pts.push(x2, y2); return }
+  const m01x=(x0+x1)/2, m01y=(y0+y1)/2
+  const m12x=(x1+x2)/2, m12y=(y1+y2)/2
+  const mx=(m01x+m12x)/2, my=(m01y+m12y)/2
+  flattenQuadratic(x0,y0, m01x,m01y, mx,my, tol, pts, depth+1)
+  flattenQuadratic(mx,my, m12x,m12y, x2,y2, tol, pts, depth+1)
+}
+
+function flattenArc(x1, y1, rx, ry, xRotDeg, largeArc, sweep, x2, y2, tol, pts) {
+  if (x1 === x2 && y1 === y2) return
+  rx = Math.abs(rx); ry = Math.abs(ry)
+  if (rx < 1e-10 || ry < 1e-10) { pts.push(x2, y2); return }
+  const phi = xRotDeg * Math.PI / 180, cp = Math.cos(phi), sp = Math.sin(phi)
+  const dx2 = (x1-x2)/2, dy2 = (y1-y2)/2
+  const x1p = cp*dx2 + sp*dy2, y1p = -sp*dx2 + cp*dy2
+  const x1p2 = x1p*x1p, y1p2 = y1p*y1p, rx2 = rx*rx, ry2 = ry*ry
+  const lam = x1p2/rx2 + y1p2/ry2
+  if (lam > 1) { const l = Math.sqrt(lam); rx *= l; ry *= l }
+  const rx2b = rx*rx, ry2b = ry*ry
+  const num2 = Math.max(0, rx2b*ry2b - rx2b*y1p2 - ry2b*x1p2)
+  const den2 = rx2b*y1p2 + ry2b*x1p2
+  const coeff = (largeArc === sweep ? -1 : 1) * Math.sqrt(den2 > 0 ? num2/den2 : 0)
+  const cxp = coeff*rx*y1p/ry, cyp = -coeff*ry*x1p/rx
+  const cx = cp*cxp - sp*cyp + (x1+x2)/2
+  const cy = sp*cxp + cp*cyp + (y1+y2)/2
+  const angleVec = (ux, uy, vx, vy) => {
+    const n = Math.sqrt(ux*ux + uy*uy), m = Math.sqrt(vx*vx + vy*vy)
+    const d = Math.max(-1, Math.min(1, (ux*vx + uy*vy) / (n*m)))
+    return (ux*vy - uy*vx < 0 ? -1 : 1) * Math.acos(d)
+  }
+  const ux=(x1p-cxp)/rx, uy=(y1p-cyp)/ry
+  const vx=(-x1p-cxp)/rx, vy=(-y1p-cyp)/ry
+  let theta1 = angleVec(1, 0, ux, uy)
+  let dtheta = angleVec(ux, uy, vx, vy)
+  if (!sweep && dtheta > 0) dtheta -= 2*Math.PI
+  if (sweep && dtheta < 0) dtheta += 2*Math.PI
+  const steps = Math.max(2, Math.ceil(Math.abs(dtheta) * Math.max(rx, ry) / tol))
+  for (let i = 1; i <= steps; i++) {
+    const t = theta1 + dtheta * i / steps
+    pts.push(
+      cp*rx*Math.cos(t) - sp*ry*Math.sin(t) + cx,
+      sp*rx*Math.cos(t) + cp*ry*Math.sin(t) + cy
+    )
+  }
+}
+
+function svgPathToPolylines(d, fullMat, tol) {
+  const polylines = []
+  let cur = null
+  let x = 0, y = 0, mx = 0, my = 0, lcx = 0, lcy = 0, lqx = 0, lqy = 0
+
+  const pushL = (lx, ly) => {
+    const [rx, ry] = applyMat(fullMat, lx, ly)
+    if (!cur) cur = []
+    cur.push(rx, ry)
+  }
+
+  const moveTo = (lx, ly) => {
+    if (cur && cur.length >= 4) polylines.push(cur)
+    cur = null; pushL(lx, ly); x = mx = lx; y = my = ly
+    lcx = lx; lcy = ly; lqx = lx; lqy = ly
+  }
+
+  const lineTo = (lx, ly) => { pushL(lx, ly); x = lx; y = ly; lcx = lx; lcy = ly; lqx = lx; lqy = ly }
+
+  const closePath = () => {
+    if (cur) { pushL(mx, my); polylines.push(cur); cur = null }
+    x = mx; y = my; lcx = mx; lcy = my; lqx = mx; lqy = my
+  }
+
+  const cubicTo = (cx1, cy1, cx2, cy2, ex, ey) => {
+    const pts = []
+    flattenCubic(x, y, cx1, cy1, cx2, cy2, ex, ey, tol, pts)
+    for (let i = 0; i < pts.length; i += 2) pushL(pts[i], pts[i+1])
+    lcx = cx2; lcy = cy2; x = ex; y = ey; lqx = x; lqy = y
+  }
+
+  const quadTo = (qx, qy, ex, ey) => {
+    const pts = []
+    flattenQuadratic(x, y, qx, qy, ex, ey, tol, pts)
+    for (let i = 0; i < pts.length; i += 2) pushL(pts[i], pts[i+1])
+    lqx = qx; lqy = qy; x = ex; y = ey; lcx = x; lcy = y
+  }
+
+  const arcTo = (rx, ry, xRot, la, sw, ex, ey) => {
+    const pts = []
+    flattenArc(x, y, rx, ry, xRot, la ? 1 : 0, sw ? 1 : 0, ex, ey, tol, pts)
+    for (let i = 0; i < pts.length; i += 2) pushL(pts[i], pts[i+1])
+    x = ex; y = ey; lcx = x; lcy = y; lqx = x; lqy = y
+  }
+
+  const re = /([MmZzLlHhVvCcSsQqTtAa])|(-?(?:\d+\.?\d*|\.\d+)(?:[eE][+-]?\d+)?)/g
+  const tokens = []
+  let m
+  while ((m = re.exec(d)) !== null) tokens.push(m[1] !== undefined ? m[1] : parseFloat(m[2]))
+
+  let i = 0
+  const num = () => (typeof tokens[i] === 'number' ? tokens[i++] : 0)
+  const hasNum = () => i < tokens.length && typeof tokens[i] === 'number'
+
+  let cmd = ''
+  while (i < tokens.length) {
+    if (typeof tokens[i] === 'string') {
+      cmd = tokens[i++]
+      if (cmd === 'Z' || cmd === 'z') { closePath(); cmd = ''; continue }
+    }
+    if (!hasNum()) { if (i < tokens.length && typeof tokens[i] !== 'string') i++; continue }
+    switch (cmd) {
+      case 'M': { moveTo(num(), num()); cmd = 'L'; break }
+      case 'm': { moveTo(x+num(), y+num()); cmd = 'l'; break }
+      case 'L': { lineTo(num(), num()); break }
+      case 'l': { lineTo(x+num(), y+num()); break }
+      case 'H': { lineTo(num(), y); break }
+      case 'h': { lineTo(x+num(), y); break }
+      case 'V': { lineTo(x, num()); break }
+      case 'v': { lineTo(x, y+num()); break }
+      case 'C': { cubicTo(num(), num(), num(), num(), num(), num()); break }
+      case 'c': { const d1=num(),d2=num(),d3=num(),d4=num(),d5=num(),d6=num(); cubicTo(x+d1,y+d2,x+d3,y+d4,x+d5,y+d6); break }
+      case 'S': { const cx2=num(),cy2=num(),ex=num(),ey=num(); cubicTo(2*x-lcx,2*y-lcy,cx2,cy2,ex,ey); break }
+      case 's': { const d1=num(),d2=num(),d3=num(),d4=num(); cubicTo(2*x-lcx,2*y-lcy,x+d1,y+d2,x+d3,y+d4); break }
+      case 'Q': { quadTo(num(), num(), num(), num()); break }
+      case 'q': { const d1=num(),d2=num(),d3=num(),d4=num(); quadTo(x+d1,y+d2,x+d3,y+d4); break }
+      case 'T': { quadTo(2*x-lqx, 2*y-lqy, num(), num()); break }
+      case 't': { const d1=num(),d2=num(); quadTo(2*x-lqx,2*y-lqy,x+d1,y+d2); break }
+      case 'A': { const r1=num(),r2=num(),xr=num(),la=!!Math.round(num()),sw=!!Math.round(num()),ex=num(),ey=num(); arcTo(r1,r2,xr,la,sw,ex,ey); break }
+      case 'a': { const r1=num(),r2=num(),xr=num(),la=!!Math.round(num()),sw=!!Math.round(num()),d1=num(),d2=num(); arcTo(r1,r2,xr,la,sw,x+d1,y+d2); break }
+      default: i++; break
+    }
+  }
+
+  if (cur && cur.length >= 4) polylines.push(cur)
+  return polylines
+}
+
+function parseSVGPolylines(svgText, p, ox, oy) {
+  let doc, root
+  try {
+    doc = new DOMParser().parseFromString(svgText, 'image/svg+xml')
+    if (doc.querySelector('parsererror')) throw new Error('parseerror')
+    root = doc.documentElement
+  } catch (_) { throw new Error('Invalid SVG') }
+
+  let vbX = 0, vbY = 0, vbW = 100, vbH = 100
+  const vb = root.getAttribute('viewBox')
+  if (vb) {
+    const n = vb.trim().split(/[\s,]+/).map(Number)
+    if (n.length >= 4 && n[2] > 0 && n[3] > 0) [vbX, vbY, vbW, vbH] = n
+  } else {
+    vbW = parseFloat(root.getAttribute('width')) || 100
+    vbH = parseFloat(root.getAttribute('height')) || 100
+  }
+
+  let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity
+  const svgTol = p.tolerance * vbW / p.W
+  const all = []
+  const SKIP = new Set(['defs','style','script','title','desc','metadata','marker','symbol','pattern','clippath','mask'])
+
+  const cssRules = {}
+  for (const styleEl of doc.querySelectorAll('style')) {
+    const text = styleEl.textContent || ''
+    const re = /([^{}]+)\{([^}]*)\}/g
+    let m
+    while ((m = re.exec(text)) !== null) {
+      const props = {}
+      for (const decl of m[2].split(';')) {
+        const ci = decl.indexOf(':')
+        if (ci < 0) continue
+        const k = decl.slice(0, ci).trim().toLowerCase()
+        const v = decl.slice(ci + 1).trim()
+        if (k && v) props[k] = v
+      }
+      if (!Object.keys(props).length) continue
+      for (let sel of m[1].split(',')) {
+        sel = sel.trim()
+        if (!sel || /[\s>+~\[:]/.test(sel)) continue
+        if (!cssRules[sel]) cssRules[sel] = {}
+        Object.assign(cssRules[sel], props)
+      }
+    }
+  }
+
+  function elStyle(el, prop) {
+    const style = el.getAttribute('style') || ''
+    if (style) {
+      const re = new RegExp(`(?:^|;)\\s*${prop}\\s*:\\s*([^;]+)`, 'i')
+      const m = style.match(re)
+      if (m) return m[1].trim()
+    }
+    const classes = (el.getAttribute('class') || '').trim().split(/\s+/).filter(Boolean)
+    for (const cls of classes) {
+      const r = cssRules['.' + cls]
+      if (r && prop in r) return r[prop]
+    }
+    const id = el.getAttribute('id')
+    if (id && cssRules['#' + id] && prop in cssRules['#' + id]) return cssRules['#' + id][prop]
+    const tag = (el.tagName || '').replace(/^.*:/, '').toLowerCase()
+    if (tag && cssRules[tag] && prop in cssRules[tag]) return cssRules[tag][prop]
+    const attr = el.getAttribute(prop)
+    if (attr != null) return attr.trim()
+    return null
+  }
+
+  function processEl(el, ctm, iStroke, iFill, iOpacity) {
+    const raw = el.tagName || ''
+    const tag = raw.replace(/^.*:/, '').toLowerCase()
+    if (!tag || SKIP.has(tag)) return
+
+    const display = elStyle(el, 'display')
+    if (display === 'none') return
+    const visibility = elStyle(el, 'visibility')
+    if (visibility === 'hidden' || visibility === 'collapse') return
+
+    const opacityRaw = elStyle(el, 'opacity')
+    const opacity = opacityRaw != null ? parseFloat(opacityRaw) : iOpacity
+    if (isNaN(opacity) || opacity < 0.05) return
+
+    const strokeRaw = elStyle(el, 'stroke')
+    const fillRaw   = elStyle(el, 'fill')
+    const stroke = strokeRaw !== null ? strokeRaw : iStroke
+    const fill   = fillRaw   !== null ? fillRaw   : iFill
+
+    const local = parseTransformStr(el.getAttribute('transform'))
+    const ctm2 = mulMat(ctm, local)
+
+    if (['g', 'svg', 'a', 'switch', 'foreignobject'].includes(tag)) {
+      for (const child of el.children) processEl(child, ctm2, stroke, fill, opacity)
+      return
+    }
+
+    if (stroke === 'none') return
+
+    const swRaw = elStyle(el, 'stroke-width')
+    const strokeWidth = swRaw != null ? parseFloat(swRaw) : 1
+    if (!isNaN(strokeWidth) && strokeWidth <= 0) return
+    const soRaw = elStyle(el, 'stroke-opacity')
+    const strokeOpacity = soRaw != null ? parseFloat(soRaw) : 1
+    if (!isNaN(strokeOpacity) && strokeOpacity < 0.05) return
+
+    let pathStr = ''
+
+    switch (tag) {
+      case 'path':
+        pathStr = el.getAttribute('d') || ''
+        break
+      case 'line': {
+        const x1 = el.getAttribute('x1')||0, y1 = el.getAttribute('y1')||0
+        const x2 = el.getAttribute('x2')||0, y2 = el.getAttribute('y2')||0
+        pathStr = `M${x1},${y1} L${x2},${y2}`
+        break
+      }
+      case 'rect': {
+        const x = +el.getAttribute('x')||0, y = +el.getAttribute('y')||0
+        const w = +el.getAttribute('width')||0, h = +el.getAttribute('height')||0
+        if (w <= 0 || h <= 0) return
+        if (Math.abs(x - vbX) < 1 && Math.abs(y - vbY) < 1 &&
+            Math.abs(w - vbW) < 1 && Math.abs(h - vbH) < 1) return
+        let rx = +(el.getAttribute('rx')||0), ry = +(el.getAttribute('ry')||0)
+        if (!rx && ry) rx = ry; if (!ry && rx) ry = rx
+        if (rx <= 0) {
+          pathStr = `M${x},${y} H${x+w} V${y+h} H${x} Z`
+        } else {
+          rx = Math.min(rx, w/2); ry = Math.min(ry, h/2)
+          pathStr = `M${x+rx},${y} H${x+w-rx} A${rx},${ry},0,0,1,${x+w},${y+ry}` +
+            ` V${y+h-ry} A${rx},${ry},0,0,1,${x+w-rx},${y+h}` +
+            ` H${x+rx} A${rx},${ry},0,0,1,${x},${y+h-ry}` +
+            ` V${y+ry} A${rx},${ry},0,0,1,${x+rx},${y} Z`
+        }
+        break
+      }
+      case 'circle': {
+        const cx = +el.getAttribute('cx')||0, cy = +el.getAttribute('cy')||0
+        const r = +el.getAttribute('r')||0
+        if (r <= 0) return
+        pathStr = `M${cx+r},${cy} A${r},${r},0,0,1,${cx-r},${cy} A${r},${r},0,0,1,${cx+r},${cy} Z`
+        break
+      }
+      case 'ellipse': {
+        const cx = +el.getAttribute('cx')||0, cy = +el.getAttribute('cy')||0
+        const rx2 = +el.getAttribute('rx')||0, ry2 = +el.getAttribute('ry')||0
+        if (rx2 <= 0 || ry2 <= 0) return
+        pathStr = `M${cx+rx2},${cy} A${rx2},${ry2},0,0,1,${cx-rx2},${cy} A${rx2},${ry2},0,0,1,${cx+rx2},${cy} Z`
+        break
+      }
+      case 'polyline':
+      case 'polygon': {
+        const pts = (el.getAttribute('points') || '').trim().split(/[\s,]+/).map(Number).filter(n => !isNaN(n))
+        if (pts.length < 4) return
+        const pairs = []
+        for (let j = 0; j < pts.length - 1; j += 2) pairs.push(`${pts[j]},${pts[j+1]}`)
+        pathStr = `M${pairs[0]} L${pairs.slice(1).join(' L')}${tag === 'polygon' ? ' Z' : ''}`
+        break
+      }
+      default: return
+    }
+
+    if (!pathStr) return
+    const plines = svgPathToPolylines(pathStr, ctm2, svgTol)
+    for (const pl of plines) {
+      if (pl.length < 4) continue
+      all.push(pl)
+      for (let i = 0; i < pl.length; i += 2) {
+        if (pl[i] < minX) minX = pl[i]
+        if (pl[i] > maxX) maxX = pl[i]
+        if (pl[i+1] < minY) minY = pl[i+1]
+        if (pl[i+1] > maxY) maxY = pl[i+1]
+      }
+    }
+  }
+
+  processEl(root, [1, 0, 0, 1, 0, 0], null, 'black', 1)
+  if (all.length === 0) return []
+
+  const cW = maxX - minX || 1
+  const cH = maxY - minY || 1
+  svgAspectRatio = cW / cH
+
+  const sx = p.W / cW, sy = p.H / cH
+  const viewMat = [sx, 0, 0, -sy, ox - minX*sx, oy + p.H + minY*sy]
+  const transformed = []
+  for (const pl of all) {
+    const line = []
+    for (let i = 0; i < pl.length; i += 2) {
+      const [x, y] = applyMat(viewMat, pl[i], pl[i+1])
+      line.push(x, y)
+    }
+    if (line.length >= 4) transformed.push(line)
+  }
+  return transformed
+}
+
+function orderPolylines(polylines) {
+  if (polylines.length === 0) return []
+  const result = []
+  const remaining = polylines.slice()
+  result.push(remaining.splice(0, 1)[0])
+  let lastX = result[0][result[0].length - 2]
+  let lastY = result[0][result[0].length - 1]
+  while (remaining.length) {
+    let bestIdx = 0, bestDist = Infinity, bestReverse = false
+    for (let i = 0; i < remaining.length; i++) {
+      const pl = remaining[i]
+      const d1 = dist2(lastX, lastY, pl[0], pl[1])
+      const d2 = dist2(lastX, lastY, pl[pl.length-2], pl[pl.length-1])
+      if (d1 < bestDist) { bestDist = d1; bestIdx = i; bestReverse = false }
+      if (d2 < bestDist) { bestDist = d2; bestIdx = i; bestReverse = true }
+    }
+    let pl = remaining.splice(bestIdx, 1)[0]
+    if (bestReverse) {
+      const rev = []
+      for (let i = pl.length - 2; i >= 0; i -= 2) rev.push(pl[i], pl[i+1])
+      pl = rev
+    }
+    result.push(pl)
+    lastX = pl[pl.length - 2]
+    lastY = pl[pl.length - 1]
+  }
+  return result
+}
+
+function genGCode(polylines, p) {
+  if (!polylines || polylines.length === 0) return ''
+  const lines = []
+  const fmtXY = v => v.toFixed(3)
+  lines.push('G21 G90 G94')
+  lines.push(`G0 Z${fmt(p.penUp)} F${p.zFeed}`)
+  let cx = 0, cy = 0
+  for (const pl of polylines) {
+    const sx = pl[0], sy = pl[1]
+    if (dist2(cx, cy, sx, sy) > 1e-6) lines.push(`G0 X${fmtXY(sx)} Y${fmtXY(sy)} F${p.travelFeed}`)
+    lines.push(`G1 Z${fmt(p.penDown)} F${p.zFeed}`)
+    for (let i = 2; i < pl.length; i += 2) lines.push(`G1 X${fmtXY(pl[i])} Y${fmtXY(pl[i+1])} F${p.drawFeed}`)
+    lines.push(`G1 Z${fmt(p.penUp)} F${p.zFeed}`)
+    cx = pl[pl.length - 2]; cy = pl[pl.length - 1]
+  }
+  if (p.endMove === 'origin') lines.push('G0 X0 Y0')
+  else if (p.endMove === 'park') lines.push('G53 G0 Z-5\nG53 G0 X0 Y0')
+  lines.push('M30')
+  return lines.join('\n')
+}
+
+function computeStats(polylines, p) {
+  const ids = ['s-paths','s-draw','s-travel','s-lifts','s-time']
+  if (!polylines || polylines.length === 0) { ids.forEach(id => document.getElementById(id).textContent = '—'); return }
+  let drawDist = 0, travelDist = 0, lifts = 0
+  let cx = 0, cy = 0
+  for (const pl of polylines) {
+    travelDist += Math.sqrt(dist2(cx, cy, pl[0], pl[1]))
+    for (let i = 2; i < pl.length; i += 2) drawDist += Math.sqrt(dist2(pl[i-2], pl[i-1], pl[i], pl[i+1]))
+    cx = pl[pl.length - 2]; cy = pl[pl.length - 1]
+    lifts++
+  }
+  const penLiftDist = lifts * 2 * Math.abs(p.penUp - p.penDown)
+  const totalSec = drawDist/p.drawFeed*60 + travelDist/p.travelFeed*60 + penLiftDist/p.zFeed*60
+  const m = Math.floor(totalSec / 60), s = Math.round(totalSec % 60)
+  document.getElementById('s-paths').textContent  = polylines.length.toLocaleString()
+  document.getElementById('s-draw').textContent   = Math.round(drawDist) + ' mm'
+  document.getElementById('s-travel').textContent = Math.round(travelDist) + ' mm'
+  document.getElementById('s-lifts').textContent  = lifts.toLocaleString()
+  document.getElementById('s-time').textContent   = m > 0 ? `${m}m${s}s` : `${s}s`
+}
+
+const RULER_SIZE = 22
+let previewTransform = null
+
+function themeColor(name, fallback) {
+  const value = getComputedStyle(document.documentElement).getPropertyValue(name)
+  return value ? value.trim() : fallback
+}
+
+function drawPreview() {
+  const canvas = document.getElementById('preview-canvas')
+  const wrap = document.getElementById('preview-wrap')
+  const dpr = window.devicePixelRatio || 1
+  const ww = (wrap.clientWidth  - RULER_SIZE) || 400
+  const wh = (wrap.clientHeight - RULER_SIZE) || 300
+  canvas.width = ww * dpr; canvas.height = wh * dpr
+  canvas.style.width = ww + 'px'; canvas.style.height = wh + 'px'
+  const ctx = canvas.getContext('2d')
+  ctx.scale(dpr, dpr)
+  const surfaceColor = themeColor('--elevated', '#1a2235')
+  const textMuted = themeColor('--text-muted', '#6a7898')
+  const accentColor = themeColor('--accent', '#f0a030')
+  const borderColor = themeColor('--border', '#222840')
+  ctx.fillStyle = surfaceColor
+  ctx.fillRect(0, 0, ww, wh)
+
+  if (!lastPolylines || lastPolylines.length === 0) {
+    wrap.classList.add('empty')
+    ctx.fillStyle = textMuted
+    ctx.font = '13px ui-sans-serif, system-ui, sans-serif'
+    ctx.textAlign = 'center'; ctx.textBaseline = 'middle'
+    ctx.fillText('Load a file to preview', ww / 2, wh / 2)
+    previewTransform = null
+    return
+  }
+  wrap.classList.remove('empty')
+
+  const p = getParams()
+  let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity
+  for (const pl of lastPolylines) {
+    for (let i = 0; i < pl.length; i += 2) {
+      if (pl[i]   < minX) minX = pl[i]
+      if (pl[i]   > maxX) maxX = pl[i]
+      if (pl[i+1] < minY) minY = pl[i+1]
+      if (pl[i+1] > maxY) maxY = pl[i+1]
+    }
+  }
+
+  const PAD = 28
+  const sw = maxX - minX || 1, sh = maxY - minY || 1
+  const scale = Math.min((ww - PAD*2) / sw, (wh - PAD*2) / sh)
+  const dw = sw * scale, dh = sh * scale
+  const oX = (ww - dw) / 2, oY = (wh - dh) / 2
+  const tx = x => oX + (x - minX) * scale
+  const ty = y => oY + dh - (y - minY) * scale
+
+  previewTransform = { minX, minY, maxX, maxY, scale, oX, oY, dw, dh, ww, wh }
+
+  let cx = tx(0), cy = ty(0)
+  for (const pl of lastPolylines) {
+    cx = tx(pl[pl.length-2]); cy = ty(pl[pl.length-1])
+  }
+
+  ctx.strokeStyle = accentColor; ctx.lineWidth = 0.9
+  for (const pl of lastPolylines) {
+    ctx.beginPath(); ctx.moveTo(tx(pl[0]), ty(pl[1]))
+    for (let i = 2; i < pl.length; i += 2) ctx.lineTo(tx(pl[i]), ty(pl[i+1]))
+    ctx.stroke()
+  }
+
+  const [fx, fy] = ORIGIN_DOT_XY[p.origin] || [0, 1]
+  const px = oX + fx * dw, py = oY + fy * dh
+  ctx.strokeStyle = accentColor; ctx.lineWidth = 1.5
+  ctx.beginPath()
+  ctx.moveTo(px - 12, py); ctx.lineTo(px + 12, py)
+  ctx.moveTo(px, py - 12); ctx.lineTo(px, py + 12)
+  ctx.stroke()
+  ctx.beginPath(); ctx.arc(px, py, 4, 0, Math.PI * 2)
+  ctx.fillStyle = accentColor; ctx.fill()
+
+  drawRulers()
+}
+
+function drawRulers(cursorCanvasX, cursorCanvasY) {
+  const rulerH = document.getElementById('ruler-h')
+  const rulerV = document.getElementById('ruler-v')
+  const wrap = document.getElementById('preview-wrap')
+  const dpr = window.devicePixelRatio || 1
+  const ww = (wrap.clientWidth  - RULER_SIZE) || 400
+  const wh = (wrap.clientHeight - RULER_SIZE) || 300
+
+  rulerH.width = ww * dpr; rulerH.height = RULER_SIZE * dpr
+  rulerH.style.width = ww + 'px'; rulerH.style.height = RULER_SIZE + 'px'
+  rulerV.width = RULER_SIZE * dpr; rulerV.height = wh * dpr
+  rulerV.style.width = RULER_SIZE + 'px'; rulerV.style.height = wh + 'px'
+
+  const ctxH = rulerH.getContext('2d')
+  const ctxV = rulerV.getContext('2d')
+  ctxH.scale(dpr, dpr)
+  ctxV.scale(dpr, dpr)
+
+  const surfaceColor = themeColor('--surface', '#151c28')
+  const borderColor = themeColor('--border', '#222840')
+  const textMuted = themeColor('--text-muted', '#6a7898')
+  const accentColor = themeColor('--accent', '#f0a030')
+  ctxH.fillStyle = surfaceColor; ctxH.fillRect(0, 0, ww, RULER_SIZE)
+  ctxV.fillStyle = surfaceColor; ctxV.fillRect(0, 0, RULER_SIZE, wh)
+
+  if (!previewTransform) return
+
+  const { minX, minY, maxX, maxY, scale, oX, oY, dw, dh } = previewTransform
+
+  const NICE = [0.5, 1, 2, 5, 10, 25, 50, 100, 250, 500, 1000]
+  const intervalH = NICE.find(v => v * scale >= 45) || 1000
+  const intervalV = NICE.find(v => v * scale >= 45) || 1000
+
+  ctxH.strokeStyle = borderColor
+  ctxH.fillStyle = textMuted
+  ctxH.font = '9px ui-monospace, monospace'
+  ctxH.textAlign = 'center'
+  ctxH.textBaseline = 'top'
+  ctxH.lineWidth = 1
+
+  const x0 = Math.floor(minX / intervalH) * intervalH
+  for (let mm = x0; mm <= maxX + intervalH; mm += intervalH) {
+    const px = oX + (mm - minX) * scale
+    if (px < 0 || px > ww) continue
+    ctxH.beginPath(); ctxH.moveTo(px + 0.5, RULER_SIZE); ctxH.lineTo(px + 0.5, RULER_SIZE - 7); ctxH.stroke()
+    ctxH.fillText(mm, px, 2)
+  }
+
+  ctxV.strokeStyle = borderColor
+  ctxV.fillStyle = textMuted
+  ctxV.font = '9px ui-monospace, monospace'
+  ctxV.textAlign = 'center'
+  ctxV.textBaseline = 'top'
+  ctxV.lineWidth = 1
+
+  const y0 = Math.floor(minY / intervalV) * intervalV
+  for (let mm = y0; mm <= maxY + intervalV; mm += intervalV) {
+    const py = oY + dh - (mm - minY) * scale
+    if (py < 0 || py > wh) continue
+    ctxV.beginPath(); ctxV.moveTo(RULER_SIZE, py + 0.5); ctxV.lineTo(RULER_SIZE - 7, py + 0.5); ctxV.stroke()
+    ctxV.save()
+    ctxV.translate(RULER_SIZE - 9, py)
+    ctxV.rotate(-Math.PI / 2)
+    ctxV.fillText(mm, 0, 0)
+    ctxV.restore()
+  }
+
+  if (cursorCanvasX !== undefined) {
+    const mmX = minX + (cursorCanvasX - oX) / scale
+    const mmY = minY + (oY + dh - cursorCanvasY) / scale
+
+    ctxH.strokeStyle = accentColor; ctxH.lineWidth = 1
+    ctxH.beginPath(); ctxH.moveTo(cursorCanvasX + 0.5, 0); ctxH.lineTo(cursorCanvasX + 0.5, RULER_SIZE); ctxH.stroke()
+    ctxH.fillStyle = accentColor
+    ctxH.textAlign = cursorCanvasX > ww - 30 ? 'right' : 'left'
+    ctxH.fillText(mmX.toFixed(1), cursorCanvasX + (cursorCanvasX > ww - 30 ? -2 : 2), 2)
+
+    ctxV.strokeStyle = accentColor; ctxV.lineWidth = 1
+    ctxV.beginPath(); ctxV.moveTo(0, cursorCanvasY + 0.5); ctxV.lineTo(RULER_SIZE, cursorCanvasY + 0.5); ctxV.stroke()
+    ctxV.save()
+    ctxV.translate(RULER_SIZE - 9, cursorCanvasY + (cursorCanvasY > wh - 30 ? -2 : 2))
+    ctxV.rotate(-Math.PI / 2)
+    ctxV.fillStyle = accentColor
+    ctxV.textAlign = cursorCanvasY > wh - 30 ? 'left' : 'right'
+    ctxV.fillText(mmY.toFixed(1), 0, 0)
+    ctxV.restore()
+  }
+}
+
+document.getElementById('preview-canvas').addEventListener('mousemove', e => {
+  if (!previewTransform) return
+  const rect = e.target.getBoundingClientRect()
+  drawRulers(e.clientX - rect.left, e.clientY - rect.top)
+})
+
+document.getElementById('preview-canvas').addEventListener('mouseleave', () => {
+  drawRulers()
+})
+
+let currentThemeKey = ''
+function getThemeKey() {
+  return ['--surface','--elevated','--border','--accent','--text-muted']
+    .map(name => themeColor(name, '')).join('|')
+}
+function watchThemeChanges() {
+  const next = getThemeKey()
+  if (next !== currentThemeKey) {
+    currentThemeKey = next
+    drawPreview()
+  }
+  window.requestAnimationFrame(watchThemeChanges)
+}
+currentThemeKey = getThemeKey()
+window.requestAnimationFrame(watchThemeChanges)
+
+let refreshTimer = null
+
+function refresh() {
+  clearTimeout(refreshTimer)
+  refreshTimer = setTimeout(_doRefresh, 100)
+}
+
+function _doRefresh() {
+  if (!currentSVGText) {
+    drawPreview()
+    return
+  }
+  const p = getParams()
+  const { ox, oy } = originOffset(p)
+  const parse = currentFileType === 'dxf' ? parseDXFPolylines
+              : currentFileType === 'hpgl' ? parseHPGLPolylines
+              : parseSVGPolylines
+  try {
+    let raw = parse(currentSVGText, p, ox, oy)
+    if (raw.length > 0 && document.getElementById('lock-ratio').checked) {
+      const hEl = document.getElementById('H'), wEl = document.getElementById('W')
+      const idealH = Math.max(1, p.W / svgAspectRatio)
+      if (document.activeElement !== hEl && document.activeElement !== wEl && Math.abs(idealH - p.H) > 0.001) {
+        hEl.value = fmt(idealH)
+        p.H = idealH
+        const origin = originOffset(p)
+        raw = parse(currentSVGText, p, origin.ox, origin.oy)
+      }
+    }
+    if (raw.length === 0) {
+      setStatus('No paths found.', 'warn')
+      lastPolylines = []
+      computeStats([], p)
+      drawPreview()
+      return
+    }
+    lastPolylines = orderPolylines(raw)
+    setStatus('')
+    computeStats(lastPolylines, p)
+    drawPreview()
+  } catch (e) {
+    setStatus('Parse error: ' + e.message, 'err')
+    lastPolylines = []
+    computeStats([], p)
+    drawPreview()
+  }
+}
+
+async function doSend() {
+  if (!currentSVGText) { setStatus('No file loaded.', 'warn'); return }
+  const btn = document.getElementById('send-btn')
+  btn.disabled = true
+  setStatus('Generating G-code…')
+  try {
+    const p = getParams()
+    if (!lastPolylines || lastPolylines.length === 0) {
+      setStatus('No paths to plot.', 'warn')
+      btn.disabled = false
+      return
+    }
+    const code = genGCode(lastPolylines, p)
+    generatedCode = code
+    const stem = defaultFileName()
+    generatedPath = `/sd/${stem}.nc`
+    const saveName = document.getElementById('save-name')
+    saveName.value = stem; saveName.disabled = false
+    const saveBtn = document.getElementById('save-gcode-btn')
+    saveBtn.textContent = 'Save G-code'
+    saveBtn.disabled = false
+    document.getElementById('save-section').style.display = ''
+    document.getElementById('open-saved-btn').style.display = 'none'
+    setStatus(`G-code ready — ${(code.length / 1024).toFixed(1)} KB, ${lastPolylines.length} paths.`, 'ok')
+    await saveSettings()
+  } catch (e) {
+    setStatus('Error: ' + e.message, 'err')
+  } finally {
+    btn.disabled = false
+  }
+}
+
+async function saveGCode() {
+  const btn = document.getElementById('save-gcode-btn')
+  if (btn.textContent === 'Open') {
+    return openSaved()
+  }
+  if (!generatedCode) { setStatus('No G-code to save.', 'warn'); return }
+  const input = document.getElementById('save-name')
+  const stem = sanitizeFileName(input.value.trim()) || defaultFileName()
+  const name = stem + '.nc'
+  const path = `/sd/${name}`
+  btn.disabled = true; btn.textContent = 'Saving…'
+  setStatus(`Saving ${name}…`)
+  try {
+    await call('writeFile', { path, content: generatedCode, fs: 'sd' })
+    generatedPath = path
+    document.getElementById('open-saved-btn').style.display = 'none'
+    btn.textContent = 'Open'
+    btn.disabled = false
+    setStatus(`Saved to ${path}.`, 'ok')
+  } catch (e) {
+    btn.disabled = false; btn.textContent = 'Save G-code'
+    setStatus('Save failed: ' + e.message, 'err')
+  }
+}
+
+async function openSaved() {
+  if (!generatedPath) { setStatus('No saved file.', 'warn'); return }
+  try { await call('openFile', { path: generatedPath }); await call('close') }
+  catch (e) { setStatus('Could not open file: ' + e.message, 'err') }
+}
+
+const SETTINGS_PATH = '/sd/plugins/penplot/settings.json'
+
+async function saveSettings() {
+  const p = getParams()
+  p.lockRatio = document.getElementById('lock-ratio').checked
+  p.penDown = Math.abs(p.penDown)
+  try {
+    await call('writeFile', { path: SETTINGS_PATH, content: JSON.stringify(p), fs: 'sd' })
+  } catch (e) { setStatus('Save error: ' + e.message, 'err') }
+}
+
+async function loadSettings() {
+  try {
+    const text = await call('readFile', { path: SETTINGS_PATH, fs: 'sd' })
+    const c = JSON.parse(text)
+    if (!c || typeof c !== 'object') return
+    if (c.W          !== undefined) document.getElementById('W').value           = c.W
+    if (c.H          !== undefined) document.getElementById('H').value           = c.H
+    if (c.lockRatio  !== undefined) document.getElementById('lock-ratio').checked = c.lockRatio
+    if (c.tolerance  !== undefined) document.getElementById('tolerance').value   = c.tolerance
+    if (c.penUp      !== undefined) document.getElementById('pen-up').value      = c.penUp
+    if (c.penDown    !== undefined) document.getElementById('pen-down').value    = Math.abs(c.penDown)
+    if (c.drawFeed   !== undefined) document.getElementById('draw-feed').value   = c.drawFeed
+    if (c.travelFeed !== undefined) document.getElementById('travel-feed').value = c.travelFeed
+    if (c.zFeed      !== undefined) document.getElementById('z-feed').value      = c.zFeed
+    if (c.origin)    setOrigin(c.origin)
+    if (c.endMove)   document.getElementById('end-move').value = c.endMove
+  } catch (_) {}
+  refresh()
+}
+
+
+new ResizeObserver(() => { if (lastPolylines) drawPreview() }).observe(document.getElementById('preview-wrap'))
+loadSettings()
+</script>
+</body>
+</html>

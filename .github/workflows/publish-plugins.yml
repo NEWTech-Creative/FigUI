@@ -19,6 +19,7 @@ jobs:
       contents: read
       pages: write
       id-token: write
+      actions: read
     environment:
       name: github-pages
       url: ${{ steps.deploy-pages.outputs.page_url }}
@@ -38,6 +39,20 @@ jobs:
 
       - name: Build demo
         run: npm run build:demo
+
+      - name: Preserve firmware from latest release
+        run: |
+          mkdir -p dist/firmware
+          ASSET_URL=$(gh api repos/${{ github.repository }}/releases/latest \
+            --jq '.assets[] | select(.name == "index.html.gz") | .browser_download_url' 2>/dev/null || echo "")
+          if [ -n "$ASSET_URL" ]; then
+            curl -fsSL "$ASSET_URL" -o dist/firmware/index.html.gz
+            echo "Firmware preserved from latest release."
+          else
+            echo "No firmware release found, skipping."
+          fi
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Upload Pages artifact
         uses: actions/upload-pages-artifact@v3

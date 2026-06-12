@@ -2,7 +2,7 @@ import { useState, useEffect, useRef, useCallback } from 'react'
 import {
   Folder, File, Upload, Trash2, RefreshCw,
   ChevronRight, HardDrive, FolderPlus, X, Pencil,
-  Check, Download, Server, FileCode, FilePlus,
+  Check, Download, Server, FileCode, FilePlus, Search,
 } from 'lucide-react'
 import { listFiles, deleteFile, deleteDir, uploadFile, createDir, renameFile, getBase, fetchFileContent, saveFileContent } from '../lib/http'
 import { CodeEditor, isEditable } from './CodeEditor'
@@ -26,13 +26,20 @@ interface FileRowProps {
   path: string
   fs: Filesystem
   canLoadGcode: boolean
+  selectionMode: boolean
+  selected: boolean
+  selectionDisabled: boolean
+  onToggleSelection: () => void
   onNavigate: (path: string) => void
   onRefresh: () => void
   onEdit: (fullPath: string, filename: string) => void
   isTablet?: boolean
 }
 
-function FileRow({ entry, path, fs, canLoadGcode, onNavigate, onRefresh, onEdit, isTablet }: FileRowProps) {
+function FileRow({
+  entry, path, fs, canLoadGcode, selectionMode, selected, selectionDisabled, onToggleSelection,
+  onNavigate, onRefresh, onEdit, isTablet,
+}: FileRowProps) {
   const [deleting, setDeleting] = useState(false)
   const [renaming, setRenaming] = useState(false)
   const [newName, setNewName]   = useState(entry.name)
@@ -115,7 +122,20 @@ function FileRow({ entry, path, fs, canLoadGcode, onNavigate, onRefresh, onEdit,
 
   return (
     <>
-      <div className={`flex items-center gap-2 px-3 ${isTablet ? 'py-3' : 'py-2'} hover:bg-elevated group transition-colors`}>
+      <div className={`flex items-center gap-2 px-3 ${isTablet ? 'py-3' : 'py-2'} hover:bg-elevated group transition-colors ${
+        selectionMode && selected ? 'bg-accent/10' : ''
+      }`}>
+        {selectionMode && (
+          <input
+            type="checkbox"
+            checked={selected}
+            disabled={selectionDisabled}
+            onChange={onToggleSelection}
+            className={`${isTablet ? 'w-5 h-5' : 'w-4 h-4'} shrink-0 accent-[var(--accent)] cursor-pointer`}
+            aria-label={`Select ${entry.name}`}
+          />
+        )}
+
         <div className="text-text-dim shrink-0">
           {entry.isDir
             ? <Folder size={isTablet ? 20 : 14} className="text-accent/70" />
@@ -308,6 +328,8 @@ function FileRow({ entry, path, fs, canLoadGcode, onNavigate, onRefresh, onEdit,
 const _fmCache = new Map<Filesystem, { result: FileListResult; path: string }>()
 let _fmLastFs: Filesystem = 'sd'
 
+export function invalidateFileCache() { _fmCache.clear() }
+
 export function FileManager({ isTablet }: { isTablet?: boolean }) {
   const espInfo = useMachineStore(s => s.espInfo)
   const machineState = useMachineStore(s => s.status.state)
@@ -330,7 +352,12 @@ export function FileManager({ isTablet }: { isTablet?: boolean }) {
   const [editing, setEditing]       = useState<{ path: string; filename: string; content: string } | null>(null)
   const [editLoading, setEditLoading] = useState(false)
   const [dragOver, setDragOver] = useState(false)
+  const [search, setSearch] = useState('')
+  const [selectionMode, setSelectionMode] = useState(false)
+  const [selectedNames, setSelectedNames] = useState<Set<string>>(() => new Set())
+  const [deletingSelected, setDeletingSelected] = useState(false)
   const fileInput = useRef<HTMLInputElement>(null)
+  const searchRef = useRef<HTMLInputElement>(null)
 
   const sdRoot    = primarySd
   const localRoot = '/'
@@ -356,8 +383,34 @@ export function FileManager({ isTablet }: { isTablet?: boolean }) {
     load(sdRoot, 'sd')
   }, [load, sdRoot])
 
+  const refreshTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+
+  const scheduleRefresh = useCallback(() => {
+    if (refreshTimerRef.current !== null) clearTimeout(refreshTimerRef.current)
+    refreshTimerRef.current = setTimeout(() => {
+      refreshTimerRef.current = null
+      load(path, fs)
+    }, 500)
+  }, [load, path, fs])
+
+  useEffect(() => {
+    window.addEventListener('files:changed', scheduleRefresh)
+    return () => window.removeEventListener('files:changed', scheduleRefresh)
+  }, [scheduleRefresh])
+
+  useEffect(() => {
+    if (!result) return
+    const availableNames = new Set(result.files.map(entry => entry.name))
+    setSelectedNames(current => {
+      const next = new Set([...current].filter(name => availableNames.has(name)))
+      return next.size === current.size ? current : next
+    })
+  }, [result])
+
   function switchFs(newFs: Filesystem) {
     _fmLastFs = newFs
+    setSelectionMode(false)
+    setSelectedNames(new Set())
     setFs(newFs)
     const cached = _fmCache.get(newFs)
     if (cached) {
@@ -370,9 +423,17 @@ export function FileManager({ isTablet }: { isTablet?: boolean }) {
     load(root, newFs)
   }
 
-  function navigate(p: string) { load(p, fs) }
+  function navigate(p: string) {
+    setSearch('')
+    setSelectionMode(false)
+    setSelectedNames(new Set())
+    load(p, fs)
+  }
 
   function goUp() {
+    setSearch('')
+    setSelectionMode(false)
+    setSelectedNames(new Set())
     const root = fs === 'sd' ? sdRoot : localRoot
     const trimmed = path.replace(/\/$/, '')
     const parts = trimmed.split('/')
@@ -446,6 +507,68 @@ export function FileManager({ isTablet }: { isTablet?: boolean }) {
 
   const root = fs === 'sd' ? sdRoot : localRoot
   const breadcrumbs = path.replace(/\/$/, '').split('/').filter(Boolean)
+  const visibleEntries = result?.files?.slice().filter(
+    entry => !search || entry.name.toLowerCase().includes(search.toLowerCase())
+  ).sort((a, b) => {
+    if (a.isDir !== b.isDir) return a.isDir ? -1 : 1
+    return a.name.localeCompare(b.name)
+  }) ?? []
+  const selectedEntries = result?.files.filter(entry => selectedNames.has(entry.name)) ?? []
+  const allVisibleSelected = visibleEntries.length > 0 && visibleEntries.every(entry => selectedNames.has(entry.name))
+
+  function toggleSelection(name: string) {
+    setSelectedNames(current => {
+      const next = new Set(current)
+      if (next.has(name)) next.delete(name)
+      else next.add(name)
+      return next
+    })
+  }
+
+  function toggleSelectAllVisible() {
+    setSelectedNames(current => {
+      const next = new Set(current)
+      if (allVisibleSelected) {
+        visibleEntries.forEach(entry => next.delete(entry.name))
+      } else {
+        visibleEntries.forEach(entry => next.add(entry.name))
+      }
+      return next
+    })
+  }
+
+  async function handleDeleteSelected() {
+    if (!selectedEntries.length) return
+    const folderCount = selectedEntries.filter(entry => entry.isDir).length
+    const itemLabel = selectedEntries.length === 1 ? selectedEntries[0].name : `${selectedEntries.length} selected items`
+    const folderWarning = folderCount
+      ? `\n\nThis includes ${folderCount} folder${folderCount === 1 ? '' : 's'} and their contents.`
+      : ''
+    if (!confirm(`Delete ${itemLabel}?${folderWarning}`)) return
+
+    setDeletingSelected(true)
+    setError('')
+    const failed: FileEntry[] = []
+    const fullPath = path.endsWith('/') ? path : `${path}/`
+
+    for (const entry of selectedEntries) {
+      try {
+        if (entry.isDir) await deleteDir(fullPath, entry.name, fs)
+        else await deleteFile(fullPath, entry.name, fs)
+      } catch {
+        failed.push(entry)
+      }
+    }
+
+    setSelectedNames(new Set(failed.map(entry => entry.name)))
+    await load(path, fs)
+    if (failed.length) {
+      setError(`Failed to delete: ${failed.map(entry => entry.name).join(', ')}`)
+    } else {
+      setSelectionMode(false)
+    }
+    setDeletingSelected(false)
+  }
 
   return (
     <div className="flex flex-col h-full">
@@ -474,7 +597,7 @@ export function FileManager({ isTablet }: { isTablet?: boolean }) {
         <div className={`flex items-center gap-1.5 flex-wrap min-w-0 normal-case tracking-normal font-normal ${isTablet ? 'text-lg' : ''}`}>
           <button
             className={`hover:text-accent transition-colors ${isTablet ? 'p-2' : ''}`}
-            onClick={() => load(root, fs)}
+            onClick={() => navigate(root)}
           >
             {fs === 'sd' ? <HardDrive size={isTablet ? 20 : 13} /> : <Server size={isTablet ? 20 : 13} />}
           </button>
@@ -483,7 +606,7 @@ export function FileManager({ isTablet }: { isTablet?: boolean }) {
               <ChevronRight size={isTablet ? 16 : 10} className="text-text-dim" />
               <button
                 className={`hover:text-accent transition-colors max-w-[80px] truncate ${isTablet ? 'p-2' : ''}`}
-                onClick={() => load('/' + breadcrumbs.slice(0, i + 1).join('/') + '/', fs)}
+                onClick={() => navigate('/' + breadcrumbs.slice(0, i + 1).join('/') + '/')}
               >
                 {seg}
               </button>
@@ -504,6 +627,22 @@ export function FileManager({ isTablet }: { isTablet?: boolean }) {
             title="New folder"
           >
             <FolderPlus size={isTablet ? 20 : 13} />
+          </button>
+          <button
+            className={`rounded transition-colors ${isTablet ? 'p-3' : 'p-1'} ${
+              selectionMode
+                ? 'bg-danger/10 text-danger'
+                : 'hover:bg-danger/10 text-text-muted hover:text-danger'
+            }`}
+            onClick={() => {
+              setSelectionMode(active => !active)
+              setSelectedNames(new Set())
+            }}
+            disabled={deletingSelected}
+            title={selectionMode ? 'Cancel multiple selection' : 'Select multiple items to delete'}
+            aria-pressed={selectionMode}
+          >
+            <Trash2 size={isTablet ? 20 : 13} />
           </button>
           <button
             className={`rounded hover:bg-elevated text-text-muted hover:text-text-primary transition-colors ${isTablet ? 'p-3' : 'p-1'}`}
@@ -561,6 +700,61 @@ export function FileManager({ isTablet }: { isTablet?: boolean }) {
         </div>
       )}
 
+      <div className="flex items-center gap-2 px-3 py-2 border-b border-border">
+        <Search size={13} className="text-text-dim shrink-0" />
+        <input
+          ref={searchRef}
+          className="input-field flex-1 py-1 text-base"
+          placeholder="Filter files…"
+          value={search}
+          onChange={e => setSearch(e.target.value)}
+          onKeyDown={e => { if (e.key === 'Escape') setSearch('') }}
+        />
+        {search && (
+          <button className="text-text-muted hover:text-text-primary" onClick={() => setSearch('')}>
+            <X size={13} />
+          </button>
+        )}
+      </div>
+
+      {selectionMode && result && (visibleEntries.length > 0 || selectedEntries.length > 0) && (
+        <div className={`flex items-center gap-2 px-3 border-b border-border bg-elevated/40 ${
+          isTablet ? 'py-3' : 'py-2'
+        }`}>
+          <label className="flex items-center gap-2 cursor-pointer min-w-0">
+            <input
+              type="checkbox"
+              checked={allVisibleSelected}
+              disabled={deletingSelected || visibleEntries.length === 0}
+              onChange={toggleSelectAllVisible}
+              className={`${isTablet ? 'w-5 h-5' : 'w-4 h-4'} shrink-0 accent-[var(--accent)]`}
+            />
+            <span className={`${isTablet ? 'text-lg' : 'text-base'} text-text-muted`}>
+              {selectedEntries.length ? `${selectedEntries.length} selected` : 'Select all'}
+            </span>
+          </label>
+          {selectedEntries.length > 0 && (
+            <>
+              <button
+                className={`${isTablet ? 'text-lg' : 'text-base'} text-text-muted hover:text-text-primary ml-auto`}
+                onClick={() => setSelectedNames(new Set())}
+                disabled={deletingSelected}
+              >
+                Clear
+              </button>
+              <button
+                className={`btn btn-danger gap-1.5 ${isTablet ? 'text-lg py-2 px-3' : 'text-base py-1 px-2'}`}
+                onClick={handleDeleteSelected}
+                disabled={deletingSelected}
+              >
+                <Trash2 size={isTablet ? 18 : 13} />
+                {deletingSelected ? 'Deleting…' : 'Delete'}
+              </button>
+            </>
+          )}
+        </div>
+      )}
+
       {uploading && (
         <div className="px-3 py-2 bg-info/5 border-b border-info/20">
           <div className="flex justify-between text-base text-info mb-1">
@@ -612,16 +806,17 @@ export function FileManager({ isTablet }: { isTablet?: boolean }) {
           </button>
         )}
 
-        {result?.files?.slice().sort((a, b) => {
-          if (a.isDir !== b.isDir) return a.isDir ? -1 : 1
-          return a.name.localeCompare(b.name)
-        }).map(entry => (
+        {visibleEntries.map(entry => (
           <div key={entry.name} className="border-b border-border last:border-b-0">
             <FileRow isTablet={isTablet}
               entry={entry}
               path={path}
               fs={fs}
               canLoadGcode={canLoadGcode}
+              selectionMode={selectionMode}
+              selected={selectedNames.has(entry.name)}
+              selectionDisabled={deletingSelected}
+              onToggleSelection={() => toggleSelection(entry.name)}
               onNavigate={navigate}
               onRefresh={() => load(path, fs)}
               onEdit={openEditor}
@@ -629,9 +824,9 @@ export function FileManager({ isTablet }: { isTablet?: boolean }) {
           </div>
         ))}
 
-        {result && !result.files?.length && (
+        {result && !visibleEntries.length && (
           <div className="flex items-center justify-center h-24 text-text-muted text-xl">
-            Empty directory
+            {search ? 'No matches' : 'Empty directory'}
           </div>
         )}
       </div>

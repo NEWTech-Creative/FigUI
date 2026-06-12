@@ -1,0 +1,1574 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Raster Burn</title>
+<style>
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+body {
+  background: var(--bg, #0c1018);
+  color: var(--text-primary, #e2e6f4);
+  font-family: ui-sans-serif, system-ui, sans-serif;
+  font-size: 13px;
+  height: 100vh;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
+
+.layout { display: flex; flex: 1; overflow: hidden; }
+
+.sidebar {
+  width: 264px; min-width: 264px;
+  background: var(--surface, #151c28);
+  border-right: 1px solid var(--border, #222840);
+  overflow-y: auto;
+  display: flex; flex-direction: column;
+}
+
+.section {
+  border-bottom: 1px solid var(--border, #222840);
+  padding: 10px 12px;
+  display: flex; flex-direction: column; gap: 6px;
+}
+
+.section-title {
+  font-size: 10px; font-weight: 700;
+  letter-spacing: .08em; text-transform: uppercase;
+  color: var(--text-muted, #6a7898);
+  margin-bottom: 2px;
+}
+
+label { color: var(--text-muted, #6a7898); font-size: 11px; margin-top: 2px; }
+
+label.check-label {
+  display: flex; align-items: center; gap: 6px;
+  color: var(--text-primary, #e2e6f4); font-size: 12px; cursor: pointer; margin-top: 0;
+}
+
+input[type=number] {
+  width: 100%;
+  background: var(--elevated, #1a2235);
+  border: 1px solid var(--border, #222840);
+  border-radius: 4px;
+  color: var(--text-primary, #e2e6f4);
+  font-size: 13px; padding: 4px 8px; outline: none;
+}
+input[type=number]:focus { border-color: var(--accent, #f0a030); }
+
+input[type=range] { accent-color: var(--accent, #f0a030); cursor: pointer; flex: 1; }
+input[type=checkbox] { accent-color: var(--accent, #f0a030); width: 14px; height: 14px; cursor: pointer; flex-shrink: 0; }
+
+.range-row { display: flex; align-items: center; gap: 8px; }
+.range-val { font-family: ui-monospace, monospace; font-size: 12px; min-width: 28px; text-align: right; color: var(--text-primary, #e2e6f4); }
+
+#hist-canvas {
+  width: 100%; height: 70px; display: block;
+  border-radius: 4px; border: 1px solid var(--border, #222840);
+}
+
+
+.load-btn {
+  padding: 7px 10px;
+  background: var(--elevated, #1a2235);
+  border: 1px solid var(--border, #222840);
+  color: var(--text-primary, #e2e6f4);
+  border-radius: 6px; font-size: 12px; cursor: pointer;
+}
+.load-btn:hover { border-color: var(--accent, #f0a030); }
+
+.file-name {
+  font-size: 11px; color: var(--text-muted, #6a7898);
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+
+
+/* Mode toggle */
+.mode-toggle {
+  display: flex; gap: 4px;
+}
+.mode-btn {
+  flex: 1; padding: 5px 6px;
+  background: var(--elevated, #1a2235);
+  border: 1px solid var(--border, #222840);
+  color: var(--text-muted, #6a7898);
+  border-radius: 4px; font-size: 11px; font-weight: 600; cursor: pointer;
+  transition: background .12s, color .12s, border-color .12s;
+}
+.mode-btn:hover { border-color: var(--accent, #f0a030); }
+.mode-btn.active { background: var(--accent, #f0a030); color: #000; border-color: var(--accent, #f0a030); }
+
+select {
+  width: 100%;
+  background: var(--elevated, #1a2235);
+  border: 1px solid var(--border, #222840);
+  border-radius: 4px;
+  color: var(--text-primary, #e2e6f4);
+  font-size: 12px; padding: 4px 8px; outline: none; cursor: pointer;
+}
+select:focus { border-color: var(--accent, #f0a030); }
+
+.lut-edit-btn {
+  padding: 7px 10px;
+  background: var(--elevated, #1a2235);
+  border: 1px solid var(--border, #222840);
+  color: var(--text-primary, #e2e6f4);
+  border-radius: 6px; font-size: 11px; font-weight: 600; cursor: pointer;
+}
+.lut-edit-btn:hover { border-color: var(--accent, #f0a030); }
+
+/* Origin picker */
+.origin-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 3px;
+}
+.og-btn {
+  padding: 5px 0;
+  background: var(--elevated, #1a2235);
+  border: 1px solid var(--border, #222840);
+  border-radius: 4px;
+  color: var(--text-muted, #6a7898);
+  font-size: 14px; cursor: pointer;
+  text-align: center; line-height: 1;
+}
+.og-btn:hover { border-color: var(--accent, #f0a030); }
+.og-btn.active { background: var(--accent, #f0a030); border-color: var(--accent, #f0a030); color: #000; }
+
+.send-btn {
+  margin: 12px 12px 4px; padding: 10px;
+  background: var(--accent, #f0a030); color: #000;
+  border: none; border-radius: 6px;
+  font-size: 13px; font-weight: 700; cursor: pointer;
+}
+.send-btn:hover { filter: brightness(1.1); }
+.send-btn:disabled { opacity: .4; cursor: default; filter: none; }
+
+.close-btn {
+  margin: 0 12px 12px; padding: 8px;
+  background: var(--elevated, #1a2235);
+  border: 1px solid var(--border, #222840);
+  color: var(--text-muted, #6a7898);
+  border-radius: 6px; font-size: 12px; font-weight: 600; cursor: pointer;
+}
+.close-btn:hover { border-color: var(--danger, #ef4444); color: var(--danger, #ef4444); }
+
+.main { flex: 1; display: flex; flex-direction: column; overflow: hidden; }
+
+.stats-bar {
+  padding: 7px 14px;
+  background: var(--surface, #151c28);
+  border-bottom: 1px solid var(--border, #222840);
+  display: flex; gap: 20px; flex-shrink: 0; flex-wrap: wrap;
+}
+.stat { display: flex; flex-direction: column; gap: 1px; }
+.stat-label { font-size: 9px; text-transform: uppercase; letter-spacing: .08em; color: var(--text-muted, #6a7898); }
+.stat-value { font-size: 13px; font-weight: 600; color: var(--accent, #f0a030); font-family: ui-monospace, monospace; }
+
+.preview-wrap {
+  flex: 1; overflow: hidden;
+  background: var(--elevated, #1a2235);
+  display: flex; align-items: center; justify-content: center;
+}
+.preview-wrap canvas { display: block; }
+
+.bottom-bar {
+  padding: 8px 12px;
+  background: var(--surface, #151c28);
+  border-top: 1px solid var(--border, #222840);
+  display: flex; align-items: center; gap: 8px; flex-shrink: 0;
+}
+.save-btn {
+  padding: 7px 14px;
+  background: var(--elevated, #1a2235);
+  border: 1px solid var(--border, #222840);
+  color: var(--text-primary, #e2e6f4);
+  border-radius: 6px; font-size: 12px; font-weight: 600; cursor: pointer;
+}
+.save-btn:hover { border-color: var(--accent, #f0a030); }
+
+.save-name-input {
+  width: 220px;
+  background: var(--elevated, #1a2235);
+  border: 1px solid var(--border, #222840);
+  border-radius: 6px;
+  color: var(--text-primary, #e2e6f4);
+  font-size: 12px;
+  padding: 7px 10px;
+  outline: none;
+}
+.save-name-input:focus { border-color: var(--accent, #f0a030); }
+
+#status { font-size: 11px; color: var(--text-muted, #6a7898); flex: 1; text-align: right; }
+#status.ok   { color: var(--ok,     #22c55e); }
+#status.err  { color: var(--danger, #ef4444); }
+#status.warn { color: var(--warn,   #f59e0b); }
+
+/* LUT modal */
+#lut-modal {
+  position: fixed; inset: 0; z-index: 100;
+  background: rgba(0,0,0,.65);
+  display: flex; align-items: center; justify-content: center;
+}
+#lut-modal-box {
+  background: var(--surface, #151c28);
+  border: 1px solid var(--border, #222840);
+  border-radius: 8px; padding: 16px;
+  display: flex; flex-direction: column; gap: 10px;
+}
+#lut-canvases { display: flex; gap: 12px; align-items: flex-start; }
+#lut-canvas {
+  cursor: crosshair; display: block; flex-shrink: 0;
+  border-radius: 4px; border: 1px solid var(--border, #222840);
+}
+#lut-preview {
+  cursor: crosshair; display: block; flex-shrink: 0;
+  border-radius: 4px; border: 1px solid var(--border, #222840);
+}
+.lut-modal-title {
+  font-size: 10px; font-weight: 700; text-transform: uppercase;
+  letter-spacing: .08em; color: var(--text-muted, #6a7898);
+}
+.lut-modal-info {
+  font-size: 10px; color: var(--text-muted, #6a7898); text-align: center;
+}
+.lut-modal-actions {
+  display: flex; gap: 8px; justify-content: flex-end;
+}
+.lut-modal-actions button {
+  padding: 6px 14px;
+  background: var(--elevated, #1a2235);
+  border: 1px solid var(--border, #222840);
+  color: var(--text-primary, #e2e6f4);
+  border-radius: 4px; font-size: 12px; font-weight: 600; cursor: pointer;
+}
+.lut-modal-actions button:hover { border-color: var(--accent, #f0a030); }
+.lut-modal-actions button.ok {
+  background: var(--accent, #f0a030); color: #000; border-color: var(--accent, #f0a030);
+}
+
+</style>
+</head>
+<body>
+
+<div class="layout">
+  <div class="sidebar">
+
+    <div class="section">
+      <div class="section-title">Image</div>
+      <input type="file" id="file-input" accept="image/*" style="display:none" onchange="onFileChange(event)">
+      <button class="load-btn" onclick="document.getElementById('file-input').click()">Load image…</button>
+      <div class="file-name" id="file-name">—</div>
+    </div>
+
+    <div class="section">
+      <div class="section-title">Size</div>
+      <div style="display:flex; gap:8px">
+        <div style="flex:1; display:flex; flex-direction:column; gap:4px">
+          <label>Width (mm)</label>
+          <input type="number" id="W" value="50" min="1" max="500" step="1" oninput="onSizeChange('W')">
+        </div>
+        <div style="flex:1; display:flex; flex-direction:column; gap:4px">
+          <label>Height (mm)</label>
+          <input type="number" id="H" value="50" min="1" max="500" step="1" oninput="onSizeChange('H')">
+        </div>
+      </div>
+      <label class="check-label">
+        <input type="checkbox" id="lock-ratio"> Lock Ratio
+      </label>
+      <label>Line Spacing (mm)</label>
+      <input type="number" id="step" value="0.1" min="0.02" max="1" step="0.01" oninput="refresh()">
+      <div class="file-name" id="step-dpi">254 DPI</div>
+    </div>
+
+    <div class="section">
+      <div class="section-title">Engraving</div>
+      <div class="mode-toggle">
+        <button id="mode-bw-btn" class="mode-btn active" onclick="setMode('bw')">Threshold</button>
+        <button id="mode-dither-btn" class="mode-btn" onclick="setMode('dither')">Dither</button>
+        <button id="mode-gray-btn" class="mode-btn" onclick="setMode('gray')">Grayscale</button>
+      </div>
+      <div id="bw-power">
+        <label>Power</label>
+        <input type="number" id="power" value="800" min="0" max="1000" step="10" oninput="refresh()">
+      </div>
+      <div id="gray-power" style="display:none">
+        <label style="margin-top:4px">Min Power</label>
+        <div class="range-row">
+          <input type="range" id="SMin" min="0" max="1000" step="10" value="0"
+                 oninput="document.getElementById('SMin-val').textContent=this.value; refresh()">
+          <span class="range-val" id="SMin-val">0</span>
+        </div>
+        <label>Max Power</label>
+        <div class="range-row">
+          <input type="range" id="SMax" min="0" max="1000" step="10" value="800"
+                 oninput="document.getElementById('SMax-val').textContent=this.value; refresh()">
+          <span class="range-val" id="SMax-val">800</span>
+        </div>
+      </div>
+      <label>Engraving Speed</label>
+      <input type="number" id="feed" value="3000" min="100" max="10000" step="100" oninput="refresh()">
+      <label class="check-label">
+        <input type="checkbox" id="bidir" checked oninput="refresh()"> Bidirectional Scan
+      </label>
+    </div>
+
+    <div class="section">
+      <div class="section-title">Image Tuning</div>
+      <label>Histogram</label>
+      <canvas id="hist-canvas" width="240" height="70"></canvas>
+      <div id="bw-threshold">
+        <label>Threshold</label>
+        <div class="range-row">
+          <input type="range" id="threshold" min="0" max="255" value="128"
+                 oninput="document.getElementById('threshold-val').textContent=this.value; refresh()">
+          <span class="range-val" id="threshold-val">128</span>
+        </div>
+      </div>
+      <div id="dither-opts" style="display:none">
+        <label>Type</label>
+        <select id="dither-type" onchange="refresh()">
+          <option value="stochastic">Stochastic (noise)</option>
+          <option value="bayer4">Bayer 4×4</option>
+          <option value="bayer8">Bayer 8×8</option>
+          <option value="fs">Floyd-Steinberg</option>
+          <option value="atkinson">Atkinson</option>
+        </select>
+      </div>
+      <button id="tone-curve-btn" class="lut-edit-btn" onclick="openLutModal()" style="display:none">Tone Curve…</button>
+      <label class="check-label">
+        <input type="checkbox" id="invert" oninput="refresh()"> Invert
+      </label>
+    </div>
+
+    <div class="section" style="border-bottom:none">
+      <div class="section-title">Machine</div>
+      <label>Origin (G-code 0,0)</label>
+      <div class="origin-grid">
+        <button class="og-btn" data-v="tl"     onclick="setOrigin('tl')">↖</button>
+        <button class="og-btn" data-v="t"      onclick="setOrigin('t')">↑</button>
+        <button class="og-btn" data-v="tr"     onclick="setOrigin('tr')">↗</button>
+        <button class="og-btn" data-v="l"      onclick="setOrigin('l')">←</button>
+        <button class="og-btn" data-v="center" onclick="setOrigin('center')">✕</button>
+        <button class="og-btn" data-v="r"      onclick="setOrigin('r')">→</button>
+        <button class="og-btn active" data-v="bl" onclick="setOrigin('bl')">↙</button>
+        <button class="og-btn" data-v="b"      onclick="setOrigin('b')">↓</button>
+        <button class="og-btn" data-v="br"     onclick="setOrigin('br')">↘</button>
+      </div>
+      <label>End Position</label>
+      <select id="end-move" onchange="onEndMoveChange()">
+        <option value="none">None (stay)</option>
+        <option value="origin">Origin (X0 Y0)</option>
+        <option value="park">Park (machine home)</option>
+        <option value="right">Right Side</option>
+        <option value="left">Left Side</option>
+        <option value="above">Above</option>
+        <option value="below">Below</option>
+      </select>
+      <div id="f-end-gap" style="display:none">
+        <label>Gap (mm)</label>
+        <input type="number" id="end-gap" value="10" min="0" step="1" oninput="refresh()">
+      </div>
+    </div>
+
+    <button class="send-btn" id="send-btn" onclick="doSend()" disabled>Generate</button>
+    <button class="close-btn" onclick="doClose()">Quit</button>
+
+  </div><!-- /sidebar -->
+
+  <div class="main">
+    <div class="stats-bar">
+      <div class="stat"><div class="stat-label">Lines</div><div class="stat-value" id="s-lines">—</div></div>
+      <div class="stat"><div class="stat-label">Cols</div><div class="stat-value" id="s-cols">—</div></div>
+      <div class="stat"><div class="stat-label" id="s-pts-label">Fired pts</div><div class="stat-value" id="s-pts">—</div></div>
+      <div class="stat"><div class="stat-label">Distance</div><div class="stat-value" id="s-dist">—</div></div>
+      <div class="stat"><div class="stat-label">Est. Time</div><div class="stat-value" id="s-time">—</div></div>
+    </div>
+    <div class="preview-wrap" id="preview-wrap">
+      <canvas id="preview-canvas"></canvas>
+    </div>
+    <div class="bottom-bar">
+      <div id="save-section" style="display:none; align-items:center; gap:8px;">
+        <input id="save-name" class="save-name-input" type="text" placeholder="rasterburn.nc" disabled>
+        <button class="save-btn" id="save-gcode-btn" onclick="saveGCode()" disabled>Save G-code</button>
+        <button class="save-btn" id="open-saved-btn" onclick="openSaved()" style="display:none">Open</button>
+      </div>
+      <span id="status"></span>
+    </div>
+  </div><!-- /main -->
+
+</div><!-- /layout -->
+
+<!-- SVG dither filters -->
+<svg style="display:none" xmlns="http://www.w3.org/2000/svg">
+  <filter id="dither-stochastic" color-interpolation-filters="sRGB" x="0%" y="0%" width="100%" height="100%">
+    <feColorMatrix type="saturate" values="0" in="SourceGraphic" result="gray"/>
+    <feTurbulence type="fractalNoise" baseFrequency="0.65" numOctaves="4" stitchTiles="stitch" result="noise"/>
+    <feComposite operator="arithmetic" k1="0" k2="1" k3="-1" k4="0.5" in="gray" in2="noise" result="cmp"/>
+    <feComponentTransfer in="cmp">
+      <feFuncR type="discrete" tableValues="0 1"/>
+      <feFuncG type="discrete" tableValues="0 1"/>
+      <feFuncB type="discrete" tableValues="0 1"/>
+    </feComponentTransfer>
+  </filter>
+</svg>
+
+<!-- LUT modal -->
+<div id="lut-modal" style="display:none">
+  <div id="lut-modal-box">
+    <div class="lut-modal-title">Transfer curve — S = f(image brightness)</div>
+    <div id="lut-canvases">
+      <canvas id="lut-canvas" width="420" height="240"></canvas>
+      <canvas id="lut-preview" width="240" height="240"></canvas>
+    </div>
+    <div class="lut-modal-info">
+      Curve: click=add · drag=move · dbl-click=remove &nbsp;|&nbsp;
+      Image: hover=cursor on curve · click=add point
+    </div>
+<div class="lut-modal-actions">
+      <button onclick="lutReset()">Reset</button>
+      <button class="ok" onclick="closeLutModal()">OK</button>
+    </div>
+  </div>
+</div>
+
+<script>
+// ── API Bridge ────────────────────────────────────────────────────────────────
+let msgId = 0
+const pending = {}
+
+function call(method, params) {
+  return new Promise((resolve, reject) => {
+    const id = String(++msgId)
+    pending[id] = { resolve, reject }
+    window.parent.postMessage({ type: 'fluid-request', id, method, params: params ?? {} }, '*')
+  })
+}
+
+window.addEventListener('message', e => {
+  if (e.data?.type === 'fluid-response') {
+    const p = pending[e.data.id]
+    if (p) { delete pending[e.data.id]; e.data.error ? p.reject(new Error(e.data.error)) : p.resolve(e.data.result) }
+  }
+})
+
+// ── State ────────────────────────────────────────────────────────────────────
+let currentImg       = null
+let currentImageName = 'rasterburn'
+let imgNatW          = 0
+let imgNatH          = 0
+let currentOrigin    = 'bl'
+let currentMode      = 'bw'   // 'bw' | 'gray'
+let lastBitmap       = null   // { data, nCols, nRows, mode } — preview resolution
+let generatedCode    = ''
+let generatedPath    = ''
+
+// ── LUT state ────────────────────────────────────────────────────────────────
+// Control points in normalized space: {x: 0..1 (dark fraction), y: 0..1 (power fraction)}
+// x=0 → white pixel (no power), x=1 → black pixel (full power)
+// Endpoints (x=0 and x=1) are always present; only their y is draggable.
+let lutPoints = [{ x: 0, y: 0 }, { x: 1, y: 1 }]
+let currentLUT = new Float32Array(256)  // index = Math.round(darkFrac * 255)
+
+function computeLUT() {
+  const pts = lutPoints
+  for (let i = 0; i < 256; i++) {
+    const x = i / 255
+    let y = 0
+    for (let j = 0; j < pts.length - 1; j++) {
+      if (x >= pts[j].x && x <= pts[j + 1].x) {
+        const span = pts[j + 1].x - pts[j].x
+        const t = span < 1e-9 ? 0 : (x - pts[j].x) / span
+        y = pts[j].y + t * (pts[j + 1].y - pts[j].y)
+        break
+      }
+    }
+    currentLUT[i] = Math.max(0, Math.min(1, y))
+  }
+}
+
+computeLUT()
+
+// ── Helpers ──────────────────────────────────────────────────────────────────
+function setStatus(msg, cls = '') {
+  const el = document.getElementById('status')
+  el.textContent = msg
+  el.className = cls
+}
+
+function fmt(v) {
+  const r = Math.round(v * 1000) / 1000
+  if (r === 0 || Object.is(r, -0)) return '0'
+  const s = r.toString()
+  return s.includes('.') ? s.replace(/0+$/, '').replace(/\.$/, '') : s
+}
+
+// ── Mode ─────────────────────────────────────────────────────────────────────
+function setMode(m) {
+  currentMode = m
+  const isBw     = m === 'bw'
+  const isDither = m === 'dither'
+  const isGray   = m === 'gray'
+  document.getElementById('bw-power').style.display       = (isBw || isDither) ? '' : 'none'
+  document.getElementById('gray-power').style.display     = isGray ? '' : 'none'
+  document.getElementById('bw-threshold').style.display   = isBw ? '' : 'none'
+  document.getElementById('dither-opts').style.display    = isDither ? '' : 'none'
+  document.getElementById('tone-curve-btn').style.display = isGray ? '' : 'none'
+  document.getElementById('mode-bw-btn').classList.toggle('active', isBw)
+  document.getElementById('mode-dither-btn').classList.toggle('active', isDither)
+  document.getElementById('mode-gray-btn').classList.toggle('active', isGray)
+  refresh()
+}
+
+// ── Origin picker ─────────────────────────────────────────────────────────────
+const ORIGIN_DOT_XY = {
+  tl: [0, 0],   t: [0.5, 0],   tr: [1, 0],
+  l:  [0, 0.5], center: [0.5, 0.5], r: [1, 0.5],
+  bl: [0, 1],   b: [0.5, 1],   br: [1, 1]
+}
+
+function rosaceOffset(W, H) {
+  const map = {
+    tl: [0, -H],   t: [-W/2, -H],  tr: [-W, -H],
+    l:  [0, -H/2], center: [-W/2, -H/2], r: [-W, -H/2],
+    bl: [0,  0],   b: [-W/2,  0],  br: [-W,  0]
+  }
+  const [ox, oy] = map[currentOrigin] || [0, 0]
+  return { ox, oy }
+}
+
+function setOrigin(o) {
+  currentOrigin = o
+  document.querySelectorAll('.og-btn').forEach(b => b.classList.toggle('active', b.dataset.v === o))
+  drawPreview()
+}
+
+function onEndMoveChange() {
+  const v = document.getElementById('end-move').value
+  document.getElementById('f-end-gap').style.display =
+    ['right','left','above','below'].includes(v) ? '' : 'none'
+  refresh()
+}
+
+// ── Image loading ─────────────────────────────────────────────────────────────
+function onFileChange(e) {
+  const file = e.target.files[0]
+  if (!file) return
+  const url = URL.createObjectURL(file)
+  const img = new Image()
+  img.onload = () => {
+    URL.revokeObjectURL(url)
+    currentImg = img
+    currentImageName = file.name
+    imgNatW = img.naturalWidth
+    imgNatH = img.naturalHeight
+    document.getElementById('file-name').textContent = file.name
+    document.getElementById('send-btn').disabled = false
+    const W = parseFloat(document.getElementById('W').value) || 50
+    document.getElementById('H').value = fmt(W * imgNatH / imgNatW)
+    document.getElementById('lock-ratio').checked = true
+    computeHistogram()
+    refresh()
+  }
+  img.onerror = () => { URL.revokeObjectURL(url); setStatus('Cannot load this image.', 'err') }
+  img.src = url
+}
+
+function onSizeChange(changed) {
+  if (document.getElementById('lock-ratio').checked && currentImg) {
+    const ratio = imgNatW / imgNatH
+    if (changed === 'W') {
+      document.getElementById('H').value = fmt((parseFloat(document.getElementById('W').value) || 50) / ratio)
+    } else {
+      document.getElementById('W').value = fmt((parseFloat(document.getElementById('H').value) || 50) * ratio)
+    }
+  }
+  refresh()
+}
+
+// ── Params ────────────────────────────────────────────────────────────────────
+function getParams() {
+  return {
+    mode:      currentMode,
+    W:         Math.max(1,    parseFloat(document.getElementById('W').value)         || 50),
+    H:         Math.max(1,    parseFloat(document.getElementById('H').value)         || 50),
+    step:      Math.max(0.02, parseFloat(document.getElementById('step').value)      || 0.1),
+    threshold:  parseInt(document.getElementById('threshold').value)                  || 128,
+    power:     Math.min(1000, Math.max(0, parseInt(document.getElementById('power').value) || 800)),
+    SMin:      Math.min(1000, Math.max(0, parseInt(document.getElementById('SMin').value)  || 0)),
+    SMax:      Math.min(1000, Math.max(0, parseInt(document.getElementById('SMax').value)  || 800)),
+    feed:      Math.max(100,  parseInt(document.getElementById('feed').value)         || 3000),
+    ditherType: document.getElementById('dither-type').value,
+    bidir:     document.getElementById('bidir').checked,
+    invert:    document.getElementById('invert').checked,
+    origin:    currentOrigin,
+    endMove:   document.getElementById('end-move').value,
+    endGap:    parseFloat(document.getElementById('end-gap')?.value) || 10
+  }
+}
+
+function sanitizeFileName(name) {
+  return name.replace(/[^a-zA-Z0-9._-]+/g, '_').replace(/^_+|_+$/g, '')
+}
+
+function defaultGcodeFileName() {
+  let name = 'rasterburn'
+  if (currentImageName) {
+    name = currentImageName.replace(/\.[^.]+$/, '')
+  }
+  name = sanitizeFileName(name)
+  return name ? `${name}.nc` : 'rasterburn.nc'
+}
+
+function parkGCode(p) {
+  const { ox, oy } = rosaceOffset(p.W, p.H)
+  const g = p.endGap
+  switch (p.endMove) {
+    case 'origin': return 'G0 X0 Y0'
+    case 'park':   return 'G53 G0 Z-5\nG53 G0 X0 Y0'
+    case 'right':  return `G0 X${fmt(ox + p.W + g)} Y0`
+    case 'left':   return `G0 X${fmt(ox - g)} Y0`
+    case 'above':  return `G0 X0 Y${fmt(oy + p.H + g)}`
+    case 'below':  return `G0 X0 Y${fmt(oy - g)}`
+    default:       return ''
+  }
+}
+
+// ── Bayer matrices ────────────────────────────────────────────────────────────
+function makeBayerMatrix(n) {
+  if (n === 1) return [[0]]
+  const h = n >> 1
+  const sub = makeBayerMatrix(h)
+  const offsets = [0, 2, 3, 1]
+  return Array.from({ length: n }, (_, y) =>
+    Array.from({ length: n }, (_, x) =>
+      4 * sub[y % h][x % h] + offsets[(y >= h ? 2 : 0) + (x >= h ? 1 : 0)]
+    )
+  )
+}
+const BAYER4 = makeBayerMatrix(4)
+const BAYER8 = makeBayerMatrix(8)
+
+function applyErrorDiffusion(gray, nCols, nRows, type) {
+  const out = new Uint8Array(nCols * nRows)
+  const isAtkinson = type === 'atkinson'
+  const add = (gray, idx, v) => { gray[idx] = Math.max(0, Math.min(255, gray[idx] + v)) }
+  for (let r = 0; r < nRows; r++) {
+    for (let c = 0; c < nCols; c++) {
+      const idx = r * nCols + c
+      const q = gray[idx] < 128 ? 0 : 255
+      out[idx] = q === 0 ? 1 : 0
+      const e = gray[idx] - q
+      if (isAtkinson) {
+        const s = e / 8
+        if (c+1 < nCols)                          add(gray, idx+1,          s)
+        if (c+2 < nCols)                          add(gray, idx+2,          s)
+        if (r+1 < nRows) {
+          if (c-1 >= 0)                           add(gray, idx+nCols-1,    s)
+                                                  add(gray, idx+nCols,      s)
+          if (c+1 < nCols)                        add(gray, idx+nCols+1,    s)
+        }
+        if (r+2 < nRows)                          add(gray, idx+2*nCols,    s)
+      } else {
+        if (c+1 < nCols)                          add(gray, idx+1,          e*7/16)
+        if (r+1 < nRows) {
+          if (c-1 >= 0)                           add(gray, idx+nCols-1,    e*3/16)
+                                                  add(gray, idx+nCols,      e*5/16)
+          if (c+1 < nCols)                        add(gray, idx+nCols+1,    e*1/16)
+        }
+      }
+    }
+  }
+  return out
+}
+
+// ── Luma → S (grayscale mode) ─────────────────────────────────────────────────
+function lumaToS(luma, p) {
+  const darkFrac = p.invert ? luma / 255 : 1 - luma / 255
+  const idx = Math.min(255, Math.max(0, Math.round(darkFrac * 255)))
+  return Math.round(p.SMin + currentLUT[idx] * (p.SMax - p.SMin))
+}
+
+// ── Bitmap ────────────────────────────────────────────────────────────────────
+function imageToBitmap(p, maxDim) {
+  if (!currentImg) return null
+  let nCols = Math.max(1, Math.round(p.W / p.step))
+  let nRows = Math.max(1, Math.round(p.H / p.step))
+  if (maxDim) {
+    const s = maxDim / Math.max(nCols, nRows)
+    if (s < 1) { nCols = Math.max(1, Math.round(nCols * s)); nRows = Math.max(1, Math.round(nRows * s)) }
+  }
+
+  const off = document.createElement('canvas')
+  off.width = nCols; off.height = nRows
+  const ctx = off.getContext('2d')
+
+  let src
+  if (p.mode === 'dither' && p.ditherType === 'stochastic') {
+    ctx.filter = 'url(#dither-stochastic)'
+    ctx.drawImage(currentImg, 0, 0, nCols, nRows)
+    ctx.filter = 'none'
+    src = ctx.getImageData(0, 0, nCols, nRows).data
+  } else {
+    ctx.drawImage(currentImg, 0, 0, nCols, nRows)
+    src = ctx.getImageData(0, 0, nCols, nRows).data
+  }
+
+  if (p.mode === 'dither' && (p.ditherType === 'fs' || p.ditherType === 'atkinson')) {
+    const gray = new Float32Array(nCols * nRows)
+    for (let r = 0; r < nRows; r++)
+      for (let c = 0; c < nCols; c++) {
+        const i = (r * nCols + c) * 4
+        gray[r * nCols + c] = 0.299 * src[i] + 0.587 * src[i+1] + 0.114 * src[i+2]
+      }
+    const ed = applyErrorDiffusion(gray, nCols, nRows, p.ditherType)
+    const data = []
+    for (let row = 0; row < nRows; row++) {
+      const imgRow = nRows - 1 - row
+      const rowArr = new Uint8Array(nCols)
+      for (let c = 0; c < nCols; c++) {
+        let bit = ed[imgRow * nCols + c]
+        if (p.invert) bit = 1 - bit
+        rowArr[c] = bit
+      }
+      data.push(rowArr)
+    }
+    return { data, nCols, nRows, mode: 'bw' }
+  }
+
+  const bayerMat  = p.ditherType === 'bayer8' ? BAYER8 : BAYER4
+  const bayerSize = bayerMat.length
+
+  const data = []
+  for (let row = 0; row < nRows; row++) {
+    const imgRow = nRows - 1 - row
+    const rowArr = new Uint8Array(nCols)
+    for (let col = 0; col < nCols; col++) {
+      const i = (imgRow * nCols + col) * 4
+      const luma = 0.299 * src[i] + 0.587 * src[i+1] + 0.114 * src[i+2]
+      if (p.mode === 'gray') {
+        rowArr[col] = Math.round(luma)
+      } else if (p.mode === 'dither') {
+        let black
+        if (p.ditherType === 'stochastic') {
+          black = src[i] < 128
+        } else {
+          const thr = (bayerMat[row % bayerSize][col % bayerSize] + 0.5) / (bayerSize * bayerSize) * 255
+          black = luma < thr
+        }
+        if (p.invert) black = !black
+        rowArr[col] = black ? 1 : 0
+      } else {
+        let black = luma < p.threshold
+        if (p.invert) black = !black
+        rowArr[col] = black ? 1 : 0
+      }
+    }
+    data.push(rowArr)
+  }
+  return { data, nCols, nRows, mode: p.mode === 'dither' ? 'bw' : p.mode }
+}
+
+// ── Stats ─────────────────────────────────────────────────────────────────────
+function computeStats(p, bmp) {
+  if (!bmp) {
+    ['s-lines','s-cols','s-pts','s-dist','s-time'].forEach(id => document.getElementById(id).textContent = '—')
+    return
+  }
+  const { data, nCols, nRows } = bmp
+  let active = 0
+  if (bmp.mode === 'gray') {
+    for (const row of data) for (const v of row) if (v < 252) active++
+  } else {
+    for (const row of data) for (const v of row) if (v) active++
+  }
+
+  const total = nRows * p.W + (nRows - 1) * p.step
+  const sec = total / p.feed * 60
+  const m = Math.floor(sec / 60), s = Math.round(sec % 60)
+
+  document.getElementById('s-lines').textContent = nRows
+  document.getElementById('s-cols').textContent  = nCols
+  document.getElementById('s-pts').textContent   = active.toLocaleString()
+  document.getElementById('s-dist').textContent  = Math.round(total) + ' mm'
+  document.getElementById('s-time').textContent  = m > 0 ? `${m}m${s}s` : `${s}s`
+}
+
+// ── Main Preview ──────────────────────────────────────────────────────────────
+function drawPreview() {
+  const canvas = document.getElementById('preview-canvas')
+  const wrap   = document.getElementById('preview-wrap')
+  const ww = wrap.clientWidth  || 400
+  const wh = wrap.clientHeight || 300
+  canvas.width = ww; canvas.height = wh
+
+  const ctx = canvas.getContext('2d')
+  ctx.fillStyle = '#1a2235'
+  ctx.fillRect(0, 0, ww, wh)
+
+  if (!lastBitmap) {
+    ctx.fillStyle = '#4a5578'
+    ctx.font = '13px ui-sans-serif, system-ui, sans-serif'
+    ctx.textAlign = 'center'; ctx.textBaseline = 'middle'
+    ctx.fillText('Load an image to preview', ww / 2, wh / 2)
+    return
+  }
+
+  const { data, nCols, nRows } = lastBitmap
+  const PAD = 24
+  const scale = Math.min((ww - PAD*2) / nCols, (wh - PAD*2) / nRows)
+  const dw = Math.round(nCols * scale)
+  const dh = Math.round(nRows * scale)
+  const ox = Math.round((ww - dw) / 2)
+  const oy = Math.round((wh - dh) / 2)
+
+  const off = document.createElement('canvas')
+  off.width = nCols; off.height = nRows
+  const octx = off.getContext('2d')
+  const id = octx.createImageData(nCols, nRows)
+  const d = id.data
+  for (let row = 0; row < nRows; row++) {
+    const canvasRow = nRows - 1 - row
+    for (let col = 0; col < nCols; col++) {
+      const v = lastBitmap.mode === 'gray' ? data[row][col] : (data[row][col] ? 0 : 255)
+      const i = (canvasRow * nCols + col) * 4
+      d[i] = d[i+1] = d[i+2] = v; d[i+3] = 255
+    }
+  }
+  octx.putImageData(id, 0, 0)
+  ctx.imageSmoothingEnabled = scale < 1
+  ctx.drawImage(off, ox, oy, dw, dh)
+
+  ctx.strokeStyle = '#4a5578'
+  ctx.lineWidth = 1
+  ctx.strokeRect(ox - 0.5, oy - 0.5, dw + 1, dh + 1)
+
+  const [fx, fy] = ORIGIN_DOT_XY[currentOrigin] || [0, 1]
+  const px = ox + fx * dw
+  const py = oy + fy * dh
+  ctx.strokeStyle = '#f0a030'; ctx.lineWidth = 1.5
+  ctx.beginPath()
+  ctx.moveTo(px - 12, py); ctx.lineTo(px + 12, py)
+  ctx.moveTo(px, py - 12); ctx.lineTo(px, py + 12)
+  ctx.stroke()
+  ctx.beginPath(); ctx.arc(px, py, 4, 0, Math.PI * 2)
+  ctx.fillStyle = '#f0a030'; ctx.fill()
+}
+
+// ── Histogram ────────────────────────────────────────────────────────────────
+let lumaHistogram = null // Uint32Array[256]
+
+function computeHistogram() {
+  if (!currentImg) { lumaHistogram = null; return }
+  const MAX = 512
+  const scale = Math.min(1, MAX / Math.max(currentImg.naturalWidth, currentImg.naturalHeight))
+  const off = document.createElement('canvas')
+  off.width  = Math.max(1, Math.round(currentImg.naturalWidth  * scale))
+  off.height = Math.max(1, Math.round(currentImg.naturalHeight * scale))
+  const ctx = off.getContext('2d')
+  ctx.drawImage(currentImg, 0, 0, off.width, off.height)
+  const src = ctx.getImageData(0, 0, off.width, off.height).data
+  const hist = new Uint32Array(256)
+  for (let i = 0; i < src.length; i += 4)
+    hist[Math.round(0.299 * src[i] + 0.587 * src[i+1] + 0.114 * src[i+2])]++
+  lumaHistogram = hist
+}
+
+function drawHistogram() {
+  const canvas = document.getElementById('hist-canvas')
+  if (!canvas) return
+  const p  = getParams()
+  const CW = canvas.width, CH = canvas.height
+  const ctx = canvas.getContext('2d')
+  ctx.clearRect(0, 0, CW, CH)
+  ctx.fillStyle = '#1a2235'
+  ctx.fillRect(0, 0, CW, CH)
+
+  // Histogram: X = luma (left=dark=0, right=light=255)
+  if (lumaHistogram) {
+    let maxCount = 0
+    for (let i = 0; i < 256; i++) if (lumaHistogram[i] > maxCount) maxCount = lumaHistogram[i]
+    ctx.fillStyle = 'rgba(74, 85, 120, 0.7)'
+    for (let b = 0; b < 256; b++) {
+      if (!lumaHistogram[b]) continue
+      const x = Math.round(b * CW / 256)
+      const w = Math.max(1, Math.round((b + 1) * CW / 256) - x)
+      const h = Math.round(lumaHistogram[b] / maxCount * CH)
+      ctx.fillRect(x, CH - h, w, h)
+    }
+  }
+
+  if (p.mode === 'gray') {
+    // LUT curve: X=luma (dark→light), Y=top=SMin=light, bottom=SMax=dark
+    ctx.beginPath()
+    for (let i = 0; i < CW; i++) {
+      const luma = i / (CW - 1)
+      const darkFrac = p.invert ? luma : 1 - luma
+      const idx = Math.min(255, Math.max(0, Math.round(darkFrac * 255)))
+      const powerFrac = currentLUT[idx]
+      const y = powerFrac * (CH - 1)
+      i === 0 ? ctx.moveTo(i + 0.5, y) : ctx.lineTo(i + 0.5, y)
+    }
+    ctx.strokeStyle = '#f0a030'
+    ctx.lineWidth = 1.5
+    ctx.stroke()
+  } else if (p.mode === 'bw') {
+    const tx = Math.round(p.threshold * CW / 255)
+    ctx.strokeStyle = '#f0a030'
+    ctx.lineWidth = 1.5
+    ctx.beginPath()
+    ctx.moveTo(tx + 0.5, 0)
+    ctx.lineTo(tx + 0.5, CH)
+    ctx.stroke()
+  }
+}
+
+// ── Refresh ───────────────────────────────────────────────────────────────────
+let refreshTimer = null
+
+function refresh() {
+  clearTimeout(refreshTimer)
+  refreshTimer = setTimeout(_doRefresh, 60)
+}
+
+function _doRefresh() {
+  const p = getParams()
+  document.getElementById('step-dpi').textContent = Math.round(25.4 / p.step) + ' DPI'
+  lastBitmap = imageToBitmap(p, 900)
+  computeStats(p, lastBitmap)
+  drawHistogram()
+  drawPreview()
+  saveSettings()
+}
+
+// ── GCode ─────────────────────────────────────────────────────────────────────
+function genGCode(p, bmp) {
+  if (!bmp) return ''
+  const { data, nCols, nRows, mode } = bmp
+  const xStep = p.W / nCols
+  const yStep = p.H / nRows
+  const W = p.W
+  const isGray = mode === 'gray'
+
+  const { ox, oy } = rosaceOffset(W, p.H)
+  const lines = []
+  lines.push(isGray
+    ? `; rasterburn W=${p.W}mm H=${p.H}mm step=${p.step}mm SMin=${p.SMin} SMax=${p.SMax} F=${p.feed}`
+    : `; rasterburn W=${p.W}mm H=${p.H}mm step=${p.step}mm S=${p.power} F=${p.feed}`)
+  lines.push('G94 G21 G91')
+  lines.push('M4')
+  lines.push(`F${p.feed}`)
+
+  if (Math.abs(ox) > 0.0001 || Math.abs(oy) > 0.0001) {
+    let mv = 'S0 G0'
+    if (Math.abs(ox) > 0.0001) mv += ` X${fmt(ox)}`
+    if (Math.abs(oy) > 0.0001) mv += ` Y${fmt(oy)}`
+    lines.push(mv)
+  }
+
+  if (isGray) {
+    for (let row = 0; row < nRows; row++) {
+      if (row > 0) {
+        if (p.bidir) {
+          lines.push(`S0 G0 Y${fmt(yStep)}`)
+        } else {
+          lines.push(`S0 G0 X${fmt(-W)} Y${fmt(yStep)}`)
+        }
+      }
+      const pixels = data[row]
+      const goRight = !p.bidir || row % 2 === 0
+      let i = 0
+      while (i < nCols) {
+        const col = goRight ? i : nCols - 1 - i
+        const S = lumaToS(pixels[col], p)
+        let j = i + 1
+        while (j < nCols) {
+          const col2 = goRight ? j : nCols - 1 - j
+          if (lumaToS(pixels[col2], p) !== S) break
+          j++
+        }
+        lines.push(`S${S} G1 X${fmt((j - i) * xStep * (goRight ? 1 : -1))}`)
+        i = j
+      }
+    }
+  } else {
+    let curX = 0
+    for (let row = 0; row < nRows; row++) {
+      if (row > 0) lines.push(`S0 G0 Y${fmt(yStep)}`)
+      const pixels = data[row]
+      const goRight = !p.bidir || row % 2 === 0
+
+      const runs = []
+      let i = 0
+      while (i < nCols) {
+        if (pixels[i]) {
+          let j = i + 1
+          while (j < nCols && pixels[j]) j++
+          runs.push([i, j])
+          i = j
+        } else i++
+      }
+
+      if (goRight) {
+        const toStart = -curX
+        if (Math.abs(toStart) > 0.0001) lines.push(`S0 G0 X${fmt(toStart)}`)
+        curX = 0
+        for (const [cs, ce] of runs) {
+          const xs = cs * xStep, xe = ce * xStep
+          if (xs - curX > 0.0001) { lines.push(`S0 G0 X${fmt(xs - curX)}`); curX = xs }
+          lines.push(`S${p.power} G1 X${fmt(xe - curX)}`); curX = xe
+        }
+      } else {
+        const toEnd = W - curX
+        if (Math.abs(toEnd) > 0.0001) lines.push(`S0 G0 X${fmt(toEnd)}`)
+        curX = W
+        for (let ri = runs.length - 1; ri >= 0; ri--) {
+          const [cs, ce] = runs[ri]
+          const xs = cs * xStep, xe = ce * xStep
+          if (curX - xe > 0.0001) { lines.push(`S0 G0 X${fmt(xe - curX)}`); curX = xe }
+          lines.push(`S${p.power} G1 X${fmt(xs - curX)}`); curX = xs
+        }
+      }
+    }
+  }
+
+  lines.push('M5')
+  lines.push('G90')
+  const park = parkGCode(p)
+  if (park) lines.push(park)
+  lines.push('M30')
+
+  return lines.join('\n')
+}
+
+// ── Send ──────────────────────────────────────────────────────────────────────
+async function doSend() {
+  if (!currentImg) { setStatus('No image loaded.', 'warn'); return }
+  const btn = document.getElementById('send-btn')
+  btn.disabled = true
+  setStatus('Generating GCode…')
+  try {
+    const p = getParams()
+    const nCols = Math.max(1, Math.round(p.W / p.step))
+    const nRows = Math.max(1, Math.round(p.H / p.step))
+    if (nCols * nRows > 4_000_000) {
+      const ok = confirm(
+        `Warning: ${nRows}×${nCols} px = ${(nCols*nRows/1e6).toFixed(1)}M pixels.\n` +
+        `This may generate a very large GCode file.\nContinue?`
+      )
+      if (!ok) { setStatus('Cancelled.', 'warn'); btn.disabled = false; return }
+    }
+    const bmp  = imageToBitmap(p)
+    const code = genGCode(p, bmp)
+    generatedCode = code
+    const fileName = defaultGcodeFileName()
+    generatedPath = `/sd/${fileName}`
+    const saveName = document.getElementById('save-name')
+    saveName.value = fileName
+    saveName.disabled = false
+    document.getElementById('save-gcode-btn').disabled = false
+    document.getElementById('save-section').style.display = ''
+    document.getElementById('open-saved-btn').style.display = 'none'
+    setStatus(`G-code generated. Edit the filename and click Save G-code.`, 'ok')
+  } catch(e) {
+    setStatus('Error: ' + e.message, 'err')
+  } finally {
+    btn.disabled = false
+  }
+}
+
+async function saveGCode() {
+  if (!generatedCode) { setStatus('No generated file to save.', 'warn'); return }
+  const btn = document.getElementById('save-gcode-btn')
+  const input = document.getElementById('save-name')
+  const name = sanitizeFileName(input.value.trim()) || defaultGcodeFileName()
+  const path = `/sd/${name}`
+  btn.disabled = true
+  btn.textContent = 'Saving...'
+  setStatus(`Saving ${name}…`)
+  try {
+    await call('writeFile', { path, content: generatedCode, fs: 'sd' })
+    generatedPath = path
+    document.getElementById('open-saved-btn').style.display = ''
+    btn.textContent = 'Saved'
+    setStatus(`Saved to ${path}.`, 'ok')
+    setTimeout(() => {
+      if (btn.textContent === 'Saved') {
+        btn.textContent = 'Save G-code'
+        btn.disabled = false
+      }
+    }, 1200)
+  } catch (e) {
+    btn.disabled = false
+    btn.textContent = 'Save G-code'
+    setStatus('Save failed: ' + e.message, 'err')
+  }
+}
+
+async function openSaved() {
+  if (!generatedPath) { setStatus('No saved file to open.', 'warn'); return }
+  try {
+    await saveSettings()
+    await call('openFile', { path: generatedPath })
+    await call('close')
+  } catch (e) {
+    setStatus('Could not open file: ' + e.message, 'err')
+  }
+}
+
+// ── Settings ──────────────────────────────────────────────────────────────────
+function saveSettings() {
+  const p = getParams()
+  p.lutPoints = lutPoints
+  return call('writeFile', {
+    path: '/sd/plugins/rasterburn/settings.json',
+    content: JSON.stringify(p, null, 2),
+    fs: 'sd'
+  }).catch(e => setStatus('Save error: ' + e.message, 'err'))
+}
+
+async function loadSettings() {
+  try {
+    const raw = await call('readFile', { path: '/sd/plugins/rasterburn/settings.json', fs: 'sd' })
+    const c = JSON.parse(raw)
+    if (c.mode)       setMode(c.mode)
+    if (c.W     !== undefined) document.getElementById('W').value         = c.W
+    if (c.H     !== undefined) document.getElementById('H').value         = c.H
+    if (c.step  !== undefined) document.getElementById('step').value      = c.step
+    if (c.threshold !== undefined) {
+      document.getElementById('threshold').value                           = c.threshold
+      document.getElementById('threshold-val').textContent                 = c.threshold
+    }
+    if (c.power !== undefined) document.getElementById('power').value     = c.power
+    if (c.SMin  !== undefined) { document.getElementById('SMin').value = c.SMin; document.getElementById('SMin-val').textContent = c.SMin }
+    if (c.SMax  !== undefined) { document.getElementById('SMax').value = c.SMax; document.getElementById('SMax-val').textContent = c.SMax }
+    if (c.feed  !== undefined) document.getElementById('feed').value      = c.feed
+    if (c.bidir !== undefined) document.getElementById('bidir').checked   = c.bidir
+    if (c.invert !== undefined) document.getElementById('invert').checked = c.invert
+    if (c.origin) setOrigin(c.origin)
+    if (c.ditherType) document.getElementById('dither-type').value = c.ditherType
+    if (c.endMove) { document.getElementById('end-move').value = c.endMove; onEndMoveChange() }
+    if (c.endGap  !== undefined) document.getElementById('end-gap').value  = c.endGap
+    if (Array.isArray(c.lutPoints) && c.lutPoints.length >= 2) {
+      lutPoints = c.lutPoints
+      computeLUT()
+    }
+  } catch(_) {}
+  refresh()
+}
+
+async function doClose() { await saveSettings(); await call('close') }
+
+// ── LUT Modal ────────────────────────────────────────────────────────────────
+const LUT_CW  = 420
+const LUT_CH  = 240
+const LUT_PAD = 28   // space for axis labels
+const LUT_DW  = LUT_CW - LUT_PAD * 2   // 364
+const LUT_DH  = LUT_CH - LUT_PAD * 2   // 184
+const PT_R    = 6    // point hit radius
+
+let lutDragIdx    = -1    // index of point being dragged (-1 = none)
+let lutSnapPrev   = null  // snapshot of lutPoints before drag, for cancel
+let lutHoverLuma  = null  // normalized brightness 0-1 from image hover (null = no hover)
+let lutPrevSrc    = null  // offscreen canvas: source image pixels at preview resolution
+let lutPrevRect   = null  // {x, y, w, h} drawing rect within lut-preview canvas
+let lutPrevCache  = null  // offscreen canvas: LUT-applied image (cached)
+
+function ptToCanvas(pt) {
+  // pt = {x: darkFrac (0=light, 1=dark), y: powerFrac (0=SMin, 1=SMax)}
+  // display: X left=dark, right=light  /  Y top=SMin=light, bottom=SMax=dark
+  return [
+    LUT_PAD + (1 - pt.x) * LUT_DW,  // light on right, dark on left
+    LUT_PAD + pt.y * LUT_DH           // SMin at top, SMax at bottom
+  ]
+}
+
+function canvasToPt(cx, cy) {
+  return {
+    x: Math.max(0, Math.min(1, 1 - (cx - LUT_PAD) / LUT_DW)),
+    y: Math.max(0, Math.min(1,     (cy - LUT_PAD) / LUT_DH))
+  }
+}
+
+function lutEvtXY(e) {
+  const canvas = document.getElementById('lut-canvas')
+  const r = canvas.getBoundingClientRect()
+  return [
+    (e.clientX - r.left) * (LUT_CW / r.width),
+    (e.clientY - r.top)  * (LUT_CH / r.height)
+  ]
+}
+
+function lutHitTest(cx, cy) {
+  for (let i = 0; i < lutPoints.length; i++) {
+    const [px, py] = ptToCanvas(lutPoints[i])
+    if (Math.hypot(cx - px, cy - py) <= PT_R + 3) return i
+  }
+  return -1
+}
+
+function drawLutModal() {
+  const canvas = document.getElementById('lut-canvas')
+  if (!canvas) return
+  const ctx = canvas.getContext('2d')
+
+  ctx.clearRect(0, 0, LUT_CW, LUT_CH)
+
+  // Draw area background
+  ctx.fillStyle = '#1a2235'
+  ctx.fillRect(LUT_PAD, LUT_PAD, LUT_DW, LUT_DH)
+
+  // Grid lines (4 divisions)
+  ctx.strokeStyle = 'rgba(74,85,120,0.35)'
+  ctx.lineWidth = 0.5
+  for (let i = 1; i < 4; i++) {
+    const x = LUT_PAD + i * LUT_DW / 4
+    ctx.beginPath(); ctx.moveTo(x, LUT_PAD); ctx.lineTo(x, LUT_PAD + LUT_DH); ctx.stroke()
+    const y = LUT_PAD + i * LUT_DH / 4
+    ctx.beginPath(); ctx.moveTo(LUT_PAD, y); ctx.lineTo(LUT_PAD + LUT_DW, y); ctx.stroke()
+  }
+
+  // Diagonal reference: bottom-left (dark→SMax) → top-right (light→SMin)
+  ctx.strokeStyle = 'rgba(74,85,120,0.5)'
+  ctx.lineWidth = 1
+  ctx.setLineDash([4, 4])
+  ctx.beginPath()
+  ctx.moveTo(LUT_PAD,           LUT_PAD + LUT_DH)  // bottom-left = dark, SMax
+  ctx.lineTo(LUT_PAD + LUT_DW, LUT_PAD)             // top-right = light, SMin
+  ctx.stroke()
+  ctx.setLineDash([])
+
+  // Histogram: X=luma (left=dark=0, right=light=255)
+  if (lumaHistogram) {
+    let maxCount = 0
+    for (let i = 0; i < 256; i++) if (lumaHistogram[i] > maxCount) maxCount = lumaHistogram[i]
+    ctx.fillStyle = 'rgba(74,85,120,0.35)'
+    for (let b = 0; b < 256; b++) {
+      if (!lumaHistogram[b]) continue
+      const x = LUT_PAD + Math.round(b * LUT_DW / 256)
+      const w = Math.max(1, Math.round((b + 1) * LUT_DW / 256) - x)
+      const h = Math.round(lumaHistogram[b] / maxCount * LUT_DH)
+      ctx.fillRect(x, LUT_PAD + LUT_DH - h, w, h)
+    }
+  }
+
+  // LUT curve: X=luma left→right, Y=top=SMin=light, bottom=SMax=dark
+  ctx.beginPath()
+  for (let i = 0; i <= LUT_DW; i++) {
+    const luma = i / LUT_DW                  // 0=dark(left) → 1=light(right)
+    const darkFrac = 1 - luma
+    const idx = Math.min(255, Math.max(0, Math.round(darkFrac * 255)))
+    const powerFrac = currentLUT[idx]
+    const cx = LUT_PAD + i
+    const cy = LUT_PAD + powerFrac * LUT_DH   // top=SMin=light, bottom=SMax=dark
+    i === 0 ? ctx.moveTo(cx, cy) : ctx.lineTo(cx, cy)
+  }
+  ctx.strokeStyle = '#f0a030'
+  ctx.lineWidth = 2
+  ctx.stroke()
+
+  // Control points
+  lutPoints.forEach((pt, idx) => {
+    const [cx, cy] = ptToCanvas(pt)
+    const isEnd = idx === 0 || idx === lutPoints.length - 1
+    ctx.beginPath()
+    ctx.arc(cx, cy, PT_R, 0, Math.PI * 2)
+    ctx.fillStyle = lutDragIdx === idx ? '#fff' : '#f0a030'
+    ctx.fill()
+    ctx.strokeStyle = isEnd ? '#888' : '#f0a030'
+    ctx.lineWidth = isEnd ? 1 : 0
+    if (isEnd) ctx.stroke()
+  })
+
+  // Border
+  ctx.strokeStyle = '#222840'
+  ctx.lineWidth = 1
+  ctx.strokeRect(LUT_PAD, LUT_PAD, LUT_DW, LUT_DH)
+
+  // Grey gradient below X axis (dark→light)
+  const grad = ctx.createLinearGradient(LUT_PAD, 0, LUT_PAD + LUT_DW, 0)
+  grad.addColorStop(0, '#000')
+  grad.addColorStop(1, '#fff')
+  ctx.fillStyle = grad
+  ctx.fillRect(LUT_PAD, LUT_PAD + LUT_DH + 2, LUT_DW, 5)
+
+  // Axis labels
+  ctx.fillStyle = '#6a7898'
+  ctx.font = '10px ui-sans-serif, system-ui, sans-serif'
+  ctx.textAlign = 'left'
+  ctx.textBaseline = 'top'
+  ctx.fillText('◀ dark', LUT_PAD, LUT_PAD + LUT_DH + 10)
+  ctx.textAlign = 'right'
+  ctx.fillText('light ▶', LUT_PAD + LUT_DW, LUT_PAD + LUT_DH + 10)
+
+  ctx.textAlign = 'right'
+  ctx.textBaseline = 'bottom'
+  ctx.fillText('▼ dark (S max)', LUT_PAD - 4, LUT_PAD + LUT_DH)
+  ctx.textBaseline = 'top'
+  ctx.fillText('▲ light (S min)', LUT_PAD - 4, LUT_PAD)
+
+  // Cursor from image preview hover
+  if (lutHoverLuma !== null) {
+    const p = getParams()
+    const curX = LUT_PAD + lutHoverLuma * LUT_DW
+    const darkFrac = 1 - lutHoverLuma
+    const idx = Math.min(255, Math.max(0, Math.round(darkFrac * 255)))
+    const powerFrac = currentLUT[idx]
+    const curY = LUT_PAD + powerFrac * LUT_DH
+
+    ctx.strokeStyle = 'rgba(255,255,255,0.45)'
+    ctx.lineWidth = 1
+    ctx.setLineDash([3, 3])
+    ctx.beginPath()
+    ctx.moveTo(curX + 0.5, LUT_PAD); ctx.lineTo(curX + 0.5, LUT_PAD + LUT_DH)
+    ctx.stroke()
+    ctx.setLineDash([])
+
+    ctx.beginPath()
+    ctx.arc(curX, curY, 4, 0, Math.PI * 2)
+    ctx.fillStyle = '#fff'; ctx.fill()
+
+    const S = Math.round(p.SMin + powerFrac * (p.SMax - p.SMin))
+    ctx.font = 'bold 10px ui-monospace, monospace'
+    ctx.fillStyle = '#fff'
+    const onRight = curX < LUT_PAD + LUT_DW * 0.6
+    ctx.textAlign = onRight ? 'left' : 'right'
+    ctx.textBaseline = powerFrac > 0.8 ? 'bottom' : 'top'
+    ctx.fillText(`S ${S}`, onRight ? curX + 8 : curX - 8, powerFrac > 0.8 ? curY - 6 : curY + 6)
+  }
+}
+
+// ── LUT Preview ───────────────────────────────────────────────────────────────
+function prepareLutPreview() {
+  lutPrevSrc = null; lutPrevRect = null; lutPrevCache = null
+  if (!currentImg) return
+  const PW = 240, PH = 240
+  const aspect = imgNatW / imgNatH
+  let dw, dh, dx, dy
+  if (aspect > 1) { dw = PW; dh = Math.round(PW / aspect); dx = 0; dy = Math.round((PH - dh) / 2) }
+  else            { dh = PH; dw = Math.round(PH * aspect); dx = Math.round((PW - dw) / 2); dy = 0 }
+  const off = document.createElement('canvas')
+  off.width = dw; off.height = dh
+  off.getContext('2d').drawImage(currentImg, 0, 0, dw, dh)
+  lutPrevSrc = off
+  lutPrevRect = { x: dx, y: dy, w: dw, h: dh }
+}
+
+function renderLutPreview() {
+  lutPrevCache = null
+  if (!lutPrevSrc || !lutPrevRect) return
+  const p = getParams()
+  const { w: dw, h: dh } = lutPrevRect
+  const src = lutPrevSrc.getContext('2d').getImageData(0, 0, dw, dh)
+  const out = document.createElement('canvas')
+  out.width = dw; out.height = dh
+  const outCtx = out.getContext('2d')
+  const id = outCtx.createImageData(dw, dh)
+  const d = id.data
+  for (let i = 0; i < src.data.length; i += 4) {
+    const luma = 0.299 * src.data[i] + 0.587 * src.data[i+1] + 0.114 * src.data[i+2]
+    const darkFrac = p.invert ? luma / 255 : 1 - luma / 255
+    const idx = Math.min(255, Math.max(0, Math.round(darkFrac * 255)))
+    const brightness = Math.round((1 - currentLUT[idx]) * 255)
+    d[i] = d[i+1] = d[i+2] = brightness; d[i+3] = 255
+  }
+  outCtx.putImageData(id, 0, 0)
+  lutPrevCache = out
+}
+
+function drawLutPreview(hoverCX, hoverCY) {
+  const canvas = document.getElementById('lut-preview')
+  if (!canvas) return
+  const ctx = canvas.getContext('2d')
+  const PW = canvas.width, PH = canvas.height
+  ctx.fillStyle = '#1a2235'
+  ctx.fillRect(0, 0, PW, PH)
+  if (!lutPrevCache || !lutPrevRect) {
+    ctx.fillStyle = '#4a5578'
+    ctx.font = '11px ui-sans-serif, system-ui, sans-serif'
+    ctx.textAlign = 'center'; ctx.textBaseline = 'middle'
+    ctx.fillText(currentImg ? 'Computing…' : 'Load an image', PW / 2, PH / 2)
+    return
+  }
+  const { x: dx, y: dy, w: dw, h: dh } = lutPrevRect
+  ctx.drawImage(lutPrevCache, dx, dy)
+  ctx.strokeStyle = '#222840'; ctx.lineWidth = 1
+  ctx.strokeRect(dx - 0.5, dy - 0.5, dw + 1, dh + 1)
+  // Crosshair
+  if (hoverCX !== undefined && hoverCX >= dx && hoverCX <= dx + dw &&
+      hoverCY !== undefined && hoverCY >= dy && hoverCY <= dy + dh) {
+    ctx.strokeStyle = 'rgba(240,160,48,0.85)'; ctx.lineWidth = 1
+    ctx.beginPath()
+    ctx.moveTo(hoverCX + 0.5, dy);    ctx.lineTo(hoverCX + 0.5, dy + dh)
+    ctx.moveTo(dx, hoverCY + 0.5);    ctx.lineTo(dx + dw, hoverCY + 0.5)
+    ctx.stroke()
+  }
+}
+
+function lutPreviewEvtXY(e) {
+  const canvas = document.getElementById('lut-preview')
+  const r = canvas.getBoundingClientRect()
+  return [
+    (e.clientX - r.left) * (canvas.width  / r.width),
+    (e.clientY - r.top)  * (canvas.height / r.height)
+  ]
+}
+
+function openLutModal() {
+  document.getElementById('lut-modal').style.display = 'flex'
+  prepareLutPreview()
+  renderLutPreview()
+  drawLutModal()
+  drawLutPreview()
+}
+
+function closeLutModal() {
+  document.getElementById('lut-modal').style.display = 'none'
+  lutHoverLuma = null; lutPrevSrc = null; lutPrevRect = null; lutPrevCache = null
+  refresh()
+}
+
+function lutReset() {
+  lutPoints = [{ x: 0, y: 0 }, { x: 1, y: 1 }]
+  computeLUT()
+  renderLutPreview()
+  drawLutModal()
+  drawLutPreview()
+}
+
+
+// Mouse events on LUT canvas
+document.addEventListener('DOMContentLoaded', () => {
+  const canvas = document.getElementById('lut-canvas')
+  if (!canvas) return
+
+  canvas.addEventListener('mousedown', e => {
+    e.preventDefault()
+    const [cx, cy] = lutEvtXY(e)
+    const hit = lutHitTest(cx, cy)
+    if (hit >= 0) {
+      lutDragIdx = hit
+      lutSnapPrev = lutPoints.map(p => ({ ...p }))
+    } else {
+      // Add point if click is within draw area
+      if (cx >= LUT_PAD && cx <= LUT_PAD + LUT_DW && cy >= LUT_PAD && cy <= LUT_PAD + LUT_DH) {
+        const newPt = canvasToPt(cx, cy)
+        // Don't add if too close to an existing point
+        const tooClose = lutPoints.some(p => Math.abs(p.x - newPt.x) < 0.02)
+        if (!tooClose) {
+          lutPoints.push(newPt)
+          lutPoints.sort((a, b) => a.x - b.x)
+          computeLUT()
+          drawLutModal()
+        }
+      }
+    }
+  })
+
+  canvas.addEventListener('mousemove', e => {
+    if (lutDragIdx < 0) return
+    e.preventDefault()
+    const [cx, cy] = lutEvtXY(e)
+    const pt = canvasToPt(cx, cy)
+    const isEndpoint = lutDragIdx === 0 || lutDragIdx === lutPoints.length - 1
+
+    if (isEndpoint) {
+      // Endpoints: only Y is movable
+      lutPoints[lutDragIdx].y = pt.y
+    } else {
+      // Middle points: constrain X between neighbors
+      const xMin = lutPoints[lutDragIdx - 1].x + 0.005
+      const xMax = lutPoints[lutDragIdx + 1].x - 0.005
+      lutPoints[lutDragIdx].x = Math.max(xMin, Math.min(xMax, pt.x))
+      lutPoints[lutDragIdx].y = pt.y
+    }
+    computeLUT()
+    renderLutPreview()
+    drawLutModal()
+    drawLutPreview()
+  })
+
+  canvas.addEventListener('mouseup', () => {
+    lutDragIdx = -1
+    lutSnapPrev = null
+  })
+
+  canvas.addEventListener('mouseleave', () => {
+    if (lutDragIdx >= 0) {
+      lutDragIdx = -1
+      lutSnapPrev = null
+    }
+  })
+
+  canvas.addEventListener('dblclick', e => {
+    const [cx, cy] = lutEvtXY(e)
+    const hit = lutHitTest(cx, cy)
+    if (hit > 0 && hit < lutPoints.length - 1) {
+      lutPoints.splice(hit, 1)
+      computeLUT()
+      renderLutPreview()
+      drawLutModal()
+      drawLutPreview()
+    }
+  })
+
+  // ── Preview canvas events ────────────────────────────────────────────────────
+  const prev = document.getElementById('lut-preview')
+  if (!prev) return
+
+  prev.addEventListener('mousemove', e => {
+    if (!lutPrevSrc || !lutPrevRect) return
+    const [cx, cy] = lutPreviewEvtXY(e)
+    const { x: dx, y: dy, w: dw, h: dh } = lutPrevRect
+    if (cx < dx || cx > dx + dw || cy < dy || cy > dy + dh) {
+      lutHoverLuma = null
+    } else {
+      const px = Math.min(dw - 1, Math.max(0, Math.round(cx - dx)))
+      const py = Math.min(dh - 1, Math.max(0, Math.round(cy - dy)))
+      const pixel = lutPrevSrc.getContext('2d').getImageData(px, py, 1, 1).data
+      const luma = 0.299 * pixel[0] + 0.587 * pixel[1] + 0.114 * pixel[2]
+      lutHoverLuma = luma / 255   // normalized brightness: 0=dark, 1=light
+    }
+    drawLutModal()
+    drawLutPreview(cx, cy)
+  })
+
+  prev.addEventListener('mouseleave', () => {
+    lutHoverLuma = null
+    drawLutModal()
+    drawLutPreview()
+  })
+
+  prev.addEventListener('click', e => {
+    if (lutHoverLuma === null) return
+    const darkFrac = 1 - lutHoverLuma
+    const idx = Math.min(255, Math.max(0, Math.round(darkFrac * 255)))
+    const powerFrac = currentLUT[idx]
+    const newPt = { x: darkFrac, y: powerFrac }
+    if (lutPoints.some(p => Math.abs(p.x - newPt.x) < 0.02)) return
+    lutPoints.push(newPt)
+    lutPoints.sort((a, b) => a.x - b.x)
+    computeLUT()
+    renderLutPreview()
+    const [cx, cy] = lutPreviewEvtXY(e)
+    drawLutModal()
+    drawLutPreview(cx, cy)
+  })
+})
+
+// ── Init ──────────────────────────────────────────────────────────────────────
+new ResizeObserver(() => { if (lastBitmap) drawPreview() }).observe(document.getElementById('preview-wrap'))
+loadSettings()
+call('getMachineSettings').then(s => {
+  if (s?.spindleMax > 0) {
+    const maxS = s.spindleMax
+    document.getElementById('power').max = maxS
+    document.getElementById('SMin').max  = maxS
+    document.getElementById('SMax').max  = maxS
+  }
+}).catch(() => {})
+</script>
+</body>
+</html>

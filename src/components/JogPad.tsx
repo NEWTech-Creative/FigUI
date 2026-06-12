@@ -120,6 +120,61 @@ function buildSpindlePresets(min: number, max?: number): number[] {
   return [...new Set(raw.map(value => Math.max(safeMin, Math.round(value))))]
 }
 
+interface SpindleRpmInputProps {
+  value: number
+  onChange: (value: number) => void
+  className: string
+}
+
+function SpindleRpmInput({ value, onChange, className }: SpindleRpmInputProps) {
+  const [draft, setDraft] = useState(String(value))
+  const [editing, setEditing] = useState(false)
+  const cancelBlurRef = useRef(false)
+
+  useEffect(() => {
+    if (!editing) setDraft(String(value))
+  }, [value, editing])
+
+  function commit() {
+    if (cancelBlurRef.current) {
+      cancelBlurRef.current = false
+      setDraft(String(value))
+      setEditing(false)
+      return
+    }
+
+    const parsed = draft.trim() === '' ? Number.NaN : Number(draft)
+    const next = Number.isFinite(parsed) ? parsed : value
+    onChange(next)
+    setDraft(String(next))
+    setEditing(false)
+  }
+
+  return (
+    <input
+      type="number"
+      value={draft}
+      onFocus={e => {
+        setEditing(true)
+        e.currentTarget.select()
+      }}
+      onChange={e => setDraft(e.target.value)}
+      onBlur={commit}
+      onKeyDown={e => {
+        if (e.key === 'Enter') e.currentTarget.blur()
+        if (e.key === 'Escape') {
+          cancelBlurRef.current = true
+          setDraft(String(value))
+          e.currentTarget.blur()
+        }
+      }}
+      step={100}
+      className={className}
+      placeholder="0"
+    />
+  )
+}
+
 
 function useHoldJog(
   axis: string, sign: 1 | -1, feed: number,
@@ -521,20 +576,47 @@ function FeedButton({
   presets,
   onChange,
   formatValue,
+  toDisplayValue,
+  fromDisplayValue,
+  max,
 }: {
   label: string
   value: number
   presets: readonly number[]
   onChange: (v: number) => void
   formatValue: (v: number) => string
+  toDisplayValue?: (v: number) => number
+  fromDisplayValue?: (v: number) => number
+  max?: number
 }) {
   const [open, setOpen] = useState(false)
+  const [customOpen, setCustomOpen] = useState(false)
+  const [customValue, setCustomValue] = useState('')
   const ref = useRef<HTMLDivElement>(null)
+
+  function close() {
+    setOpen(false)
+    setCustomOpen(false)
+    setCustomValue('')
+  }
+
+  function openCustom() {
+    setCustomValue(String(toDisplayValue ? toDisplayValue(value) : value))
+    setCustomOpen(true)
+  }
+
+  function commitCustom() {
+    const displayValue = Number(customValue)
+    if (!Number.isFinite(displayValue) || displayValue <= 0) return
+    const converted = fromDisplayValue ? fromDisplayValue(displayValue) : displayValue
+    onChange(max != null && Number.isFinite(max) ? Math.min(converted, max) : converted)
+    close()
+  }
 
   useEffect(() => {
     if (!open) return
     function onOutside(e: MouseEvent) {
-      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false)
+      if (ref.current && !ref.current.contains(e.target as Node)) close()
     }
     document.addEventListener('mousedown', onOutside)
     return () => document.removeEventListener('mousedown', onOutside)
@@ -564,7 +646,7 @@ function FeedButton({
           {presets.map(preset => (
             <button
               key={preset}
-              onClick={() => { onChange(preset); setOpen(false) }}
+              onClick={() => { onChange(preset); close() }}
               className={`w-full flex items-center justify-between px-3 py-1.5 text-base font-mono transition-colors ${
                 preset === value
                   ? 'bg-accent/10 text-accent font-semibold'
@@ -581,6 +663,39 @@ function FeedButton({
               <span>{formatValue(preset)}</span>
             </button>
           ))}
+          {toDisplayValue && fromDisplayValue && (
+            customOpen ? (
+              <div className="flex items-center gap-1.5 px-2 py-1.5 border-t border-border">
+                <input
+                  type="number"
+                  value={customValue}
+                  onChange={e => setCustomValue(e.target.value)}
+                  onKeyDown={e => {
+                    if (e.key === 'Enter') commitCustom()
+                    if (e.key === 'Escape') close()
+                  }}
+                  min={0}
+                  step="any"
+                  className="input-field min-w-0 flex-1 py-1 px-2 text-base font-mono text-right"
+                  autoFocus
+                />
+                <button
+                  className="btn btn-primary px-2 py-1 text-base"
+                  onClick={commitCustom}
+                  disabled={!Number.isFinite(Number(customValue)) || Number(customValue) <= 0}
+                >
+                  Set
+                </button>
+              </div>
+            ) : (
+              <button
+                className="w-full px-3 py-1.5 text-left text-base text-text-muted hover:text-text-primary hover:bg-elevated border-t border-border transition-colors"
+                onClick={openCustom}
+              >
+                Custom…
+              </button>
+            )
+          )}
         </div>
       )}
     </div>
@@ -724,6 +839,7 @@ export function JogPad() {
   const controllerSettings = useMachineStore(s => s.controllerSettings)
   const setActiveStepJog = useMachineStore(s => s.setActiveStepJog)
   const [spindleTarget, setSpindleTarget] = useState(24000)
+  const [selectedSpindlePreset, setSelectedSpindlePreset] = useState<number | null>(null)
   const [spindleOverrideState, setSpindleOverrideState] = useState<'on' | 'off' | null>(null)
   const [xyFeed, setXyFeed] = useState(() => loadPersistedJogFeed('jog.xyFeed', 1000))
   const [zFeed, setZFeed]   = useState(() => loadPersistedJogFeed('jog.zFeed', 200))
@@ -875,8 +991,12 @@ export function JogPad() {
                 </div>
 
                 <div className="flex gap-2 items-center">
-                  <FeedButton label="XY" value={xyFeed} presets={xyFeedPresetValues} onChange={setXyFeed} formatValue={linearFeedFormatter} />
-                  <FeedButton label="Z"  value={zFeed}  presets={zFeedPresetValues} onChange={setZFeed} formatValue={linearFeedFormatter} />
+                  <FeedButton label="XY" value={xyFeed} presets={xyFeedPresetValues} onChange={setXyFeed}
+                    formatValue={linearFeedFormatter} toDisplayValue={value => mmToDisplay(value, units)}
+                    fromDisplayValue={value => displayToMm(value, units)} max={xyFeedMax} />
+                  <FeedButton label="Z" value={zFeed} presets={zFeedPresetValues} onChange={setZFeed}
+                    formatValue={linearFeedFormatter} toDisplayValue={value => mmToDisplay(value, units)}
+                    fromDisplayValue={value => displayToMm(value, units)} max={zFeedMax} />
                   {axes > 3 && <FeedButton label="ABC" value={abcFeed} presets={MM_FEED_PRESETS} onChange={setAbcFeed} formatValue={rotaryFeedFormatter} />}
                   <span className="text-base text-text-dim shrink-0">
                     {axes > 3 ? `XYZ ${feedUnitLabel(units)}` : feedUnitLabel(units)}
@@ -908,7 +1028,7 @@ export function JogPad() {
         </div>
       </div>
 
-      <div className="panel flex flex-col">
+      {spindleMax ? <div className="panel flex flex-col">
         <div className="panel-header">
           <span className='text-lg font-bold'>Spindle</span>
           {(() => {
@@ -934,24 +1054,13 @@ export function JogPad() {
 
           <div className="flex items-center gap-2">
             <span className="text-base text-text-muted font-medium shrink-0">RPM</span>
-            <input
-              type="number"
+            <SpindleRpmInput
               value={spindleTarget}
-              onChange={e => {
-                const next = Number(e.target.value)
-                if (!Number.isFinite(next)) {
-                  setSpindleTarget(spindleMin)
-                  return
-                }
-                setSpindleTarget(spindleMax != null
-                  ? clamp(next, spindleMin, spindleMax)
-                  : Math.max(spindleMin, next))
+              onChange={value => {
+                setSpindleTarget(value)
+                setSelectedSpindlePreset(null)
               }}
-              min={spindleMin}
-              max={spindleMax}
-              step={100}
               className="input-field py-1.5 text-base font-mono text-right flex-1"
-              placeholder="0"
             />
           </div>
 
@@ -961,13 +1070,14 @@ export function JogPad() {
                 key={rpm}
                 onClick={() => {
                   setSpindleTarget(rpm)
+                  setSelectedSpindlePreset(rpm)
                   if (spindleActive) {
                     sendRaw(`M3 S${rpm}`)
                     sendRealtime(0x99)
                   }
                 }}
                 className={`btn py-2 text-lg font-medium justify-center ${
-                  spindleTarget === rpm
+                  selectedSpindlePreset === rpm
                     ? 'bg-accent/20 border-accent/60 text-accent'
                     : 'btn-ghost'
                 }`}
@@ -1005,7 +1115,7 @@ export function JogPad() {
           )}
 
         </div>
-      </div>
+      </div> : null}
     </>
   )
 }
@@ -1017,6 +1127,7 @@ export function SpindlePanel({ className, isTablet }: { className?: string; isTa
   const spindleMax = controllerSettings.spindleMax
 
   const [spindleTarget, setSpindleTarget] = useState(24000)
+  const [selectedSpindlePreset, setSelectedSpindlePreset] = useState<number | null>(null)
   const [spindleOverrideState, setSpindleOverrideState] = useState<'on' | 'off' | null>(null)
 
   const spindlePresetValues = buildSpindlePresets(spindleMin, spindleMax)
@@ -1079,24 +1190,13 @@ export function SpindlePanel({ className, isTablet }: { className?: string; isTa
 
           <div className="flex items-center gap-2">
             <span className={`${isTablet ? 'text-base' : 'text-base'} text-text-muted font-medium shrink-0`}>RPM</span>
-            <input
-              type="number"
+            <SpindleRpmInput
               value={spindleTarget}
-              onChange={e => {
-                const next = Number(e.target.value)
-                if (!Number.isFinite(next)) {
-                  setSpindleTarget(spindleMin)
-                  return
-                }
-                setSpindleTarget(spindleMax != null
-                  ? clamp(next, spindleMin, spindleMax)
-                  : Math.max(spindleMin, next))
+              onChange={value => {
+                setSpindleTarget(value)
+                setSelectedSpindlePreset(null)
               }}
-              min={spindleMin}
-              max={spindleMax}
-              step={100}
               className={`input-field font-mono text-right flex-1 ${isTablet ? 'py-2 text-xl' : 'py-1.5 text-base'}`}
-              placeholder="0"
             />
           </div>
 
@@ -1106,13 +1206,14 @@ export function SpindlePanel({ className, isTablet }: { className?: string; isTa
                 key={rpm}
                 onClick={() => {
                   setSpindleTarget(rpm)
+                  setSelectedSpindlePreset(rpm)
                   if (spindleActive) {
                     sendRaw(`M3 S${rpm}`)
                     sendRealtime(0x99)
                   }
                 }}
                 className={`btn font-medium justify-center ${isTablet ? 'text-lg py-2' : 'text-base py-2'} ${
-                  spindleTarget === rpm
+                  selectedSpindlePreset === rpm
                     ? 'bg-accent/20 border-accent/60 text-accent'
                     : 'btn-ghost'
                 }`}
@@ -1183,6 +1284,7 @@ export function TabletJogPad({ onSwitchStyle }: { onSwitchStyle?: () => void } =
   const [continuous, setContinuous] = useState(false)
   const [stepSize, setStepSize] = useState(1)
   const [feedModal, setFeedModal] = useState<'xy' | 'z' | null>(null)
+  const [customFeedValue, setCustomFeedValue] = useState('')
   const prevUnitsRef = useRef(units)
 
   const xyFeedMax = controllerSettings.maxRateX != null && controllerSettings.maxRateY != null
@@ -1218,19 +1320,39 @@ export function TabletJogPad({ onSwitchStyle }: { onSwitchStyle?: () => void } =
   const jobRunning = useJobRunningWithLinger(status.state)
   const jogDisabled = !canJog || jobRunning
   const { keyboardJog, setKeyboardJog } = useKeyboardJog(continuous, canJog, xyFeed, zFeed)
+  const commandStepSize = displayToMm(stepSize, units)
 
-  const { start: startYp, stop: stopYp } = useHoldJog('Y', 1, xyFeed, stepSize, continuous, jogDisabled)
-  const { start: startYm, stop: stopYm } = useHoldJog('Y', -1, xyFeed, stepSize, continuous, jogDisabled)
-  const { start: startXp, stop: stopXp } = useHoldJog('X', 1, xyFeed, stepSize, continuous, jogDisabled)
-  const { start: startXm, stop: stopXm } = useHoldJog('X', -1, xyFeed, stepSize, continuous, jogDisabled)
-  const { start: startZp, stop: stopZp } = useHoldJog('Z', 1, zFeed, stepSize, continuous, jogDisabled)
-  const { start: startZm, stop: stopZm } = useHoldJog('Z', -1, zFeed, stepSize, continuous, jogDisabled)
+  const { start: startYp, stop: stopYp } = useHoldJog('Y', 1, xyFeed, commandStepSize, continuous, jogDisabled)
+  const { start: startYm, stop: stopYm } = useHoldJog('Y', -1, xyFeed, commandStepSize, continuous, jogDisabled)
+  const { start: startXp, stop: stopXp } = useHoldJog('X', 1, xyFeed, commandStepSize, continuous, jogDisabled)
+  const { start: startXm, stop: stopXm } = useHoldJog('X', -1, xyFeed, commandStepSize, continuous, jogDisabled)
+  const { start: startZp, stop: stopZp } = useHoldJog('Z', 1, zFeed, commandStepSize, continuous, jogDisabled)
+  const { start: startZm, stop: stopZm } = useHoldJog('Z', -1, zFeed, commandStepSize, continuous, jogDisabled)
 
   const steps = units === 'in' ? [0.001, 0.01, 0.1, 1] : [0.1, 1, 10, 100]
 
   useEffect(() => {
     if (!steps.includes(stepSize)) setStepSize(steps[1])
   }, [units])
+
+  function openFeedModal(axis: 'xy' | 'z') {
+    const current = axis === 'xy' ? xyFeed : zFeed
+    setCustomFeedValue(String(mmToDisplay(current, units)))
+    setFeedModal(axis)
+  }
+
+  function commitCustomFeed() {
+    if (!feedModal) return
+    const displayValue = Number(customFeedValue)
+    if (!Number.isFinite(displayValue) || displayValue <= 0) return
+
+    const max = feedModal === 'xy' ? xyFeedMax : zFeedMax
+    const converted = displayToMm(displayValue, units)
+    const next = max != null && Number.isFinite(max) ? Math.min(converted, max) : converted
+    if (feedModal === 'xy') setXyFeed(next)
+    else setZFeed(next)
+    setFeedModal(null)
+  }
 
   return (
     <>
@@ -1270,7 +1392,7 @@ export function TabletJogPad({ onSwitchStyle }: { onSwitchStyle?: () => void } =
 
         <div className="flex flex-col w-16 max-sm:w-12 border-r border-border py-2 shrink-0">
           <button
-            onClick={() => setFeedModal('xy')}
+            onClick={() => openFeedModal('xy')}
             className="flex flex-col items-center justify-center gap-3 flex-1 rounded-lg hover:bg-accent/5 transition-all group mx-1"
           >
             <span className="text-xl font-extrabold text-text-muted tracking-wider leading-none">XY</span>
@@ -1289,7 +1411,7 @@ export function TabletJogPad({ onSwitchStyle }: { onSwitchStyle?: () => void } =
           </button>
           <div className="h-px bg-border mx-2 shrink-0" />
           <button
-            onClick={() => setFeedModal('z')}
+            onClick={() => openFeedModal('z')}
             className="flex flex-col items-center justify-center gap-3 flex-1 rounded-lg hover:bg-accent/5 transition-all group mx-1"
           >
             <span className="text-xl font-extrabold text-text-muted tracking-wider leading-none">Z</span>
@@ -1421,6 +1543,30 @@ export function TabletJogPad({ onSwitchStyle }: { onSwitchStyle?: () => void } =
                 </button>
               )
             })}
+          </div>
+          <div className="mt-5 pt-5 border-t border-border">
+            <label className="block text-xl text-text-muted mb-2">Custom</label>
+            <div className="flex items-center gap-3">
+              <input
+                type="number"
+                value={customFeedValue}
+                onChange={e => setCustomFeedValue(e.target.value)}
+                onKeyDown={e => {
+                  if (e.key === 'Enter') commitCustomFeed()
+                  if (e.key === 'Escape') setFeedModal(null)
+                }}
+                min={0}
+                step="any"
+                className="input-field min-w-0 flex-1 py-3 px-4 text-2xl font-mono text-right"
+              />
+              <button
+                className="btn btn-primary px-5 py-3 text-xl"
+                onClick={commitCustomFeed}
+                disabled={!Number.isFinite(Number(customFeedValue)) || Number(customFeedValue) <= 0}
+              >
+                Set
+              </button>
+            </div>
           </div>
         </div>
       </div>

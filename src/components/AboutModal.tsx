@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { X, Download, CheckCircle2, AlertCircle, ArrowUp, RefreshCw } from 'lucide-react'
 import fluidncLogo from '../assets/fluidnc-logo.svg'
 import { useMachineStore } from '../store'
@@ -6,8 +6,36 @@ import { uploadFile } from '../lib/http'
 import { CURRENT_VERSION, GITHUB_REPO, DISMISSED_VERSION_KEY, semverGt } from '../lib/updateCheck'
 
 const FIRMWARE_URL = 'https://figamore.github.io/FigUI/firmware/index.html.gz'
+const MARKED_CDN_URL = 'https://cdn.jsdelivr.net/npm/marked/marked.min.js'
 const IS_DEMO = Boolean(import.meta.env.VITE_DEMO_MODE)
 
+type MarkedParser = {
+  parse?: (markdown: string) => string
+}
+
+declare global {
+  interface Window {
+    marked?: MarkedParser | ((markdown: string) => string)
+  }
+}
+
+let markedLoadPromise: Promise<void> | null = null
+
+function loadMarkedFromCdn(): Promise<void> {
+  if (window.marked) return Promise.resolve()
+  if (markedLoadPromise) return markedLoadPromise
+
+  markedLoadPromise = new Promise((resolve, reject) => {
+    const script = document.createElement('script')
+    script.src = MARKED_CDN_URL
+    script.async = true
+    script.onload = () => resolve()
+    script.onerror = () => reject(new Error('Failed to load markdown renderer'))
+    document.head.appendChild(script)
+  })
+
+  return markedLoadPromise
+}
 
 type UpdateState = 'idle' | 'checking' | 'up-to-date' | 'available' | 'downloading' | 'uploading' | 'done' | 'error'
 
@@ -18,6 +46,121 @@ interface Props {
 interface Tip {
   title: string
   body: React.ReactNode
+}
+
+interface GithubRelease {
+  tag_name?: string
+  name?: string
+  body?: string
+  draft?: boolean
+  prerelease?: boolean
+}
+
+interface ReleaseNote {
+  version: string
+  body: string
+}
+
+function normalizeVersion(tag: string): string {
+  return tag.trim().replace(/^v/i, '')
+}
+
+function escapeHtml(value: string): string {
+  return value
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+}
+
+function sanitizeMarkdownHtml(html: string): string {
+  const doc = new DOMParser().parseFromString(html, 'text/html')
+  const allowedTags = new Set([
+    'a', 'blockquote', 'br', 'code', 'del', 'em', 'h1', 'h2', 'h3', 'h4',
+    'h5', 'h6', 'hr', 'li', 'ol', 'p', 'pre', 'strong', 'table', 'tbody',
+    'td', 'th', 'thead', 'tr', 'ul',
+  ])
+
+  for (const element of Array.from(doc.body.querySelectorAll('*'))) {
+    const tag = element.tagName.toLowerCase()
+    if (!allowedTags.has(tag)) {
+      element.replaceWith(...Array.from(element.childNodes))
+      continue
+    }
+
+    for (const attribute of Array.from(element.attributes)) {
+      const name = attribute.name.toLowerCase()
+      const keepHref = tag === 'a' && name === 'href'
+      const keepTitle = name === 'title'
+      const keepCodeClass = tag === 'code' && name === 'class' && /^language-[\w-]+$/.test(attribute.value)
+      if (!keepHref && !keepTitle && !keepCodeClass) element.removeAttribute(attribute.name)
+    }
+
+    if (tag === 'a') {
+      const href = element.getAttribute('href') ?? ''
+      if (!/^(https?:|mailto:|#)/i.test(href)) element.removeAttribute('href')
+      element.setAttribute('target', '_blank')
+      element.setAttribute('rel', 'noopener noreferrer')
+    }
+  }
+
+  return doc.body.innerHTML
+}
+
+function renderMarkdown(markdown: string): string {
+  const marked = window.marked
+  try {
+    const html = typeof marked === 'function'
+      ? marked(markdown)
+      : marked?.parse?.(markdown)
+    if (typeof html === 'string') return sanitizeMarkdownHtml(html)
+  } catch {
+    // The escaped fallback below keeps release notes readable if parsing fails.
+  }
+  return `<pre>${escapeHtml(markdown)}</pre>`
+}
+
+async function fetchReleaseHistory(): Promise<{ latestVersion: string; notes: ReleaseNote[] }> {
+  const releases: GithubRelease[] = []
+
+  for (let page = 1; ; page++) {
+    const response = await fetch(
+      `https://api.github.com/repos/${GITHUB_REPO}/releases?per_page=100&page=${page}`,
+      { headers: { Accept: 'application/vnd.github+json' } },
+    )
+    if (!response.ok) throw new Error(`GitHub API returned ${response.status}`)
+
+    const pageReleases = await response.json() as GithubRelease[]
+    releases.push(...pageReleases)
+
+    const reachedCurrentVersion = pageReleases.some(release => {
+      if (release.draft || release.prerelease) return false
+      const version = normalizeVersion(release.tag_name ?? release.name ?? '')
+      return version !== '' && !semverGt(version, CURRENT_VERSION)
+    })
+    if (reachedCurrentVersion || pageReleases.length < 100) break
+  }
+
+  const stableReleases = releases.filter(release => !release.draft && !release.prerelease)
+  const latestVersion = normalizeVersion(stableReleases[0]?.tag_name ?? stableReleases[0]?.name ?? '')
+  const notes = stableReleases
+    .map(release => ({
+      version: normalizeVersion(release.tag_name ?? release.name ?? ''),
+      body: release.body?.trim() || 'No release notes.',
+    }))
+    .filter(release => release.version && semverGt(release.version, CURRENT_VERSION))
+
+  return { latestVersion, notes }
+}
+
+function MarkdownReleaseNotes({ markdown, rendererReady }: { markdown: string; rendererReady: boolean }) {
+  const html = useMemo(() => renderMarkdown(markdown), [markdown, rendererReady])
+  return (
+    <div
+      className="release-notes-markdown"
+      dangerouslySetInnerHTML={{ __html: html }}
+    />
+  )
 }
 
 const TIPS: Tip[] = [
@@ -101,7 +244,8 @@ export function AboutModal({ onClose }: Props) {
     () => pendingUpdateVersion ? 'available' : 'idle'
   )
   const [latestVersion, setLatestVersion] = useState(() => pendingUpdateVersion ?? '')
-  const [releaseNotes, setReleaseNotes] = useState('')
+  const [releaseNotes, setReleaseNotes] = useState<ReleaseNote[]>([])
+  const [markdownReady, setMarkdownReady] = useState(() => Boolean(window.marked))
   const [uploadProgress, setUploadProgress] = useState(0)
   const [updateError, setUpdateError] = useState('')
   const downloadedBuffer = useRef<ArrayBuffer | null>(null)
@@ -121,33 +265,39 @@ export function AboutModal({ onClose }: Props) {
   }, [onClose])
 
   useEffect(() => {
-    if (!pendingUpdateVersion || releaseNotes) return
+    if (!pendingUpdateVersion || releaseNotes.length > 0) return
 
     let cancelled = false
-    fetch(`https://api.github.com/repos/${GITHUB_REPO}/releases/latest`)
-      .then(res => res.ok ? res.json() : null)
-      .then((data: { tag_name?: string; body?: string } | null) => {
-        if (cancelled || !data) return
-        const version = (data.tag_name ?? '').replace(/^v/, '')
-        if (version !== pendingUpdateVersion) return
+    fetchReleaseHistory()
+      .then(({ latestVersion: version, notes }) => {
+        if (cancelled || !version) return
         setLatestVersion(version)
-        setReleaseNotes(data.body ?? '')
+        setReleaseNotes(notes)
       })
       .catch(() => {})
 
     return () => { cancelled = true }
-  }, [pendingUpdateVersion, releaseNotes])
+  }, [pendingUpdateVersion, releaseNotes.length])
+
+  useEffect(() => {
+    if (releaseNotes.length === 0 || markdownReady) return
+
+    let cancelled = false
+    loadMarkedFromCdn()
+      .then(() => {
+        if (!cancelled) setMarkdownReady(true)
+      })
+      .catch(() => {})
+
+    return () => { cancelled = true }
+  }, [markdownReady, releaseNotes.length])
 
   async function checkForUpdates() {
     setUpdateState('checking')
     setUpdateError('')
     try {
-      const res = await fetch(`https://api.github.com/repos/${GITHUB_REPO}/releases/latest`)
-      if (!res.ok) throw new Error(`GitHub API returned ${res.status}`)
-      const data = await res.json()
-      const tag: string = data.tag_name ?? ''
-      const version = tag.replace(/^v/, '')
-      const notes: string = data.body ?? ''
+      const { latestVersion: version, notes } = await fetchReleaseHistory()
+      if (!version) throw new Error('No stable releases found')
       setLatestVersion(version)
       setReleaseNotes(notes)
       setUpdateState(semverGt(version, CURRENT_VERSION) ? 'available' : 'up-to-date')
@@ -280,10 +430,23 @@ export function AboutModal({ onClose }: Props) {
                       current: v{CURRENT_VERSION}
                     </span>
                   </div>
-                  {releaseNotes && (
-                    <pre className="text-[12px] text-text-muted font-mono whitespace-pre-wrap break-words bg-[var(--bg)] rounded p-3 max-h-36 overflow-y-auto leading-relaxed">
-                      {releaseNotes}
-                    </pre>
+                  {releaseNotes.length > 0 && (
+                    <div className="bg-[var(--bg)] border border-border rounded p-3 max-h-64 overflow-y-auto">
+                      {releaseNotes.map(release => (
+                        <section
+                          key={release.version}
+                          className="release-notes-section"
+                        >
+                          <div className="release-notes-version">
+                            v{release.version}
+                          </div>
+                          <MarkdownReleaseNotes
+                            markdown={release.body}
+                            rendererReady={markdownReady}
+                          />
+                        </section>
+                      ))}
+                    </div>
                   )}
                   <div className="flex items-center gap-2">
                     <button

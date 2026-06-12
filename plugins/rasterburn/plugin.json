@@ -1,0 +1,11 @@
+{
+  "name": "Raster Burn",
+  "description": "Laser engraving of a grayscale/B&W image by line-by-line scan.",
+  "version": "1.0.0",
+  "entry": "index.html",
+  "icon": "icon.png",
+  "layout": "workspace",
+  "layoutTablet": "full",
+  "layoutMobile": "full",
+  "files": ["index.html", "plugin.json", "icon.png"]
+}

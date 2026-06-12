@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import { Puzzle, X, RefreshCw } from 'lucide-react'
 import { useMachineStore } from '../store'
 import { sendCommand, listFiles as listDeviceFiles, fetchFileContent, saveFileContent } from '../lib/http'
+import { invalidateFileCache } from './FileManager'
 import { sendRaw, sendRealtime, onLine } from '../lib/ws'
 import type { Plugin } from '../types'
 
@@ -134,7 +135,13 @@ export function PluginFrame({ plugin, onClose, inline }: { plugin: Plugin; onClo
           const lastSlash = fullPath.lastIndexOf('/')
           const dir = lastSlash > 0 ? fullPath.slice(0, lastSlash) : '/'
           const filename = fullPath.slice(lastSlash + 1)
-          saveFileContent(dir, filename, content, fs).then(() => reply(null)).catch(err => reply(null, String(err)))
+          saveFileContent(dir, filename, content, fs)
+            .then(() => {
+              reply(null)
+              invalidateFileCache()
+              window.dispatchEvent(new CustomEvent('files:changed'))
+            })
+            .catch(err => reply(null, String(err)))
           break
         }
         case 'listFiles': {

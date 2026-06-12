@@ -28,6 +28,14 @@ async function scanFs(fs: 'sd' | 'local'): Promise<Plugin[]> {
       plugins.push({ id: dir.name, manifest, entryUrl, fs })
     } catch {}
   }
+  for (const plugin of plugins) {
+    if (plugin.manifest.icon) {
+      try {
+        const res = await fetch(plugin.manifest.icon)
+        if (res.ok) plugin.manifest.icon = URL.createObjectURL(await res.blob())
+      } catch {}
+    }
+  }
   return plugins
 }
 
@@ -73,7 +81,8 @@ export async function uploadFolderPlugin(
 
   for (let i = 0; i < rootFiles.length; i++) {
     const file = rootFiles[i]
-    const filename = file.webkitRelativePath.split('/')[1]
+    const parts = file.webkitRelativePath.split('/')
+    const filename = parts.length > 1 ? parts[1] : file.name
     onProgress(i + 1, rootFiles.length, filename)
     await uploadFile(targetDir, new File([file], filename, { type: file.type }), fs)
   }

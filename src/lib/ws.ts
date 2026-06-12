@@ -11,6 +11,7 @@ let livenessTimer: ReturnType<typeof setInterval> | null = null
 let statusPollTimer: ReturnType<typeof setInterval> | null = null
 let gcStatePollTimer: ReturnType<typeof setInterval> | null = null
 let pendingPingOks = 0
+let backgroundTrafficSuspensions = 0
 
 interface SilentResponseMatcher {
   starts: (line: string) => boolean
@@ -275,6 +276,7 @@ function closeCurrentSocket() {
 }
 
 function startPing() {
+  if (backgroundTrafficSuspensions > 0) return
   stopPing()
   pingTimer = setInterval(() => {
     if (socket?.readyState !== WebSocket.OPEN) return
@@ -293,6 +295,7 @@ function stopPing() {
 }
 
 function startStatusPoll() {
+  if (backgroundTrafficSuspensions > 0) return
   stopStatusPoll()
   statusPollTimer = setInterval(() => {
     if (socket?.readyState !== WebSocket.OPEN) return
@@ -311,6 +314,7 @@ function stopStatusPoll() {
 }
 
 function startGcStatePoll() {
+  if (backgroundTrafficSuspensions > 0) return
   stopGcStatePoll()
   const tick = () => {
     if (socket?.readyState !== WebSocket.OPEN) return
@@ -487,10 +491,28 @@ export function sendSilentAlarmQuery() {
   return sendSilentRaw('$A', ALARM_QUERY_SILENT_RESPONSE)
 }
 
+export function suspendBackgroundTraffic() {
+  backgroundTrafficSuspensions++
+  stopPing()
+  stopStatusPoll()
+  stopGcStatePoll()
+}
+
+export function resumeBackgroundTraffic() {
+  backgroundTrafficSuspensions = Math.max(0, backgroundTrafficSuspensions - 1)
+  if (backgroundTrafficSuspensions > 0 || socket?.readyState !== WebSocket.OPEN) return
+  startPing()
+  startStatusPoll()
+  startGcStatePoll()
+}
+
 
 export async function sendStartupQueries() {
   try {
     const ssText = await sendCommand('$SS')
+    const hasMist  = /\[MSG:INFO:\s*Mist coolant/i.test(ssText)
+    const hasFlood = /\[MSG:INFO:\s*Flood coolant/i.test(ssText)
+    if (hasMist || hasFlood) useMachineStore.getState().updateControllerSettings({ hasMist, hasFlood })
     ssText.split('\n').forEach(raw => {
       const line = raw.trim()
       if (line) lineHandlers.forEach(fn => fn(line))
@@ -581,6 +603,7 @@ export function isSocketOpen(): boolean {
 
 export function disconnect() {
   generation++
+  backgroundTrafficSuspensions = 0
   stopPing()
   stopLivenessWatchdog()
   stopStatusPoll()
