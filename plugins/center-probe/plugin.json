@@ -1,0 +1,11 @@
+{
+  "name": "Center Probe",
+  "description": "Find the center of circular bores and rectangular pockets using internal probing, then set X/Y work origin.",
+  "version": "1.0.1",
+  "entry": "index.html",
+  "icon": "icon.png",
+  "layout": "workspace",
+  "layoutTablet": "full",
+  "layoutMobile": "full",
+  "files": ["index.html", "style.css", "icon.png"]
+}
