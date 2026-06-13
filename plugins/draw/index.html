@@ -1,0 +1,2109 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Draw - FigUI Plugin</title>
+  <style>
+    :root { color-scheme: light dark; }
+    body { font-family: system-ui, sans-serif; margin: 1rem; background: var(--bg, canvas); color: var(--text-primary, canvastext); }
+    h1, h2, h3 { margin-top: 0; }
+    .grid { display: grid; gap: 1rem; grid-template-columns: 1fr 1fr; }
+    .three-col { display: grid; gap: 1rem; grid-template-columns: 1fr 1fr 1fr; }
+    textarea { width: 100%; min-height: 180px; font-family: ui-monospace, monospace; }
+    pre { margin: 0; padding: 0.75rem; border: 1px solid #6664; overflow: auto; max-height: 200px; }
+    button { margin-right: 0.5rem; margin-bottom: 0.5rem; }
+    button.small { padding: 0.25rem 0.5rem; font-size: 0.85rem; }
+    svg { width: 100%; aspect-ratio: 1; min-height: 280px; border: 1px solid #6664; background: #fff; }
+    .row { margin-bottom: 0.75rem; }
+    .full { grid-column: 1 / -1; }
+    .error { color: #b00020; font-weight: 600; }
+    .shape-controls { margin-top: 0.5rem; }
+    .element-controls { margin-top: 0.5rem; }
+    .shape-list { width: 100%; min-height: 8rem; border: 1px solid #6664; padding: 0.25rem; }
+    .shape-item { padding: 0.25rem 0.5rem; cursor: pointer; }
+    .shape-item.selected { background-color: #cce5ff; }
+    .shape-item-text { font-size: 0.9rem; }
+    .shape-item-details { font-size: 0.8rem; opacity: 0.7; margin-top: 0.25rem; }
+    dialog { max-width: 30rem; width: calc(100% - 2rem); border: 1px solid #6664; }
+    dialog form { display: grid; grid-template-columns: 1fr 1fr; gap: 0.5rem 0.75rem; }
+    dialog .full { grid-column: 1 / -1; }
+    dialog label { display: flex; flex-direction: column; gap: 0.25rem; }
+    dialog menu { display: flex; justify-content: flex-end; gap: 0.5rem; margin: 0.75rem 0 0; padding: 0; }
+    .hint { opacity: 0.75; margin: 0.25rem 0 0.5rem; }
+    .settings-box { border: 1px solid #6664; padding: 0.75rem; margin: 0.5rem 0; }
+    .settings-label { font-weight: 600; display: inline-block; margin-right: 1rem; }
+    .gcode-toggle { margin: 0.5rem 0; }
+    .section-title { margin: 1rem 0 0.5rem; }
+  </style>
+</head>
+<body>
+
+  <div class="row">
+    <button id="saveDrawingBtn">Save drawing</button>
+    <button id="loadDrawingBtn">Load drawing</button>
+    <button id="generateBtn">Generate & Save G-code</button>
+    <input id="openJsonInput" type="file" accept=".json,application/json" hidden />
+  </div>
+
+  <p id="status" aria-live="polite"></p>
+
+  <div class="grid">
+    <!-- Left column: Job Settings, Design elements, Machine Settings, Tools -->
+    <div>
+      <h3 class="section-title">Job Settings</h3>
+      <div class="settings-box">
+        <span class="settings-label" id="jobSettingsStatus">Not configured</span>
+        <button id="editJobSettingsBtn">Edit</button>
+      </div>
+
+      <h3 class="section-title">Design elements</h3>
+      <div id="shapeListContainer" class="shape-list" aria-label="Design elements"></div>
+      <div class="element-controls">
+        <button id="addShapeBtn">Add</button>
+        <button id="moveUpBtn" class="small">Move up</button>
+        <button id="moveDownBtn" class="small">Move down</button>
+        <button id="editShapeBtn">Edit selected</button>
+        <button id="deleteShapeBtn">Delete selected</button>
+      </div>
+
+      <h3 class="section-title">Machine Settings</h3>
+      <div class="settings-box">
+        <span class="settings-label" id="machineSettingsStatus">Default</span>
+        <button id="editMachineSettingsBtn">Edit</button>
+      </div>
+
+      <h3 class="section-title">Tools</h3>
+      <div class="settings-box">
+        <div id="toolsList"></div>
+        <div class="element-controls">
+          <button id="addToolBtn">Add tool</button>
+          <button id="editToolBtn">Edit selected</button>
+          <button id="deleteToolBtn">Delete selected</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Right column: Preview -->
+    <div>
+      <h3 class="section-title">Preview</h3>
+      <svg id="preview" viewBox="0 0 300 200" role="img" aria-label="Drawing preview"></svg>
+      <div class="gcode-toggle">
+        <label>
+          <input id="showGcodePreview" type="checkbox" />
+          Show G-code preview
+        </label>
+      </div>
+      <pre id="gcodeOutput" style="display: none;"></pre>
+    </div>
+  </div>
+
+  <dialog id="shapeDialog">
+    <form id="shapeForm" method="dialog">
+      <h2 class="full" id="shapeDialogTitle">Shape</h2>
+      <input id="shapeEditIndex" type="hidden" />
+      <label>
+        Kind
+        <select id="shapeKind" required>
+          <option value="box">box</option>
+          <option value="circle">circle</option>
+          <option value="text">text</option>
+        </select>
+      </label>
+      <label>
+        Mode
+        <select id="shapeMode" required>
+          <option value="outside">outside</option>
+          <option value="inside">inside</option>
+          <option value="pocket">pocket</option>
+        </select>
+      </label>
+      <label>
+        X
+        <input id="shapeX" type="number" step="any" required />
+      </label>
+      <label>
+        Y
+        <input id="shapeY" type="number" step="any" required />
+      </label>
+      <label>
+        Depth
+        <input id="shapeDepth" type="number" step="any" min="0.000001" required />
+      </label>
+      <label id="shapeWidthRow">
+        Width
+        <input id="shapeWidth" type="number" step="any" min="0.000001" />
+      </label>
+      <label id="shapeHeightRow">
+        Height
+        <input id="shapeHeight" type="number" step="any" min="0.000001" />
+      </label>
+      <label id="shapeRadiusRow">
+        Radius
+        <input id="shapeRadius" type="number" step="any" min="0.000001" />
+      </label>
+      <label id="shapeValueRow" class="full">
+        Text
+        <input id="shapeValue" type="text" />
+      </label>
+      <label id="shapeSizeRow">
+        Text size
+        <input id="shapeSize" type="number" step="any" min="0.000001" />
+      </label>
+      <label>
+        Tool number
+        <input id="shapeTool" type="number" step="1" min="1" value="1" />
+      </label>
+      <menu class="full">
+        <button type="button" id="shapeCancelBtn">Cancel</button>
+        <button type="submit" id="shapeSaveBtn">Save</button>
+      </menu>
+    </form>
+  </dialog>
+
+  <dialog id="jobSettingsDialog">
+    <form id="jobSettingsForm" method="dialog">
+      <h2 class="full">Job Settings</h2>
+      <label>
+        Job X dimension
+        <input id="jobX" type="number" step="any" min="0.000001" required />
+      </label>
+      <label>
+        Job Y dimension
+        <input id="jobY" type="number" step="any" min="0.000001" required />
+      </label>
+      <label>
+        Job Z dimension
+        <input id="jobZ" type="number" step="any" min="0.000001" required />
+      </label>
+      <label>
+        Z reference
+        <select id="jobZReference" required>
+          <option value="top">Top of material surface</option>
+          <option value="bed">Machine bed</option>
+        </select>
+      </label>
+      <menu class="full">
+        <button type="button" id="jobSettingsCancelBtn">Cancel</button>
+        <button type="submit" id="jobSettingsSaveBtn">Save</button>
+      </menu>
+    </form>
+  </dialog>
+
+  <dialog id="machineSettingsDialog">
+    <form id="machineSettingsForm" method="dialog">
+      <h2 class="full">Machine Settings</h2>
+      <label>
+        Machine X max
+        <input id="machineMaxX" type="number" step="any" min="0.000001" required />
+      </label>
+      <label>
+        Machine Y max
+        <input id="machineMaxY" type="number" step="any" min="0.000001" required />
+      </label>
+      <label>
+        Units
+        <select id="machineUnits" required>
+          <option value="mm">Millimeter (mm)</option>
+          <option value="inch">Inch (in)</option>
+        </select>
+      </label>
+      <label>
+        Home X
+        <input id="machineHomeX" type="number" step="any" value="0" required />
+      </label>
+      <label>
+        Home Y
+        <input id="machineHomeY" type="number" step="any" value="0" required />
+      </label>
+      <label>
+        Z Gap Above Material
+        <input id="machineZGap" type="number" step="any" value="10" required />
+      </label>
+      <label>
+        Clearance Z1
+        <input id="machineClearanceZ" type="number" step="any" value="10" required />
+      </label>
+      <label>
+        Plunge Z2
+        <input id="machinePlungeZ" type="number" step="any" value="5" required />
+      </label>
+      <label>
+        <input id="machineMist" type="checkbox" />
+        Mist cooling
+      </label>
+      <label>
+        <input id="machineCooling" type="checkbox" />
+        Flood cooling
+      </label>
+      <menu class="full">
+        <button type="button" id="machineSettingsCancelBtn">Cancel</button>
+        <button type="submit" id="machineSettingsSaveBtn">Save</button>
+      </menu>
+    </form>
+  </dialog>
+
+  <dialog id="toolDialog">
+    <form id="toolForm" method="dialog">
+      <h2 class="full" id="toolDialogTitle">Tool</h2>
+      <input id="toolEditIndex" type="hidden" />
+      <label>
+        Tool number
+        <input id="toolNumber" type="number" step="1" min="1" required />
+      </label>
+      <label>
+        Diameter
+        <input id="toolDiameter" type="number" step="any" min="0.000001" required />
+      </label>
+      <label class="full">
+        Name/Comment
+        <input id="toolName" type="text" />
+      </label>
+      <label>
+        Feed rate
+        <input id="toolFeedRate" type="number" step="any" min="0.000001" required />
+      </label>
+      <label>
+        Plunge rate
+        <input id="toolPlungeRate" type="number" step="any" min="0.000001" required />
+      </label>
+      <label>
+        Depth per pass
+        <input id="toolDepthPass" type="number" step="any" min="0.000001" required />
+      </label>
+      <menu class="full">
+        <button type="button" id="toolCancelBtn">Cancel</button>
+        <button type="submit" id="toolSaveBtn">Save</button>
+      </menu>
+    </form>
+  </dialog>
+
+  <dialog id="filenameDialog">
+    <form id="filenameForm" method="dialog">
+      <h2 class="full">Save Drawing</h2>
+      <label>
+        Filename
+        <input id="filenameInput" type="text" required />
+      </label>
+      <menu class="full">
+        <button type="button" id="filenameCancelBtn">Cancel</button>
+        <button type="submit" id="filenameSaveBtn">Save</button>
+      </menu>
+    </form>
+  </dialog>
+
+
+  <script>
+(function () {
+  const VALID_MODES = new Set(["inside", "outside", "pocket"]);
+  const FIGUI_CALL_TIMEOUT_MS = 2000;
+  const DEFAULT_GCODE_FILENAME = "output.ngc";
+  const STARTUP_DEBUG = false; // Enable startup diagnostics in browser console
+  const AXIS_LABEL_OFFSET = 2; // Offset for positioning grid axis labels from the origin
+  const ZOOM_IN_FACTOR = 1.05; // Factor for zooming in (scroll down)
+  const ZOOM_OUT_FACTOR = 0.95; // Factor for zooming out (scroll up)
+  const MIN_ZOOM = 0.1; // Minimum zoom level
+  const MAX_ZOOM = 10; // Maximum zoom level
+  const DEFAULT_ZOOM_CENTER_X = 150; // Default zoom center X coordinate (used for initialization)
+  const DEFAULT_ZOOM_CENTER_Y = 100; // Default zoom center Y coordinate (used for initialization)
+  const ZOOM_MARGIN_FACTOR = 0.25; // Margin factor (as fraction of zoom size) for viewBox clamping
+  const DEFAULT_TOOL_NUMBER = 1; // Default tool number when not specified
+  const POCKET_STEP_FACTOR = 0.8; // Step size factor for pocket operations (as fraction of tool diameter)
+  const DEFAULT_MACHINE = { // Default machine configuration for new drawings (units: mm)
+    max_x: 1000, // Maximum X travel (millimeters)
+    max_y: 1000, // Maximum Y travel (millimeters)
+    max_z: 100,  // Maximum Z travel (millimeters)
+  };
+
+  function clamp(value, min, max) {
+    // Helper function to clamp a value between min and max
+    return Math.max(min, Math.min(max, value));
+  }
+
+  let msgId = 0;
+  const pending = new Map();
+
+  window.addEventListener("message", (event) => {
+    if (event.data?.type !== "fluid-response") {
+      return;
+    }
+    const entry = pending.get(String(event.data.id));
+    if (!entry) {
+      return;
+    }
+    pending.delete(String(event.data.id));
+    if (event.data.error) {
+      entry.reject(new Error(event.data.error));
+      return;
+    }
+    entry.resolve(event.data.result);
+  });
+
+  function callFigUI(method, params) {
+    return new Promise((resolve, reject) => {
+      const id = String(++msgId);
+      const timeoutId = window.setTimeout(() => {
+        pending.delete(id);
+        reject(new Error(`FigUI call timed out: ${method}`));
+      }, FIGUI_CALL_TIMEOUT_MS);
+
+      pending.set(id, {
+        resolve: (result) => {
+          window.clearTimeout(timeoutId);
+          resolve(result);
+        },
+        reject: (error) => {
+          window.clearTimeout(timeoutId);
+          reject(error);
+        },
+      });
+
+      window.parent.postMessage({ type: "fluid-request", id, method, params: params ?? {} }, "*");
+    });
+  }
+
+  function sleep(ms) {
+    return new Promise((resolve) => window.setTimeout(resolve, ms));
+  }
+
+  function extractSettingsPayload(raw) {
+    // FigUI hosts may return settings in different envelopes.
+    // Normalize to a plain settings object for reliable reads.
+    if (!raw) {
+      return {};
+    }
+
+    let value = raw;
+    if (typeof value === "string") {
+      try {
+        value = JSON.parse(value);
+      } catch {
+        return {};
+      }
+    }
+
+    if (!value || typeof value !== "object") {
+      return {};
+    }
+
+    if (value.data && typeof value.data === "object") {
+      return value.data;
+    }
+    if (value.settings && typeof value.settings === "object") {
+      return value.settings;
+    }
+
+    return value;
+  }
+
+  async function getSettingsWithRetry(attempts = 4, delayMs = 250) {
+    let lastError = null;
+    for (let i = 0; i < attempts; i += 1) {
+      try {
+        const raw = await callFigUI("getSettings");
+        return extractSettingsPayload(raw);
+      } catch (error) {
+        lastError = error;
+        if (i < attempts - 1) {
+          await sleep(delayMs);
+        }
+      }
+    }
+    throw lastError || new Error("Unable to read settings from FigUI host");
+  }
+
+  function logStartupDebug(message, details) {
+    if (!STARTUP_DEBUG) {
+      return;
+    }
+    if (details === undefined) {
+      console.info(`[startup] ${message}`);
+      return;
+    }
+    console.info(`[startup] ${message}`, details);
+  }
+
+  async function canUseFigUI() {
+    if (window.parent === window) {
+      return false;
+    }
+    try {
+      await callFigUI("getStatus");
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
+  function parseValue(raw) {
+    const trimmed = raw.trim();
+    if (trimmed.startsWith("'") && trimmed.endsWith("'")) {
+      return unescapeQuoted(trimmed.slice(1, -1), "'");
+    }
+    if (trimmed.startsWith('"') && trimmed.endsWith('"')) {
+      return unescapeQuoted(trimmed.slice(1, -1), '"');
+    }
+    const number = Number(trimmed);
+    if (!Number.isNaN(number)) {
+      return number;
+    }
+    throw new Error(`Unsupported value: ${raw}`);
+  }
+
+  function unescapeQuoted(value, quoteChar) {
+    let out = "";
+    let escaped = false;
+    for (const ch of value) {
+      if (escaped) {
+        if (ch === "\\" || ch === quoteChar) {
+          out += ch;
+        } else {
+          out += `\\${ch}`;
+        }
+        escaped = false;
+        continue;
+      }
+      if (ch === "\\") {
+        escaped = true;
+        continue;
+      }
+      out += ch;
+    }
+    if (escaped) {
+      out += "\\";
+    }
+    return out;
+  }
+
+  function parseArgs(argsText) {
+    const out = {};
+    if (!argsText.trim()) {
+      return out;
+    }
+    const chunks = argsText.split(",");
+    for (const chunk of chunks) {
+      const [key, ...valueParts] = chunk.split("=");
+      if (!key || valueParts.length === 0) {
+        throw new Error(`Invalid argument: ${chunk}`);
+      }
+      out[key.trim()] = parseValue(valueParts.join("="));
+    }
+    return out;
+  }
+
+  function parseStatement(line) {
+    const match = line.match(/^([a-zA-Z_][a-zA-Z0-9_]*)\((.*)\)$/);
+    if (!match) {
+      throw new Error(`Invalid statement: ${line}`);
+    }
+    return { name: match[1], args: parseArgs(match[2]) };
+  }
+
+  function parseScript(text) {
+    const lines = text
+      .split(/\r?\n/)
+      .map((line) => line.split("#", 1)[0].trim())
+      .filter(Boolean)
+      .map((line) => line.replace(/;$/, ""));
+
+    let machine = null;
+    const shapes = [];
+
+    for (const line of lines) {
+      const { name, args } = parseStatement(line);
+      if (name === "machine") {
+        machine = {
+          cutter_diameter: Number(args.cutter_diameter),
+          feed_rate: Number(args.feed_rate),
+          max_x: Number(args.max_x),
+          max_y: Number(args.max_y),
+          max_z: Number(args.max_z),
+          z_reference: String(args.z_reference),
+        };
+      } else if (name === "box") {
+        shapes.push({ kind: "box", ...args });
+      } else if (name === "circle") {
+        shapes.push({ kind: "circle", ...args });
+      } else if (name === "text") {
+        shapes.push({ kind: "text", ...args, size: Number(args.size || 10) });
+      } else {
+        throw new Error(`Unsupported statement: ${name}`);
+      }
+    }
+
+    const drawing = { machine, shapes };
+    validateDrawing(drawing);
+    return drawing;
+  }
+
+  function validateDrawing(drawing) {
+    if (!drawing.machine) {
+      throw new Error("Script must define machine(...)");
+    }
+    const m = drawing.machine;
+    if (!(m.max_x > 0 && m.max_y > 0 && m.max_z > 0)) {
+      throw new Error("Machine numeric values must be > 0");
+    }
+    if (m.z_reference && m.z_reference !== "top" && m.z_reference !== "bed") {
+      throw new Error("z_reference must be top or bed");
+    }
+
+    for (const shape of drawing.shapes) {
+      if (!VALID_MODES.has(String(shape.mode))) {
+        throw new Error(`Invalid mode for ${shape.kind}: ${shape.mode}`);
+      }
+      if (!(Number(shape.depth) > 0)) {
+        throw new Error(`Depth must be > 0 for ${shape.kind}`);
+      }
+      if (shape.kind === "box") {
+        if (!(Number(shape.width) > 0 && Number(shape.height) > 0)) {
+          throw new Error("Box requires positive width and height");
+        }
+      }
+      if (shape.kind === "circle") {
+        if (!(Number(shape.radius) > 0)) {
+          throw new Error("Circle requires positive radius");
+        }
+      }
+      if (shape.kind === "text") {
+        if (!shape.value) {
+          throw new Error("Text requires a value");
+        }
+        if (!(Number(shape.size) > 0)) {
+          throw new Error("Text requires a positive size");
+        }
+      }
+    }
+  }
+
+  function shapeToDsl(shape) {
+    if (shape.kind === "box") {
+      return `box(x=${shape.x}, y=${shape.y}, width=${shape.width}, height=${shape.height}, mode='${shape.mode}', depth=${shape.depth});`;
+    }
+    if (shape.kind === "circle") {
+      return `circle(x=${shape.x}, y=${shape.y}, radius=${shape.radius}, mode='${shape.mode}', depth=${shape.depth});`;
+    }
+    return `text(x=${shape.x}, y=${shape.y}, value=${quoteString(String(shape.value || ""))}, size=${shape.size}, mode='${shape.mode}', depth=${shape.depth});`;
+  }
+
+  function quoteString(value) {
+    return `'${value.replace(/\\/g, "\\\\").replace(/'/g, "\\'")}'`;
+  }
+
+  function drawingToDsl(drawing) {
+    const lines = [
+      `machine(cutter_diameter=${drawing.machine.cutter_diameter}, feed_rate=${drawing.machine.feed_rate}, max_x=${drawing.machine.max_x}, max_y=${drawing.machine.max_y}, max_z=${drawing.machine.max_z}, z_reference='${drawing.machine.z_reference}');`,
+    ];
+    for (const shape of drawing.shapes) {
+      lines.push(shapeToDsl(shape));
+    }
+    return lines.join("\n");
+  }
+
+  function cutZ(machine, depth) {
+    return machine.z_reference === "top" ? -depth : machine.max_z - depth;
+  }
+
+  function safeZ(machine) {
+    return machine.z_reference === "top" ? Math.min(5.0, machine.max_z) : machine.max_z;
+  }
+
+  function emitBox(lines, machine, shape, tool, x, y, width, height) {
+    const zCut = cutZ(machine, Number(shape.depth));
+    const zSafe = safeZ(machine);
+    const feedRate = Number(tool.feed_rate);
+    lines.push(
+      `G0 Z${zSafe.toFixed(3)}`,
+      `G0 X${x.toFixed(3)} Y${y.toFixed(3)}`,
+      `G1 Z${zCut.toFixed(3)} F${feedRate.toFixed(3)}`,
+      `G1 X${(x + width).toFixed(3)} Y${y.toFixed(3)}`,
+      `G1 X${(x + width).toFixed(3)} Y${(y + height).toFixed(3)}`,
+      `G1 X${x.toFixed(3)} Y${(y + height).toFixed(3)}`,
+      `G1 X${x.toFixed(3)} Y${y.toFixed(3)}`,
+      `G0 Z${zSafe.toFixed(3)}`
+    );
+  }
+
+  function emitCircle(lines, machine, shape, tool, radius) {
+    const zCut = cutZ(machine, Number(shape.depth));
+    const zSafe = safeZ(machine);
+    const feedRate = Number(tool.feed_rate);
+    const x = Number(shape.x);
+    const y = Number(shape.y);
+    const x0 = x + radius;
+    lines.push(
+      `G0 Z${zSafe.toFixed(3)}`,
+      `G0 X${x0.toFixed(3)} Y${y.toFixed(3)}`,
+      `G1 Z${zCut.toFixed(3)} F${feedRate.toFixed(3)}`,
+      `G2 X${(x - radius).toFixed(3)} Y${y.toFixed(3)} I${(-radius).toFixed(3)} J0.000`,
+      `G2 X${x0.toFixed(3)} Y${y.toFixed(3)} I${radius.toFixed(3)} J0.000`,
+      `G0 Z${zSafe.toFixed(3)}`
+    );
+  }
+
+  function generateGcode(drawing, tools) {
+    validateDrawing(drawing);
+    const machine = drawing.machine;
+    
+    // Ensure tools array is available
+    if (!Array.isArray(tools) || tools.length === 0) {
+      throw new Error("At least one tool is required for G-code generation");
+    }
+    
+    // Use the first tool as default
+    const defaultTool = tools[0];
+    const lines = ["(LinuxCNC g-code generated by Draw)", "G21", "G90", "G17", `F${Number(defaultTool.feed_rate).toFixed(3)}`];
+
+    for (let i = 0; i < drawing.shapes.length; i += 1) {
+      const shape = drawing.shapes[i];
+      
+      // Get the tool for this shape (default to first tool if not specified)
+      const toolNumber = Number(shape.tool ?? DEFAULT_TOOL_NUMBER);
+      const tool = tools.find(t => Number(t.number) === toolNumber) || defaultTool;
+      
+      const offset = Number(tool.diameter) / 2;
+      
+      lines.push(`(shape ${i + 1}: ${shape.kind} mode=${shape.mode} depth=${Number(shape.depth).toFixed(3)} tool=${toolNumber})`);
+      if (shape.kind === "box") {
+        const x = Number(shape.x);
+        const y = Number(shape.y);
+        const width = Number(shape.width);
+        const height = Number(shape.height);
+        if (shape.mode === "outside") {
+          emitBox(lines, machine, shape, tool, x - offset, y - offset, width + 2 * offset, height + 2 * offset);
+        } else if (shape.mode === "inside") {
+          if (width <= 2 * offset || height <= 2 * offset) {
+            throw new Error("Box too small for inside cut using current tool diameter");
+          }
+          emitBox(lines, machine, shape, tool, x + offset, y + offset, width - 2 * offset, height - 2 * offset);
+        } else {
+          const step = Number(tool.diameter) * POCKET_STEP_FACTOR;
+          let px = x + offset;
+          let py = y + offset;
+          let pw = width - 2 * offset;
+          let ph = height - 2 * offset;
+          while (pw > 0 && ph > 0) {
+            emitBox(lines, machine, shape, tool, px, py, pw, ph);
+            px += step;
+            py += step;
+            pw -= 2 * step;
+            ph -= 2 * step;
+          }
+        }
+      }
+
+      if (shape.kind === "circle") {
+        const radius = Number(shape.radius);
+        if (shape.mode === "outside") {
+          emitCircle(lines, machine, shape, tool, radius + offset);
+        } else if (shape.mode === "inside") {
+          if (radius <= offset) {
+            throw new Error("Circle too small for inside cut using current tool diameter");
+          }
+          emitCircle(lines, machine, shape, tool, radius - offset);
+        } else {
+          const step = Number(tool.diameter) * POCKET_STEP_FACTOR;
+          for (let r = radius - offset; r > 0; r -= step) {
+            emitCircle(lines, machine, shape, tool, r);
+          }
+        }
+      }
+
+      if (shape.kind === "text") {
+        const size = Number(shape.size || 10);
+        const value = String(shape.value || "");
+        const glyphWidth = size * 0.6;
+        const spacing = size * 0.2;
+        let x = Number(shape.x);
+        const y = Number(shape.y);
+        for (const char of value) {
+          if (char !== " ") {
+            const pseudo = { ...shape, kind: "box" };
+            if (shape.mode === "outside") {
+              emitBox(lines, machine, pseudo, tool, x - offset, y - offset, glyphWidth + 2 * offset, size + 2 * offset);
+            } else if (shape.mode === "inside") {
+              if (glyphWidth > 2 * offset && size > 2 * offset) {
+                emitBox(lines, machine, pseudo, tool, x + offset, y + offset, glyphWidth - 2 * offset, size - 2 * offset);
+              }
+            } else {
+              const step = Number(tool.diameter) * POCKET_STEP_FACTOR;
+              let px = x + offset;
+              let py = y + offset;
+              let pw = glyphWidth - 2 * offset;
+              let ph = size - 2 * offset;
+              while (pw > 0 && ph > 0) {
+                emitBox(lines, machine, pseudo, tool, px, py, pw, ph);
+                px += step;
+                py += step;
+                pw -= 2 * step;
+                ph -= 2 * step;
+              }
+            }
+          }
+          x += glyphWidth + spacing;
+        }
+      }
+    }
+
+    lines.push("M2");
+    return `${lines.join("\n")}\n`;
+  }
+
+  function drawingBounds(drawing) {
+    let minX = Infinity;
+    let minY = Infinity;
+    let maxX = -Infinity;
+    let maxY = -Infinity;
+
+    for (const shape of drawing.shapes) {
+      if (shape.kind === "box") {
+        const x = Number(shape.x);
+        const y = Number(shape.y);
+        const width = Number(shape.width);
+        const height = Number(shape.height);
+        minX = Math.min(minX, x);
+        minY = Math.min(minY, y);
+        maxX = Math.max(maxX, x + width);
+        maxY = Math.max(maxY, y + height);
+      }
+
+      if (shape.kind === "circle") {
+        const x = Number(shape.x);
+        const y = Number(shape.y);
+        const radius = Number(shape.radius);
+        minX = Math.min(minX, x - radius);
+        minY = Math.min(minY, y - radius);
+        maxX = Math.max(maxX, x + radius);
+        maxY = Math.max(maxY, y + radius);
+      }
+
+      if (shape.kind === "text") {
+        const x = Number(shape.x);
+        const y = Number(shape.y);
+        const size = Number(shape.size || 10);
+        const value = String(shape.value || "");
+        const width = value.length * size * 0.6 + Math.max(value.length - 1, 0) * size * 0.2;
+        minX = Math.min(minX, x);
+        minY = Math.min(minY, y);
+        maxX = Math.max(maxX, x + width);
+        maxY = Math.max(maxY, y + size);
+      }
+    }
+
+    if (!Number.isFinite(minX)) {
+      return { minX: 0, minY: 0, maxX: drawing.machine.max_x, maxY: drawing.machine.max_y };
+    }
+    return { minX, minY, maxX, maxY };
+  }
+ 
+  
+  function renderPreview(drawing) {
+    const preview = document.getElementById("preview");
+    preview.innerHTML = "";
+
+    // If job settings are available, use them to determine the preview bounds
+    let baseMinX = 0, baseMinY = 0, baseWidth = 0, baseHeight = 0;
+    
+    if (currentState.jobSettings) {
+      // Use job settings dimensions for preview
+      baseWidth = currentState.jobSettings.x;
+      baseHeight = currentState.jobSettings.y;
+      // Add some padding
+      const padX = baseWidth * 0.05 || 1;
+      const padY = baseHeight * 0.05 || 1;
+      baseMinX = -padX;
+      baseMinY = -padY;
+      baseWidth = baseWidth + padX * 2;
+      baseHeight = baseHeight + padY * 2;
+    } else {
+      // Fall back to drawing bounds
+      const b = drawingBounds(drawing);
+      const padX = (b.maxX - b.minX) * 0.05 || 1;
+      const padY = (b.maxY - b.minY) * 0.05 || 1;
+      baseMinX = b.minX - padX;
+      baseMinY = b.minY - padY;
+      baseWidth = b.maxX - b.minX + padX * 2;
+      baseHeight = b.maxY - b.minY + padY * 2;
+    }
+
+    // Store base dimensions for zoom coordinate system conversion
+    currentState.baseWidth = baseWidth;
+    currentState.baseHeight = baseHeight;
+    currentState.baseMinX = baseMinX;
+    currentState.baseMinY = baseMinY;
+    
+    // Initialize zoom center on first render (when it's at default values)
+    // Use the center of the actual drawing bounds
+    if (currentState.zoomCenterX === DEFAULT_ZOOM_CENTER_X && currentState.zoomCenterY === DEFAULT_ZOOM_CENTER_Y) {
+      // Calculate the center of the actual drawing area
+      if (currentState.jobSettings) {
+        currentState.zoomCenterX = currentState.jobSettings.x / 2;
+        currentState.zoomCenterY = currentState.jobSettings.y / 2;
+      } else {
+        const b = drawingBounds(drawing);
+        currentState.zoomCenterX = (b.minX + b.maxX) / 2;
+        currentState.zoomCenterY = (b.minY + b.maxY) / 2;
+      }
+    }
+
+    // Apply zoom to viewBox
+    // When zoomed in (zoomLevel > 1), show a smaller area centered on zoomCenter
+    // When zoomed out (zoomLevel < 1), show a larger area centered on zoomCenter
+    const zoomWidth = baseWidth / currentState.zoomLevel;
+    const zoomHeight = baseHeight / currentState.zoomLevel;
+    
+    let minX = currentState.zoomCenterX - zoomWidth / 2;
+    let minY = currentState.zoomCenterY - zoomHeight / 2;
+    
+    // Clamp the viewBox to prevent showing too much area outside the drawing
+    // Allow some margin (as fraction of zoom size) outside the base bounds
+    const marginX = zoomWidth * ZOOM_MARGIN_FACTOR;
+    const marginY = zoomHeight * ZOOM_MARGIN_FACTOR;
+    
+    minX = clamp(minX, baseMinX - marginX, baseMinX + baseWidth + marginX - zoomWidth);
+    minY = clamp(minY, baseMinY - marginY, baseMinY + baseHeight + marginY - zoomHeight);
+
+    preview.setAttribute("viewBox", `${minX} ${-minY - zoomHeight} ${zoomWidth} ${zoomHeight}`);
+
+    const make = (tag, attrs) => {
+      const el = document.createElementNS("http://www.w3.org/2000/svg", tag);
+      Object.entries(attrs).forEach(([k, v]) => el.setAttribute(k, String(v)));
+      preview.appendChild(el);
+      return el;
+    };
+
+    // Background
+    make("rect", { x: minX, y: -minY - zoomHeight, width: zoomWidth, height: zoomHeight, fill: "#fff", stroke: "#ddd" });
+
+    // Draw grid if job settings are available
+    if (currentState.jobSettings) {
+      const jobWidth = currentState.jobSettings.x;
+      const jobHeight = currentState.jobSettings.y;
+      
+      // Calculate reasonable grid spacing (aim for 5-10 grid lines)
+      const gridSpacingX = calculateGridSpacing(jobWidth);
+      const gridSpacingY = calculateGridSpacing(jobHeight);
+      
+      // Draw vertical grid lines with X-axis labels
+      // Note: viewBox transformation places (0,0) at lower-left, with Y increasing upward.
+      // Grid lines extend from y=0 (bottom) to y=-jobHeight (top in SVG coords).
+      // Labels are positioned at y=AXIS_LABEL_OFFSET to appear below the bottom grid line.
+      for (let x = 0; x <= jobWidth; x += gridSpacingX) {
+        make("line", {
+          x1: x,
+          y1: 0,
+          x2: x,
+          y2: -jobHeight,
+          stroke: x === 0 ? "#999" : "#ddd",
+          "stroke-width": x === 0 ? 0.5 : 0.2,
+          "stroke-dasharray": x === 0 ? "none" : "1,1",
+        });
+        
+        // Add X-axis label (displayed below the grid)
+        // Font-size is in SVG user units (matching the coordinate system where job dimensions are specified)
+        make("text", {
+          x: x,
+          y: AXIS_LABEL_OFFSET,
+          "text-anchor": "middle",
+          "font-size": 2,
+          fill: "#666",
+          "pointer-events": "none",
+          role: "text",
+          "aria-label": `X-axis position ${x}`,
+        }).textContent = String(x);
+      }
+      
+      // Draw horizontal grid lines with Y-axis labels
+      // Labels are positioned at x=-AXIS_LABEL_OFFSET to appear to the left of the left grid line.
+      for (let y = 0; y <= jobHeight; y += gridSpacingY) {
+        make("line", {
+          x1: 0,
+          y1: -y,
+          x2: jobWidth,
+          y2: -y,
+          stroke: y === 0 ? "#999" : "#ddd",
+          "stroke-width": y === 0 ? 0.5 : 0.2,
+          "stroke-dasharray": y === 0 ? "none" : "1,1",
+        });
+        
+        // Add Y-axis label (displayed to the left of the grid)
+        // Font-size is in SVG user units (matching the coordinate system where job dimensions are specified)
+        make("text", {
+          x: -AXIS_LABEL_OFFSET,
+          y: -y,
+          "text-anchor": "end",
+          "font-size": 2,
+          fill: "#666",
+          "pointer-events": "none",
+          role: "text",
+          "aria-label": `Y-axis position ${y}`,
+        }).textContent = String(y);
+      }
+      
+      // Draw origin marker
+      make("circle", { cx: 0, cy: 0, r: 1, fill: "red", opacity: 0.5 });
+    }
+
+    // Draw shapes
+    for (const shape of drawing.shapes) {
+      if (shape.kind === "box") {
+        make("rect", {
+          x: Number(shape.x),
+          y: -(Number(shape.y) + Number(shape.height)),
+          width: Number(shape.width),
+          height: Number(shape.height),
+          fill: "none",
+          stroke: "#1f77b4",
+          "stroke-width": 0.8,
+        });
+      }
+
+      if (shape.kind === "circle") {
+        make("circle", {
+          cx: Number(shape.x),
+          cy: -Number(shape.y),
+          r: Number(shape.radius),
+          fill: "none",
+          stroke: "#2ca02c",
+          "stroke-width": 0.8,
+        });
+      }
+
+      if (shape.kind === "text") {
+        make("text", {
+          x: Number(shape.x),
+          y: -Number(shape.y),
+          fill: "#d62728",
+          "font-size": Number(shape.size || 10),
+          "font-family": "monospace",
+        }).textContent = String(shape.value || "");
+      }
+    }
+  }
+  
+  function calculateGridSpacing(dimension) {
+    // Calculate a nice grid spacing based on the dimension
+    // Aim for 5-10 grid lines
+    const targetSpaces = 8;
+    const rawSpacing = dimension / targetSpaces;
+    
+    // Round to a nice number (1, 2, 5, 10, 20, 50, 100, etc.)
+    const magnitude = Math.pow(10, Math.floor(Math.log10(rawSpacing)));
+    const normalized = rawSpacing / magnitude;
+    
+    let spacing;
+    if (normalized < 1.5) {
+      spacing = magnitude;
+    } else if (normalized < 3) {
+      spacing = magnitude * 2;
+    } else if (normalized < 7) {
+      spacing = magnitude * 5;
+    } else {
+      spacing = magnitude * 10;
+    }
+    
+    return spacing;
+  }
+
+  function downloadFile(filename, text, mimeType) {
+    const blob = new Blob([text], { type: mimeType });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = filename;
+    a.click();
+    URL.revokeObjectURL(url);
+  }
+
+  function validateFilename(filename) {
+    // Validate filename for security: prevent path traversal attacks, directory navigation,
+    // and control character injection that could cause system-level vulnerabilities
+    if (!filename) {
+      throw new Error("Filename cannot be empty.");
+    }
+    
+    // Check for path traversal patterns (..)
+    const hasPathTraversal = filename.includes("..");
+    // Check for path separators (/ or \) that could navigate directories
+    const hasPathSeparator = /[\/\\]/.test(filename);
+    // Check for control characters that could cause issues
+    const hasControlChars = /[\x00-\x1f]/.test(filename);
+    
+    if (hasPathTraversal || hasPathSeparator || hasControlChars) {
+      throw new Error("Invalid filename: must not contain path separators, control characters, or traversal patterns.");
+    }
+  }
+
+  function ensureExtension(filename, extension) {
+    // Remove any existing extension and add the specified one
+    return removeExtension(filename) + extension;
+  }
+
+  function removeExtension(filename) {
+    // Remove the file extension from a filename
+    return filename.replace(/\.[^/.]+$/, "");
+  }
+
+  function detectDrawingFormat(data) {
+    // Detect which format a loaded drawing data is in by checking for expected properties
+    // Returns an object with format type and parsed data, or null for invalid formats
+    
+    // Check format in order of specificity:
+    
+    // Old format (highest specificity): has data.drawing object
+    if (data.drawing && typeof data.drawing === 'object') {
+      return {
+        format: 'old',
+        shapes: data.drawing.shapes,
+        jobSettings: data.jobSettings,
+        machine: data.drawing.machine,
+        machineSettings: data.machineSettings,
+        tools: data.tools,
+      };
+    }
+    
+    // Direct format: has machine and shapes properties
+    if ('machine' in data && Array.isArray(data.shapes)) {
+      // Derive machineSettings from machine object when not explicitly present
+      const machineSettings = data.machineSettings || (data.machine ? {
+        units: data.machine.units || "mm",
+        mist: data.machine.mist || false,
+        cooling: data.machine.cooling || false,
+      } : null);
+      return {
+        format: 'direct',
+        shapes: data.shapes,
+        jobSettings: data.jobSettings,
+        machine: data.machine,
+        machineSettings: machineSettings,
+        tools: data.tools,
+      };
+    }
+    
+    // Unified format: machine settings merged into single machine object
+    // This format has a machine object with all settings (both basic config and UI settings in snake_case)
+    if ('machine' in data && typeof data.machine === 'object' && !data.machineSettings) {
+      // Extract UI-specific settings from machine object and convert to camelCase for currentState
+      const machineSettings = {
+        units: data.machine.units || "mm",
+        mist: data.machine.mist || false,
+        cooling: data.machine.cooling || false,
+      };
+      return {
+        format: 'unified',
+        shapes: data.shapes || [],
+        jobSettings: data.jobSettings,
+        machine: data.machine,
+        machineSettings: machineSettings,
+        tools: data.tools || [],
+      };
+    }
+    
+    // New format: identified by having shapes but no machine or drawing objects.
+    // This format stores job settings and shapes in the drawing file, with machine config
+    // saved separately in machine.json for better separation of concerns.
+    if (Array.isArray(data.shapes) && !('machine' in data) && !('drawing' in data)) {
+      return {
+        format: 'new',
+        shapes: data.shapes,
+        jobSettings: data.jobSettings,
+        machine: null,
+        machineSettings: null,
+        tools: null,
+      };
+    }
+    
+    return null; // Invalid format
+  }
+
+  function hasMachineDataToSave(drawing) {
+    // Check if machine data contains meaningful information (not just empty objects)
+    // Returns true if any machine configuration, settings, or tools are present and non-empty
+    const hasMachineConfig = drawing.machine && Object.keys(drawing.machine).length > 0;
+    const hasMachineSettings = currentState.machineSettings && Object.keys(currentState.machineSettings).length > 0;
+    const hasTools = Array.isArray(currentState.tools) && currentState.tools.length > 0;
+    return hasMachineConfig || hasMachineSettings || hasTools;
+  }
+ 
+  async function saveMachineJson(figUiAvailable) {
+    // Save machine settings and tools via the FigUI getSettings/saveSettings API.
+    // Called when machine settings or tools are changed.
+    // Uses read-modify-write to preserve existing drawing data in plugin settings.
+    // In standalone mode, downloads machine.json as before.
+    try {
+      const drawing = currentDrawing();
+      
+      // Machine data contains unified machine config and tools
+      // All values come from drawing.machine (which is the authoritative source)
+      const machineData = {
+        machine: {
+          max_x: drawing.machine.max_x,
+          max_y: drawing.machine.max_y,
+          max_z: drawing.machine.max_z,
+          z_reference: drawing.machine.z_reference,
+          home_x: drawing.machine.home_x ?? 0,
+          home_y: drawing.machine.home_y ?? 0,
+          z_gap: drawing.machine.z_gap ?? 10,
+          clearance_z: drawing.machine.clearance_z ?? 10,
+          plunge_z: drawing.machine.plunge_z ?? 5,
+          units: drawing.machine.units || "mm",
+          mist: drawing.machine.mist || false,
+          cooling: drawing.machine.cooling || false,
+        },
+        tools: currentState.tools,
+      };
+       
+      // Check if machine data contains meaningful information
+      const hasMachineData = hasMachineDataToSave(drawing);
+       
+      if (figUiAvailable) {
+        // Save only machine data under "machine" and "tools" keys; drawing data is stored separately
+        if (hasMachineData) {
+          let existingSettings = {};
+          try { existingSettings = extractSettingsPayload(await callFigUI("getSettings")); } catch { /* no prior settings */ }
+          await callFigUI("saveSettings", { data: { ...existingSettings, machine: machineData.machine, tools: machineData.tools } });
+        }
+      } else {
+        // In standalone mode, download machine.json
+        if (hasMachineData) {
+          downloadFile("machine.json", JSON.stringify(machineData, null, 2), "application/json");
+        }
+      }
+    } catch (error) {
+      // Log error but don't interrupt the user workflow
+      console.error("Error saving machine settings:", error?.message || String(error));
+    }
+  }
+
+  async function promptForFilename(defaultName = "") {
+    // Show filename dialog and wait for user input
+    const dialog = document.getElementById("filenameDialog");
+    const input = document.getElementById("filenameInput");
+    const form = document.getElementById("filenameForm");
+    
+    input.value = defaultName;
+    input.focus();
+    
+    return new Promise((resolve) => {
+      const handleSubmit = (e) => {
+        e.preventDefault();
+        const filename = input.value.trim();
+        cleanup();
+        resolve(filename || null);
+      };
+      
+      const handleCancel = () => {
+        cleanup();
+        resolve(null);
+      };
+      
+      const cleanup = () => {
+        form.removeEventListener("submit", handleSubmit);
+        document.getElementById("filenameCancelBtn").removeEventListener("click", handleCancel);
+        dialog.close();
+      };
+      
+      form.addEventListener("submit", handleSubmit);
+      document.getElementById("filenameCancelBtn").addEventListener("click", handleCancel);
+      dialog.showModal();
+    });
+  }
+
+  function setStatus(message, isError) {
+    const status = document.getElementById("status");
+    status.textContent = message;
+    status.className = isError ? "error" : "";
+  }
+
+  let currentState = {
+    drawing: null,
+    selectedShapeIndex: -1,
+    jobSettings: null,
+    machineSettings: null,
+    tools: [],
+    selectedToolIndex: -1,
+    currentFilename: null,
+    zoomLevel: 1,
+    zoomCenterX: DEFAULT_ZOOM_CENTER_X, // Zoom center X coordinate (initialized to default)
+    zoomCenterY: DEFAULT_ZOOM_CENTER_Y, // Zoom center Y coordinate (initialized to default)
+    baseWidth: 330,   // Width of the base viewBox (for coordinate system conversion)
+    baseHeight: 220,  // Height of the base viewBox (for coordinate system conversion)
+  };
+
+  function getDefaultDrawing() {
+    return {
+      machine: {
+        max_x: 300,
+        max_y: 200,
+        max_z: 40,
+        z_reference: "top",
+        home_x: 0,
+        home_y: 0,
+        z_gap: 10,
+        clearance_z: 10,
+        plunge_z: 5,
+        units: "mm",
+        mist: false,
+        cooling: false,
+      },
+      shapes: [],
+    };
+  }
+
+  function currentDrawing() {
+    return currentState.drawing || getDefaultDrawing();
+  }
+
+  function setDrawing(drawing) {
+    currentState.drawing = drawing;
+    renderPreview(drawing);
+    refreshShapeList(drawing.shapes);
+  }
+
+  function refreshShapeList(shapes) {
+    const container = document.getElementById("shapeListContainer");
+    container.innerHTML = "";
+    
+    shapes.forEach((shape, index) => {
+      const item = document.createElement("div");
+      item.className = "shape-item";
+      if (index === currentState.selectedShapeIndex) {
+        item.classList.add("selected");
+      }
+      
+      let title = "";
+      let details = "";
+      if (shape.kind === "box") {
+        title = `${index + 1}. Box (${shape.width} × ${shape.height})`;
+        details = `pos: (${shape.x}, ${shape.y}) | mode: ${shape.mode} | depth: ${shape.depth} | tool: ${shape.tool || 1}`;
+      } else if (shape.kind === "circle") {
+        title = `${index + 1}. Circle (r=${shape.radius})`;
+        details = `pos: (${shape.x}, ${shape.y}) | mode: ${shape.mode} | depth: ${shape.depth} | tool: ${shape.tool || 1}`;
+      } else {
+        title = `${index + 1}. Text "${shape.value}" (size=${shape.size})`;
+        details = `pos: (${shape.x}, ${shape.y}) | mode: ${shape.mode} | depth: ${shape.depth} | tool: ${shape.tool || 1}`;
+      }
+      
+      item.innerHTML = `<div class="shape-item-text">${title}</div><div class="shape-item-details">${details}</div>`;
+      item.addEventListener("click", () => {
+        currentState.selectedShapeIndex = index;
+        refreshShapeList(shapes);
+      });
+      container.appendChild(item);
+    });
+  }
+
+  function updateShapeFieldVisibility() {
+    const kind = document.getElementById("shapeKind").value;
+
+    const widthRow = document.getElementById("shapeWidthRow");
+    const heightRow = document.getElementById("shapeHeightRow");
+    const radiusRow = document.getElementById("shapeRadiusRow");
+    const valueRow = document.getElementById("shapeValueRow");
+    const sizeRow = document.getElementById("shapeSizeRow");
+
+    const widthInput = document.getElementById("shapeWidth");
+    const heightInput = document.getElementById("shapeHeight");
+    const radiusInput = document.getElementById("shapeRadius");
+    const valueInput = document.getElementById("shapeValue");
+    const sizeInput = document.getElementById("shapeSize");
+
+    const isBox = kind === "box";
+    const isCircle = kind === "circle";
+    const isText = kind === "text";
+
+    widthRow.hidden = !isBox;
+    heightRow.hidden = !isBox;
+    radiusRow.hidden = !isCircle;
+    valueRow.hidden = !isText;
+    sizeRow.hidden = !isText;
+
+    widthInput.required = isBox;
+    heightInput.required = isBox;
+    radiusInput.required = isCircle;
+    valueInput.required = isText;
+    sizeInput.required = isText;
+  }
+
+  function openShapeDialog(mode, shape, index) {
+    document.getElementById("shapeDialogTitle").textContent = mode === "edit" ? "Edit shape" : "Add shape";
+    document.getElementById("shapeEditIndex").value = index == null ? "" : String(index);
+    document.getElementById("shapeKind").value = shape?.kind || "box";
+    document.getElementById("shapeMode").value = shape?.mode || "outside";
+    document.getElementById("shapeX").value = shape?.x ?? 0;
+    document.getElementById("shapeY").value = shape?.y ?? 0;
+    document.getElementById("shapeDepth").value = shape?.depth ?? 1;
+    document.getElementById("shapeWidth").value = shape?.width ?? "";
+    document.getElementById("shapeHeight").value = shape?.height ?? "";
+    document.getElementById("shapeRadius").value = shape?.radius ?? "";
+    document.getElementById("shapeValue").value = shape?.value ?? "";
+    document.getElementById("shapeSize").value = shape?.size ?? 10;
+    document.getElementById("shapeTool").value = shape?.tool ?? 1;
+
+    updateShapeFieldVisibility();
+    document.getElementById("shapeDialog").showModal();
+  }
+
+  function shapeFromDialog() {
+    const kind = document.getElementById("shapeKind").value;
+    const shape = {
+      kind,
+      mode: document.getElementById("shapeMode").value,
+      x: Number(document.getElementById("shapeX").value),
+      y: Number(document.getElementById("shapeY").value),
+      depth: Number(document.getElementById("shapeDepth").value),
+      tool: Number(document.getElementById("shapeTool").value),
+    };
+
+    if (kind === "box") {
+      shape.width = Number(document.getElementById("shapeWidth").value);
+      shape.height = Number(document.getElementById("shapeHeight").value);
+    } else if (kind === "circle") {
+      shape.radius = Number(document.getElementById("shapeRadius").value);
+    } else {
+      shape.value = document.getElementById("shapeValue").value;
+      shape.size = Number(document.getElementById("shapeSize").value);
+    }
+
+    return shape;
+  }
+
+  function openAddToolDialog() {
+    document.getElementById("toolDialogTitle").textContent = "Add tool";
+    document.getElementById("toolEditIndex").value = "";
+    document.getElementById("toolNumber").value = currentState.tools.length + 1;
+    document.getElementById("toolDiameter").value = "";
+    document.getElementById("toolName").value = "";
+    document.getElementById("toolFeedRate").value = "";
+    document.getElementById("toolPlungeRate").value = "";
+    document.getElementById("toolDepthPass").value = "";
+    document.getElementById("toolDialog").showModal();
+  }
+
+  async function saveDrawing(figUiAvailable) {
+    try {
+      const drawing = currentDrawing();
+      
+      // Drawing file contains only job settings and shapes
+      const drawingData = {
+        jobSettings: currentState.jobSettings,
+        shapes: drawing.shapes,
+      };
+      
+      // Machine file contains unified machine config (including settings) and tools
+      const machineData = {
+        machine: {
+          max_x: drawing.machine.max_x,
+          max_y: drawing.machine.max_y,
+          max_z: drawing.machine.max_z,
+          z_reference: drawing.machine.z_reference,
+          home_x: drawing.machine.home_x ?? 0,
+          home_y: drawing.machine.home_y ?? 0,
+          z_gap: drawing.machine.z_gap ?? 10,
+          clearance_z: drawing.machine.clearance_z ?? 10,
+          plunge_z: drawing.machine.plunge_z ?? 5,
+          units: drawing.machine.units || "mm",
+          mist: drawing.machine.mist || false,
+          cooling: drawing.machine.cooling || false,
+        },
+        tools: currentState.tools,
+      };
+      
+      // Check if machine data contains meaningful information
+      const hasMachineData = hasMachineDataToSave(drawing);
+      
+      if (figUiAvailable) {
+        // Save only drawing data under the "drawing" key; machine settings are stored separately
+        let existingSettings = {};
+        try { existingSettings = extractSettingsPayload(await callFigUI("getSettings")); } catch { /* no prior settings */ }
+        await callFigUI("saveSettings", { data: { ...existingSettings, drawing: drawingData } });
+        setStatus("Drawing saved in plugin settings.", false);
+      } else {
+        // Prompt for filename in standalone mode
+        let filename = await promptForFilename(currentState.currentFilename || "drawing");
+        if (filename === null) {
+          return; // User cancelled
+        }
+        filename = filename.trim();
+        
+        // Validate filename (ensureExtension will handle removing any existing extension)
+        validateFilename(filename);
+        
+        // Add .json extension
+        filename = ensureExtension(filename, ".json");
+        
+        currentState.currentFilename = removeExtension(filename);
+        // Save drawing file
+        downloadFile(filename, JSON.stringify(drawingData, null, 2), "application/json");
+        
+        // Save machine settings to machine.json only if there's meaningful data
+        if (hasMachineData) {
+          downloadFile("machine.json", JSON.stringify(machineData, null, 2), "application/json");
+        }
+        setStatus(filename + " saved locally.", false);
+      }
+    } catch (error) {
+      setStatus(error.message, true);
+    }
+  }
+
+  async function loadDrawing(figUiAvailable) {
+    if (figUiAvailable) {
+      try {
+        const settings = extractSettingsPayload(await callFigUI("getSettings"));
+        const drawingData = settings.drawing;
+
+        if (!drawingData || !Array.isArray(drawingData.shapes)) {
+          throw new Error("No saved drawing found in plugin settings.");
+        }
+
+        // Reconstruct drawing using the current machine config (machine settings are separate)
+        const reconstructedDrawing = { machine: currentDrawing().machine, shapes: drawingData.shapes };
+        validateDrawing(reconstructedDrawing);
+        setDrawing(reconstructedDrawing);
+
+        if (drawingData.jobSettings) {
+          currentState.jobSettings = drawingData.jobSettings;
+          document.getElementById("jobSettingsStatus").textContent =
+            `X:${drawingData.jobSettings.x} Y:${drawingData.jobSettings.y} Z:${drawingData.jobSettings.z}`;
+        }
+
+        setStatus("Drawing loaded from plugin settings.", false);
+      } catch (error) {
+        setStatus(error.message, true);
+      }
+      return;
+    }
+
+    document.getElementById("openJsonInput").click();
+  }
+
+  async function saveGcode(figUiAvailable) {
+    const gcode = document.getElementById("gcodeOutput").textContent;
+    if (!gcode.trim()) {
+      setStatus("Generate G-code first.", true);
+      return;
+    }
+
+    // Calculate G-code filename from current filename or default
+    const baseFilename = currentState.currentFilename || "output";
+    const gcodeFilename = ensureExtension(baseFilename, ".gcode");
+
+    if (figUiAvailable) {
+      try {
+        // Validate filename strictly to prevent injection attacks
+        validateFilename(gcodeFilename);
+        // Remove leading slashes as defensive sanitization before constructing path
+        const sanitized = gcodeFilename.replace(/^\/+/, "");
+        const path = `/sd/${sanitized}`;
+        await callFigUI("writeFile", { path, fs: "sd", content: gcode });
+        try {
+          await callFigUI("openFile", { path });
+          setStatus(`${sanitized} saved to SD and opened in FigUI.`, false);
+        } catch {
+          setStatus(`${sanitized} saved to SD.`, false);
+        }
+      } catch (error) {
+        setStatus(error.message, true);
+      }
+      return;
+    }
+
+    // Standalone mode: use current filename if available, otherwise use default
+    downloadFile(gcodeFilename, gcode, "text/plain");
+    setStatus(gcodeFilename + " saved locally.", false);
+  }
+
+  async function wireEvents(figUiAvailable) {
+    // Save/Load/Generate buttons
+    document.getElementById("saveDrawingBtn").addEventListener("click", () => {
+      saveDrawing(figUiAvailable);
+    });
+
+    document.getElementById("loadDrawingBtn").addEventListener("click", () => {
+      loadDrawing(figUiAvailable);
+    });
+
+    document.getElementById("openJsonInput").addEventListener("change", async (event) => {
+      const file = event.target.files && event.target.files[0];
+      if (!file) {
+        return;
+      }
+      try {
+        const text = await file.text();
+        const data = JSON.parse(text);
+        
+        // Handle multiple file formats:
+        // 1. New drawing format: { jobSettings, shapes }
+        // 2. Old format with drawing object: { drawing, jobSettings, machineSettings, tools } or { machine, shapes, jobSettings, machineSettings, tools }
+        // 3. Direct drawing object: { machine, shapes }
+        
+        // Detect drawing format and extract components
+        const result = detectDrawingFormat(data);
+        if (!result) {
+          throw new Error("Invalid file format: expected drawing object or new drawing format");
+        }
+        
+        const { shapes: drawingShapes, jobSettings: loadedJobSettings, machine: loadedMachine, 
+                machineSettings: loadedMachineSettings, tools: loadedTools } = result;
+        
+        // Reconstruct drawing object with proper machine config
+        // Use loaded machine, fall back to current drawing machine, then to default
+        const finalMachine = loadedMachine || currentDrawing().machine || DEFAULT_MACHINE;
+        const loadedDrawing = { machine: finalMachine, shapes: drawingShapes };
+        validateDrawing(loadedDrawing);
+        setDrawing(loadedDrawing);
+        
+        if (loadedJobSettings) currentState.jobSettings = loadedJobSettings;
+        if (loadedMachineSettings) currentState.machineSettings = loadedMachineSettings;
+        if (loadedTools) currentState.tools = loadedTools;
+        
+        // Store filename for use when saving G-code
+        currentState.currentFilename = removeExtension(file.name);
+        
+        // Update UI with loaded settings
+        if (currentState.jobSettings) {
+          document.getElementById("jobSettingsStatus").textContent = `X:${currentState.jobSettings.x} Y:${currentState.jobSettings.y} Z:${currentState.jobSettings.z}`;
+        }
+        if (currentState.machineSettings) {
+          const status = `X:${finalMachine.max_x} Y:${finalMachine.max_y} | Units: ${currentState.machineSettings.units} | Mist: ${currentState.machineSettings.mist ? "Yes" : "No"} | Cooling: ${currentState.machineSettings.cooling ? "Yes" : "No"}`;
+          document.getElementById("machineSettingsStatus").textContent = status;
+        }
+        
+        // Refresh tools list if loaded
+        if (currentState.tools && currentState.tools.length > 0) {
+          document.getElementById("toolsList").innerHTML = currentState.tools.map((tool, index) => 
+            `<div style="padding: 0.5rem; border-bottom: 1px solid #ddd; cursor: pointer;"><strong>Tool ${tool.number}:</strong> ${tool.name} | Dia: ${tool.diameter} | Feed: ${tool.feed_rate} | Plunge: ${tool.plunge_rate} | Depth/pass: ${tool.depth_pass}</div>`
+          ).join("");
+        }
+        
+        setStatus(`${file.name} loaded locally.`, false);
+      } catch (error) {
+        setStatus(error.message, true);
+      }
+    });
+
+    document.getElementById("generateBtn").addEventListener("click", async () => {
+      try {
+        // Check if machine settings are configured
+        if (!currentState.machineSettings) {
+          setStatus("Please configure Machine settings first.", true);
+          document.getElementById("machineSettingsDialog").showModal();
+          return;
+        }
+        
+        // Check if at least one tool is configured
+        if (currentState.tools.length === 0) {
+          setStatus("Please add at least one tool first.", true);
+          openAddToolDialog();
+          return;
+        }
+        
+        let gcode = generateGcode(currentDrawing(), currentState.tools);
+        
+        // Add mist/cooling commands if enabled
+        if (currentState.machineSettings) {
+          let coolantCmd = "";
+          if (currentState.machineSettings.mist && currentState.machineSettings.cooling) {
+            coolantCmd = "M8 (Flood cooling)\nM7 (Mist)\n";
+          } else if (currentState.machineSettings.cooling) {
+            coolantCmd = "M8 (Flood cooling)\n";
+          } else if (currentState.machineSettings.mist) {
+            coolantCmd = "M7 (Mist)\n";
+          }
+          
+          if (coolantCmd) {
+            // Insert coolant commands after the initial G-code setup (after G90, G17, F...)
+            const lines = gcode.split("\n");
+            const insertIdx = Math.max(
+              lines.findIndex(l => l.startsWith("G21")),
+              lines.findIndex(l => l.startsWith("G90")),
+              lines.findIndex(l => l.startsWith("G17")),
+              lines.findIndex(l => l.startsWith("F"))
+            ) + 1;
+            lines.splice(insertIdx, 0, ...coolantCmd.trim().split("\n"));
+            gcode = lines.join("\n");
+          }
+        }
+        
+        document.getElementById("gcodeOutput").textContent = gcode;
+        
+        // Save G-code and report both operations
+        await saveGcode(figUiAvailable);
+      } catch (error) {
+        setStatus(error.message, true);
+      }
+    });
+
+
+    // G-code preview toggle
+    document.getElementById("showGcodePreview").addEventListener("change", (event) => {
+      const gcodeOutput = document.getElementById("gcodeOutput");
+      gcodeOutput.style.display = event.target.checked ? "block" : "none";
+    });
+
+    // Shape management
+    document.getElementById("shapeKind").addEventListener("change", updateShapeFieldVisibility);
+
+    document.getElementById("addShapeBtn").addEventListener("click", () => {
+      if (!currentState.jobSettings) {
+        setStatus("Please configure Job settings first.", true);
+        // Open job settings dialog
+        document.getElementById("jobSettingsDialog").showModal();
+        return;
+      }
+      openShapeDialog("add", { kind: "box", mode: "outside", x: 0, y: 0, depth: 1, width: 10, height: 10 });
+    });
+
+    document.getElementById("moveUpBtn").addEventListener("click", () => {
+      try {
+        const drawing = currentDrawing();
+        const index = currentState.selectedShapeIndex;
+        if (index <= 0) {
+          throw new Error("Select a shape to move (not first one).");
+        }
+        [drawing.shapes[index - 1], drawing.shapes[index]] = [drawing.shapes[index], drawing.shapes[index - 1]];
+        currentState.selectedShapeIndex = index - 1;
+        setDrawing(drawing);
+        setStatus("Shape moved up.", false);
+      } catch (error) {
+        setStatus(error.message, true);
+      }
+    });
+
+    document.getElementById("moveDownBtn").addEventListener("click", () => {
+      try {
+        const drawing = currentDrawing();
+        const index = currentState.selectedShapeIndex;
+        if (index < 0 || index >= drawing.shapes.length - 1) {
+          throw new Error("Select a shape to move (not last one).");
+        }
+        [drawing.shapes[index], drawing.shapes[index + 1]] = [drawing.shapes[index + 1], drawing.shapes[index]];
+        currentState.selectedShapeIndex = index + 1;
+        setDrawing(drawing);
+        setStatus("Shape moved down.", false);
+      } catch (error) {
+        setStatus(error.message, true);
+      }
+    });
+
+    document.getElementById("editShapeBtn").addEventListener("click", () => {
+      try {
+        const drawing = currentDrawing();
+        const index = currentState.selectedShapeIndex;
+        if (index < 0 || index >= drawing.shapes.length) {
+          throw new Error("Select a shape to edit.");
+        }
+        openShapeDialog("edit", drawing.shapes[index], index);
+      } catch (error) {
+        setStatus(error.message, true);
+      }
+    });
+
+    document.getElementById("deleteShapeBtn").addEventListener("click", () => {
+      try {
+        const drawing = currentDrawing();
+        const index = currentState.selectedShapeIndex;
+        if (index < 0 || index >= drawing.shapes.length) {
+          throw new Error("Select a shape to delete.");
+        }
+        drawing.shapes.splice(index, 1);
+        currentState.selectedShapeIndex = -1;
+        setDrawing(drawing);
+        setStatus("Shape deleted.", false);
+      } catch (error) {
+        setStatus(error.message, true);
+      }
+    });
+
+    document.getElementById("shapeCancelBtn").addEventListener("click", () => {
+      document.getElementById("shapeDialog").close();
+    });
+
+    document.getElementById("shapeForm").addEventListener("submit", (event) => {
+      event.preventDefault();
+      try {
+        const drawing = currentDrawing();
+        const indexRaw = document.getElementById("shapeEditIndex").value;
+        const index = indexRaw === "" ? -1 : Number(indexRaw);
+        const shape = shapeFromDialog();
+
+        if (index >= 0) {
+          drawing.shapes[index] = shape;
+          setStatus("Shape updated.", false);
+        } else {
+          drawing.shapes.push(shape);
+          setStatus("Shape added.", false);
+        }
+
+        validateDrawing(drawing);
+        setDrawing(drawing);
+        document.getElementById("shapeDialog").close();
+      } catch (error) {
+        setStatus(error.message, true);
+      }
+    });
+
+    // Job settings
+    document.getElementById("editJobSettingsBtn").addEventListener("click", () => {
+      if (currentState.jobSettings) {
+        document.getElementById("jobX").value = currentState.jobSettings.x;
+        document.getElementById("jobY").value = currentState.jobSettings.y;
+        document.getElementById("jobZ").value = currentState.jobSettings.z;
+        document.getElementById("jobZReference").value = currentState.jobSettings.z_reference;
+      }
+      document.getElementById("jobSettingsDialog").showModal();
+    });
+
+    document.getElementById("jobSettingsCancelBtn").addEventListener("click", () => {
+      document.getElementById("jobSettingsDialog").close();
+    });
+
+    document.getElementById("jobSettingsForm").addEventListener("submit", (event) => {
+      event.preventDefault();
+      try {
+        currentState.jobSettings = {
+          x: Number(document.getElementById("jobX").value),
+          y: Number(document.getElementById("jobY").value),
+          z: Number(document.getElementById("jobZ").value),
+          z_reference: document.getElementById("jobZReference").value,
+        };
+        document.getElementById("jobSettingsStatus").textContent = `X:${currentState.jobSettings.x} Y:${currentState.jobSettings.y} Z:${currentState.jobSettings.z}`;
+        setStatus("Job settings saved.", false);
+        // Update preview with new job settings
+        renderPreview(currentDrawing());
+        document.getElementById("jobSettingsDialog").close();
+      } catch (error) {
+        setStatus(error.message, true);
+      }
+    });
+
+    // Machine settings
+    document.getElementById("editMachineSettingsBtn").addEventListener("click", () => {
+      const drawing = currentDrawing();
+      document.getElementById("machineMaxX").value = drawing.machine.max_x;
+      document.getElementById("machineMaxY").value = drawing.machine.max_y;
+      document.getElementById("machineUnits").value = drawing.machine.units || "mm";
+      document.getElementById("machineHomeX").value = drawing.machine.home_x ?? 0;
+      document.getElementById("machineHomeY").value = drawing.machine.home_y ?? 0;
+      document.getElementById("machineZGap").value = drawing.machine.z_gap ?? 10;
+      document.getElementById("machineClearanceZ").value = drawing.machine.clearance_z ?? 10;
+      document.getElementById("machinePlungeZ").value = drawing.machine.plunge_z ?? 5;
+      document.getElementById("machineMist").checked = drawing.machine.mist || false;
+      document.getElementById("machineCooling").checked = drawing.machine.cooling || false;
+      document.getElementById("machineSettingsDialog").showModal();
+    });
+
+    document.getElementById("machineSettingsCancelBtn").addEventListener("click", () => {
+      document.getElementById("machineSettingsDialog").close();
+    });
+
+    document.getElementById("machineSettingsForm").addEventListener("submit", async (event) => {
+      event.preventDefault();
+      try {
+        const drawing = currentDrawing();
+        const newMaxX = Number(document.getElementById("machineMaxX").value);
+        const newMaxY = Number(document.getElementById("machineMaxY").value);
+        const newHomeX = Number(document.getElementById("machineHomeX").value);
+        const newHomeY = Number(document.getElementById("machineHomeY").value);
+        const newZGap = Number(document.getElementById("machineZGap").value);
+        const newClearanceZ = Number(document.getElementById("machineClearanceZ").value);
+        const newPlungeZ = Number(document.getElementById("machinePlungeZ").value);
+        const newUnits = document.getElementById("machineUnits").value;
+        const newMist = document.getElementById("machineMist").checked;
+        const newCooling = document.getElementById("machineCooling").checked;
+         
+        drawing.machine.max_x = newMaxX;
+        drawing.machine.max_y = newMaxY;
+        drawing.machine.home_x = newHomeX;
+        drawing.machine.home_y = newHomeY;
+        drawing.machine.z_gap = newZGap;
+        drawing.machine.clearance_z = newClearanceZ;
+        drawing.machine.plunge_z = newPlungeZ;
+        drawing.machine.units = newUnits;
+        drawing.machine.mist = newMist;
+        drawing.machine.cooling = newCooling;
+         
+        // Update currentState.machineSettings for UI display (derived from drawing.machine)
+        currentState.machineSettings = {
+          units: newUnits,
+          mist: newMist,
+          cooling: newCooling,
+        };
+         
+        const status = `X:${newMaxX} Y:${newMaxY} | Units: ${newUnits} | Mist: ${newMist ? "Yes" : "No"} | Cooling: ${newCooling ? "Yes" : "No"}`;
+        document.getElementById("machineSettingsStatus").textContent = status;
+        setStatus("Machine settings saved.", false);
+        setDrawing(drawing);
+         
+        // Save machine.json after settings are updated
+        await saveMachineJson(figUiAvailable);
+         
+        document.getElementById("machineSettingsDialog").close();
+      } catch (error) {
+        setStatus(error.message, true);
+      }
+    });
+
+    // Tools management
+    function refreshToolsList() {
+      const container = document.getElementById("toolsList");
+      container.innerHTML = "";
+      currentState.tools.forEach((tool, index) => {
+        const item = document.createElement("div");
+        item.style.padding = "0.5rem";
+        item.style.borderBottom = "1px solid #ddd";
+        item.innerHTML = `<strong>Tool ${tool.number}:</strong> ${tool.name} | Dia: ${tool.diameter} | Feed: ${tool.feed_rate} | Plunge: ${tool.plunge_rate} | Depth/pass: ${tool.depth_pass}`;
+        if (index === currentState.selectedToolIndex) {
+          item.style.backgroundColor = "#cce5ff";
+        }
+        item.style.cursor = "pointer";
+        item.addEventListener("click", () => {
+          currentState.selectedToolIndex = index;
+          refreshToolsList();
+        });
+        container.appendChild(item);
+      });
+    }
+
+    document.getElementById("addToolBtn").addEventListener("click", () => {
+      openAddToolDialog();
+    });
+
+    document.getElementById("editToolBtn").addEventListener("click", () => {
+      try {
+        const index = currentState.selectedToolIndex;
+        if (index < 0 || index >= currentState.tools.length) {
+          throw new Error("Select a tool to edit.");
+        }
+        const tool = currentState.tools[index];
+        document.getElementById("toolDialogTitle").textContent = "Edit tool";
+        document.getElementById("toolEditIndex").value = String(index);
+        document.getElementById("toolNumber").value = tool.number;
+        document.getElementById("toolDiameter").value = tool.diameter;
+        document.getElementById("toolName").value = tool.name;
+        document.getElementById("toolFeedRate").value = tool.feed_rate;
+        document.getElementById("toolPlungeRate").value = tool.plunge_rate;
+        document.getElementById("toolDepthPass").value = tool.depth_pass;
+        document.getElementById("toolDialog").showModal();
+      } catch (error) {
+        setStatus(error.message, true);
+      }
+    });
+
+    document.getElementById("deleteToolBtn").addEventListener("click", () => {
+      try {
+        const index = currentState.selectedToolIndex;
+        if (index < 0 || index >= currentState.tools.length) {
+          throw new Error("Select a tool to delete.");
+        }
+        currentState.tools.splice(index, 1);
+        currentState.selectedToolIndex = -1;
+        refreshToolsList();
+        setStatus("Tool deleted.", false);
+      } catch (error) {
+        setStatus(error.message, true);
+      }
+    });
+
+    document.getElementById("toolCancelBtn").addEventListener("click", () => {
+      document.getElementById("toolDialog").close();
+    });
+
+    document.getElementById("toolForm").addEventListener("submit", async (event) => {
+      event.preventDefault();
+      try {
+        const tool = {
+          number: Number(document.getElementById("toolNumber").value),
+          diameter: Number(document.getElementById("toolDiameter").value),
+          name: document.getElementById("toolName").value,
+          feed_rate: Number(document.getElementById("toolFeedRate").value),
+          plunge_rate: Number(document.getElementById("toolPlungeRate").value),
+          depth_pass: Number(document.getElementById("toolDepthPass").value),
+        };
+
+        const indexRaw = document.getElementById("toolEditIndex").value;
+        const index = indexRaw === "" ? -1 : Number(indexRaw);
+
+        if (index >= 0) {
+          currentState.tools[index] = tool;
+          setStatus("Tool updated.", false);
+        } else {
+          currentState.tools.push(tool);
+          setStatus("Tool added.", false);
+        }
+
+        refreshToolsList();
+         
+        // Save machine.json after tools are updated
+        await saveMachineJson(figUiAvailable);
+         
+        document.getElementById("toolDialog").close();
+      } catch (error) {
+        setStatus(error.message, true);
+      }
+    });
+
+    // Preview zoom functionality
+    // Note: Zoom direction follows standard design tool convention:
+    // - Scroll down (positive deltaY) = zoom in (magnify, standard in Figma, Sketch, Adobe)
+    // - Scroll up (negative deltaY) = zoom out (shrink)
+    // Zoom originates from the mouse position to provide intuitive navigation
+    const preview = document.getElementById("preview");
+    if (preview) {
+      preview.addEventListener("wheel", (event) => {
+        // Calculate zoom factor based on scroll direction
+        // deltaY > 0 = user scrolled down = zoom in (ZOOM_IN_FACTOR > 1)
+        // deltaY <= 0 = user scrolled up = zoom out (ZOOM_OUT_FACTOR < 1)
+        const zoomFactor = event.deltaY > 0 ? ZOOM_IN_FACTOR : ZOOM_OUT_FACTOR;
+          
+        // Validate current zoom level to prevent NaN/Infinity
+        if (!Number.isFinite(currentState.zoomLevel) || currentState.zoomLevel <= 0) {
+          currentState.zoomLevel = 1;
+        }
+          
+        // Calculate what the new zoom level would be
+        const newZoomLevel = Math.max(MIN_ZOOM, Math.min(MAX_ZOOM, currentState.zoomLevel * zoomFactor));
+          
+        // Only prevent default if zoom actually changes (not at min/max bounds)
+        if (newZoomLevel !== currentState.zoomLevel) {
+          event.preventDefault();
+           
+          // Get the current viewBox to convert screen coordinates to drawing coordinates
+          const rect = preview.getBoundingClientRect();
+          const viewBoxAttr = preview.getAttribute("viewBox");
+          if (!viewBoxAttr) return;
+            
+          const [vbX, vbY, vbWidth, vbHeight] = viewBoxAttr.split(" ").map(Number);
+            
+          // Convert mouse position to drawing coordinates
+          // Drawing coordinates: (0,0) at lower-left, Y increases upward
+          // ViewBox coordinates are SVG coords where Y increases downward
+          const screenX = event.clientX - rect.left;
+          const screenY = event.clientY - rect.top;
+          const viewBoxX = vbX + (screenX / rect.width) * vbWidth;
+          const viewBoxY = vbY + (screenY / rect.height) * vbHeight;
+          // Convert from viewBox to drawing coordinates
+          const drawingX = viewBoxX;
+          const drawingY = -viewBoxY;
+             
+          // Update zoom level and calculate center point
+          // The key is to keep the drawing point under the mouse in the same screen position
+          // Calculate new zoom dimensions based on new zoom level
+          const newZoomWidth = currentState.baseWidth / newZoomLevel;
+          const newZoomHeight = currentState.baseHeight / newZoomLevel;
+           
+          // Calculate what fraction of the preview width/height the mouse occupies
+          const screenXFraction = screenX / rect.width;
+          const screenYFraction = screenY / rect.height;
+           
+          // Update zoom level
+          currentState.zoomLevel = newZoomLevel;
+           
+          // Calculate zoom center such that the point under the mouse stays under the mouse
+          // The relationship is: screenPoint = zoomCenter + (screenFraction - 0.5) * zoomDimension
+          // So: zoomCenter = screenPoint - (screenFraction - 0.5) * zoomDimension
+          currentState.zoomCenterX = drawingX - (screenXFraction - 0.5) * newZoomWidth;
+          currentState.zoomCenterY = drawingY - (0.5 - screenYFraction) * newZoomHeight;
+            
+          // Re-render with new zoom
+          renderPreview(currentState.drawing);
+       }
+     });
+    }
+
+    // Initialize
+    try {
+      currentState.drawing = getDefaultDrawing();
+      renderPreview(currentState.drawing);
+      refreshShapeList(currentState.drawing.shapes);
+      refreshToolsList();
+
+      if (figUiAvailable) {
+        // Load previously saved settings from the FigUI plugin API on startup.
+        // Machine settings (machine config + tools) and drawing data (shapes + job settings)
+        // are stored under separate keys and loaded independently.
+        setStatus("Loading saved settings…", false);
+        try {
+          logStartupDebug("FigUI host available, starting settings load");
+          const settings = await getSettingsWithRetry();
+          let loaded = false;
+          logStartupDebug("Raw startup settings payload", settings);
+
+          // --- Machine settings ---
+          const loadedMachine = settings.machine || null;
+          const loadedTools = Array.isArray(settings.tools) ? settings.tools : null;
+          logStartupDebug("Machine/settings presence", {
+            hasMachine: Boolean(loadedMachine),
+            toolCount: loadedTools ? loadedTools.length : 0,
+          });
+
+          if (loadedMachine) {
+            try {
+              Object.assign(currentState.drawing.machine, loadedMachine);
+              currentState.machineSettings = {
+                units: loadedMachine.units || "mm",
+                mist: loadedMachine.mist || false,
+                cooling: loadedMachine.cooling || false,
+              };
+              const m = currentState.drawing.machine;
+              document.getElementById("machineSettingsStatus").textContent =
+                `X:${m.max_x} Y:${m.max_y} | Units: ${currentState.machineSettings.units} | Mist: ${currentState.machineSettings.mist ? "Yes" : "No"} | Cooling: ${currentState.machineSettings.cooling ? "Yes" : "No"}`;
+              loaded = true;
+            } catch (error) {
+              console.error("Failed to apply machine settings at startup:", error);
+            }
+          }
+          if (loadedTools && loadedTools.length > 0) {
+            currentState.tools = loadedTools;
+            refreshToolsList();
+            loaded = true;
+          }
+
+          // --- Drawing data ---
+          const drawingData = settings.drawing || null;
+          logStartupDebug("Drawing/settings presence", {
+            hasDrawing: Boolean(drawingData),
+            shapeCount: Array.isArray(drawingData?.shapes) ? drawingData.shapes.length : 0,
+            hasJobSettings: Boolean(drawingData?.jobSettings),
+          });
+          if (drawingData && Array.isArray(drawingData.shapes)) {
+            try {
+              if (drawingData.jobSettings) {
+                currentState.jobSettings = drawingData.jobSettings;
+                document.getElementById("jobSettingsStatus").textContent =
+                  `X:${drawingData.jobSettings.x} Y:${drawingData.jobSettings.y} Z:${drawingData.jobSettings.z}`;
+              }
+              const reconstructedDrawing = { machine: currentState.drawing.machine, shapes: drawingData.shapes };
+              validateDrawing(reconstructedDrawing);
+              setDrawing(reconstructedDrawing);
+              loaded = true;
+            } catch (error) {
+              console.error("Failed to apply drawing settings at startup:", error);
+            }
+          }
+
+          logStartupDebug("Startup load complete", { loaded });
+          const statusMessage = loaded ? "Settings loaded." : "Connected to FigUI plugin host.";
+          setStatus(STARTUP_DEBUG ? `${statusMessage} Startup debug logged to console.` : statusMessage, false);
+        } catch (error) {
+          // No saved settings yet or load failed — start with defaults
+          console.error("Failed to read settings at startup:", error);
+          logStartupDebug("Startup load failed", { error: error?.message || String(error) });
+          setStatus(STARTUP_DEBUG ? "Connected to FigUI plugin host. Startup debug logged to console." : "Connected to FigUI plugin host.", false);
+        }
+      } else {
+        setStatus("Running in standalone browser mode.", false);
+      }
+    } catch (error) {
+      setStatus(error.message, true);
+    }
+  }
+
+  canUseFigUI().then((figUiAvailable) => {
+    wireEvents(figUiAvailable);
+  });
+})();
+  </script>
+</body>
+</html>
