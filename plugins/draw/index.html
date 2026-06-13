@@ -5,48 +5,118 @@
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>Draw - FigUI Plugin</title>
   <style>
-    :root { color-scheme: light dark; }
-    body { font-family: system-ui, sans-serif; margin: 1rem; background: var(--bg, canvas); color: var(--text-primary, canvastext); }
+    :root {
+      color-scheme: light dark;
+      --ui-bg: var(--bg, canvas);
+      --ui-text: var(--text-primary, canvastext);
+      --panel-bg: var(--surface, #ffffff);
+      --panel-border: var(--border, #6664);
+      --control-bg: var(--elevated, var(--surface, #ffffff));
+      --control-text: var(--text-primary, canvastext);
+      --control-border: var(--border-strong, var(--border, #6664));
+      --control-hover: color-mix(in srgb, var(--accent, #f0a030) 14%, var(--control-bg));
+      --control-active: color-mix(in srgb, var(--accent, #f0a030) 22%, var(--control-bg));
+      --focus-ring: var(--accent, #f0a030);
+      --selected-bg: color-mix(in srgb, var(--info, #4ea1ff) 22%, var(--panel-bg));
+      --preview-bg: var(--surface, #ffffff);
+      --preview-grid-line: var(--border, #dddddd);
+      --preview-grid-axis: var(--border-strong, #999999);
+      --preview-label: var(--text-dim, #666666);
+      --preview-origin: var(--danger, #e11d48);
+      --preview-box: var(--info, #4ea1ff);
+      --preview-circle: var(--teal, #2ca02c);
+      --preview-text: var(--accent, #f0a030);
+      --error-text: var(--danger, #b00020);
+    }
+
+    body { font-family: system-ui, sans-serif; margin: 0.5rem; background: var(--ui-bg); color: var(--ui-text); display: flex; flex-direction: column; height: 100vh; overflow: hidden; }
     h1, h2, h3 { margin-top: 0; }
-    .grid { display: grid; gap: 1rem; grid-template-columns: 1fr 1fr; }
+    .grid { display: grid; gap: 1rem; grid-template-columns: 1fr 2fr; flex: 1; min-height: 0; }
     .three-col { display: grid; gap: 1rem; grid-template-columns: 1fr 1fr 1fr; }
-    textarea { width: 100%; min-height: 180px; font-family: ui-monospace, monospace; }
-    pre { margin: 0; padding: 0.75rem; border: 1px solid #6664; overflow: auto; max-height: 200px; }
-    button { margin-right: 0.5rem; margin-bottom: 0.5rem; }
+    textarea { width: 100%; min-height: 120px; font-family: ui-monospace, monospace; }
+    input, select, textarea, button {
+      color: var(--control-text);
+      background: var(--control-bg);
+      border: 1px solid var(--control-border);
+      border-radius: 0.4rem;
+      font: inherit;
+    }
+    input, select, textarea { padding: 0.25rem 0.35rem; font-size: 0.9rem; }
+    input[type="checkbox"] {
+      accent-color: var(--focus-ring);
+      width: 1rem;
+      height: 1rem;
+      vertical-align: middle;
+    }
+    pre {
+      margin: 0.5rem 0 0 0;
+      padding: 0.75rem;
+      border: 1px solid var(--panel-border);
+      background: var(--panel-bg);
+      color: var(--ui-text);
+      overflow: auto;
+      flex: 0 1 auto;
+      min-height: 0;
+    }
+    button {
+      margin-right: 0.25rem;
+      margin-bottom: 0.25rem;
+      padding: 0.3rem 0.5rem;
+      font-size: 0.9rem;
+      cursor: pointer;
+      transition: background-color 140ms ease, border-color 140ms ease;
+    }
+    button:hover { background: var(--control-hover); }
+    button:active { background: var(--control-active); }
+    button:disabled { opacity: 0.6; cursor: not-allowed; }
+    button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-visible {
+      outline: 2px solid var(--focus-ring);
+      outline-offset: 1px;
+    }
     button.small { padding: 0.25rem 0.5rem; font-size: 0.85rem; }
-    svg { width: 100%; aspect-ratio: 1; min-height: 280px; border: 1px solid #6664; background: #fff; }
-    .row { margin-bottom: 0.75rem; }
+    svg { width: 100%; flex: 1; border: 1px solid var(--panel-border); background: var(--preview-bg); min-height: 0; }
+    .grid > div:first-child { overflow-y: auto; overflow-x: hidden; min-height: 0; }
+    .grid > div:last-child { display: flex; flex-direction: column; min-height: 0; overflow: hidden; }
+    .row { margin-bottom: 0.5rem; flex-shrink: 0; display: flex; align-items: center; gap: 0.5rem; flex-wrap: wrap; }
     .full { grid-column: 1 / -1; }
-    .error { color: #b00020; font-weight: 600; }
-    .shape-controls { margin-top: 0.5rem; }
-    .element-controls { margin-top: 0.5rem; }
-    .shape-list { width: 100%; min-height: 8rem; border: 1px solid #6664; padding: 0.25rem; }
-    .shape-item { padding: 0.25rem 0.5rem; cursor: pointer; }
-    .shape-item.selected { background-color: #cce5ff; }
+    .error { color: var(--error-text); font-weight: 600; }
+    #status { flex-shrink: 0; margin: 0; font-size: 0.9rem; }
+    .toolbar { display: flex; flex-direction: column; gap: 0.25rem; flex-shrink: 0; margin-bottom: 0.5rem; }
+    .preview-header { display: flex; align-items: baseline; justify-content: flex-start; gap: 0.5rem; flex-shrink: 0; }
+    .preview-title { margin: 0; display: flex; align-items: baseline; gap: 0.4rem; }
+    .preview-title .label { opacity: 0.6; font-weight: 400; font-size: 0.8rem; }
+    .drawing-name { font-size: 0.9rem; font-weight: 600; max-width: 20rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .drawing-name.unsaved { color: var(--text-muted, #888); font-style: italic; }
+    .shape-controls { margin-top: 0.25rem; }
+    .element-controls { margin-top: 0.25rem; }
+    .shape-list { width: 100%; min-height: 6rem; border: 1px solid var(--panel-border); background: var(--panel-bg); padding: 0.25rem; border-radius: 0.4rem; overflow-x: hidden; word-break: break-word; }
+    .shape-item { padding: 0.15rem 0.35rem; cursor: pointer; }
+    .shape-item.selected { background-color: var(--selected-bg); }
     .shape-item-text { font-size: 0.9rem; }
-    .shape-item-details { font-size: 0.8rem; opacity: 0.7; margin-top: 0.25rem; }
-    dialog { max-width: 30rem; width: calc(100% - 2rem); border: 1px solid #6664; }
+    .shape-item-details { font-size: 0.8rem; opacity: 0.7; margin-top: 0.25rem; word-break: break-word; overflow-wrap: break-word; }
+    dialog { max-width: 30rem; width: calc(100% - 2rem); border: 1px solid var(--panel-border); border-radius: 0.6rem; background: var(--panel-bg); color: var(--ui-text); }
+    dialog::backdrop { background: rgb(0 0 0 / 0.45); }
     dialog form { display: grid; grid-template-columns: 1fr 1fr; gap: 0.5rem 0.75rem; }
     dialog .full { grid-column: 1 / -1; }
     dialog label { display: flex; flex-direction: column; gap: 0.25rem; }
     dialog menu { display: flex; justify-content: flex-end; gap: 0.5rem; margin: 0.75rem 0 0; padding: 0; }
-    .hint { opacity: 0.75; margin: 0.25rem 0 0.5rem; }
-    .settings-box { border: 1px solid #6664; padding: 0.75rem; margin: 0.5rem 0; }
-    .settings-label { font-weight: 600; display: inline-block; margin-right: 1rem; }
-    .gcode-toggle { margin: 0.5rem 0; }
-    .section-title { margin: 1rem 0 0.5rem; }
+    .hint { opacity: 0.75; margin: 0.1rem 0 0.25rem; }
+    .settings-box { border: 1px solid var(--panel-border); background: var(--panel-bg); border-radius: 0.4rem; padding: 0.5rem; margin: 0.25rem 0; }
+    .settings-label { font-weight: 600; display: block; margin-right: 0.5rem; margin-bottom: 0.25rem; font-size: 0.9rem; word-break: break-word; }
+    .gcode-toggle { margin: 0.25rem 0; flex-shrink: 0; }
+    .section-title { margin: 0.75rem 0 0.25rem; flex-shrink: 0; font-size: 0.95rem; }
   </style>
 </head>
 <body>
 
-  <div class="row">
-    <button id="saveDrawingBtn">Save drawing</button>
-    <button id="loadDrawingBtn">Load drawing</button>
-    <button id="generateBtn">Generate & Save G-code</button>
-    <input id="openJsonInput" type="file" accept=".json,application/json" hidden />
+  <div class="toolbar">
+    <div class="row">
+      <button id="saveDrawingBtn">Save drawing</button>
+      <button id="loadDrawingBtn">Load drawing</button>
+      <button id="generateBtn">Generate &amp; Save G-code</button>
+      <p id="status" aria-live="polite"></p>
+    </div>
   </div>
-
-  <p id="status" aria-live="polite"></p>
 
   <div class="grid">
     <!-- Left column: Job Settings, Design elements, Machine Settings, Tools -->
@@ -86,7 +156,9 @@
 
     <!-- Right column: Preview -->
     <div>
-      <h3 class="section-title">Preview</h3>
+      <div class="preview-header">
+        <h3 class="section-title preview-title">Preview <span class="label">Drawing:</span><span id="drawingTitle" class="drawing-name unsaved">New Drawing</span></h3>
+      </div>
       <svg id="preview" viewBox="0 0 300 200" role="img" aria-label="Drawing preview"></svg>
       <div class="gcode-toggle">
         <label>
@@ -285,9 +357,50 @@
         Filename
         <input id="filenameInput" type="text" required />
       </label>
+      <label>
+        Storage
+        <select id="storageSelect" required>
+          <option value="local">Internal Storage</option>
+          <option value="sd">SD Card</option>
+        </select>
+      </label>
+      <label class="full">
+        Directory
+        <input id="directoryInput" type="text" placeholder="/" />
+        <small style="opacity:0.7;">Directory must already exist on the device. Leave as / to save at root.</small>
+      </label>
       <menu class="full">
         <button type="button" id="filenameCancelBtn">Cancel</button>
         <button type="submit" id="filenameSaveBtn">Save</button>
+      </menu>
+    </form>
+  </dialog>
+
+  <dialog id="loadDialog">
+    <form id="loadForm" method="dialog">
+      <h2 class="full">Load Drawing</h2>
+      <label>
+        Storage
+        <select id="loadStorageSelect" required>
+          <option value="local">Internal Storage</option>
+          <option value="sd" selected>SD Card</option>
+        </select>
+      </label>
+      <label>
+        Directory
+        <input id="loadDirectoryInput" type="text" value="/" required />
+      </label>
+      <div class="full element-controls">
+        <button type="button" id="loadRefreshBtn">Refresh files</button>
+      </div>
+      <label class="full">
+        Drawing file
+        <select id="loadFileSelect" size="8" required></select>
+      </label>
+      <p id="loadDialogStatus" class="hint full" aria-live="polite"></p>
+      <menu class="full">
+        <button type="button" id="loadCancelBtn">Cancel</button>
+        <button type="submit" id="loadConfirmBtn">Load</button>
       </menu>
     </form>
   </dialog>
@@ -297,7 +410,7 @@
 (function () {
   const VALID_MODES = new Set(["inside", "outside", "pocket"]);
   const FIGUI_CALL_TIMEOUT_MS = 2000;
-  const DEFAULT_GCODE_FILENAME = "output.ngc";
+  const DEFAULT_GCODE_FILENAME = "draw.gcode";
   const STARTUP_DEBUG = false; // Enable startup diagnostics in browser console
   const AXIS_LABEL_OFFSET = 2; // Offset for positioning grid axis labels from the origin
   const ZOOM_IN_FACTOR = 1.05; // Factor for zooming in (scroll down)
@@ -423,17 +536,7 @@
     console.info(`[startup] ${message}`, details);
   }
 
-  async function canUseFigUI() {
-    if (window.parent === window) {
-      return false;
-    }
-    try {
-      await callFigUI("getStatus");
-      return true;
-    } catch {
-      return false;
-    }
-  }
+
 
   function parseValue(raw) {
     const trimmed = raw.trim();
@@ -873,7 +976,14 @@
     };
 
     // Background
-    make("rect", { x: minX, y: -minY - zoomHeight, width: zoomWidth, height: zoomHeight, fill: "#fff", stroke: "#ddd" });
+    make("rect", {
+      x: minX,
+      y: -minY - zoomHeight,
+      width: zoomWidth,
+      height: zoomHeight,
+      fill: "var(--preview-bg)",
+      stroke: "var(--preview-grid-line)",
+    });
 
     // Draw grid if job settings are available
     if (currentState.jobSettings) {
@@ -894,7 +1004,7 @@
           y1: 0,
           x2: x,
           y2: -jobHeight,
-          stroke: x === 0 ? "#999" : "#ddd",
+          stroke: x === 0 ? "var(--preview-grid-axis)" : "var(--preview-grid-line)",
           "stroke-width": x === 0 ? 0.5 : 0.2,
           "stroke-dasharray": x === 0 ? "none" : "1,1",
         });
@@ -906,7 +1016,7 @@
           y: AXIS_LABEL_OFFSET,
           "text-anchor": "middle",
           "font-size": 2,
-          fill: "#666",
+          fill: "var(--preview-label)",
           "pointer-events": "none",
           role: "text",
           "aria-label": `X-axis position ${x}`,
@@ -921,7 +1031,7 @@
           y1: -y,
           x2: jobWidth,
           y2: -y,
-          stroke: y === 0 ? "#999" : "#ddd",
+          stroke: y === 0 ? "var(--preview-grid-axis)" : "var(--preview-grid-line)",
           "stroke-width": y === 0 ? 0.5 : 0.2,
           "stroke-dasharray": y === 0 ? "none" : "1,1",
         });
@@ -933,7 +1043,7 @@
           y: -y,
           "text-anchor": "end",
           "font-size": 2,
-          fill: "#666",
+          fill: "var(--preview-label)",
           "pointer-events": "none",
           role: "text",
           "aria-label": `Y-axis position ${y}`,
@@ -941,7 +1051,7 @@
       }
       
       // Draw origin marker
-      make("circle", { cx: 0, cy: 0, r: 1, fill: "red", opacity: 0.5 });
+      make("circle", { cx: 0, cy: 0, r: 1, fill: "var(--preview-origin)", opacity: 0.6 });
     }
 
     // Draw shapes
@@ -953,7 +1063,7 @@
           width: Number(shape.width),
           height: Number(shape.height),
           fill: "none",
-          stroke: "#1f77b4",
+          stroke: "var(--preview-box)",
           "stroke-width": 0.8,
         });
       }
@@ -964,7 +1074,7 @@
           cy: -Number(shape.y),
           r: Number(shape.radius),
           fill: "none",
-          stroke: "#2ca02c",
+          stroke: "var(--preview-circle)",
           "stroke-width": 0.8,
         });
       }
@@ -973,7 +1083,7 @@
         make("text", {
           x: Number(shape.x),
           y: -Number(shape.y),
-          fill: "#d62728",
+          fill: "var(--preview-text)",
           "font-size": Number(shape.size || 10),
           "font-family": "monospace",
         }).textContent = String(shape.value || "");
@@ -1005,15 +1115,7 @@
     return spacing;
   }
 
-  function downloadFile(filename, text, mimeType) {
-    const blob = new Blob([text], { type: mimeType });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = filename;
-    a.click();
-    URL.revokeObjectURL(url);
-  }
+
 
   function validateFilename(filename) {
     // Validate filename for security: prevent path traversal attacks, directory navigation,
@@ -1125,52 +1227,29 @@
     return hasMachineConfig || hasMachineSettings || hasTools;
   }
  
-  async function saveMachineJson(figUiAvailable) {
-    // Save machine settings and tools via the FigUI getSettings/saveSettings API.
-    // Called when machine settings or tools are changed.
-    // Uses read-modify-write to preserve existing drawing data in plugin settings.
-    // In standalone mode, downloads machine.json as before.
+  async function saveMachineSettings() {
+    // Persist machine settings and tools via the FigUI saveSettings API.
+    // Called whenever machine settings or tools change.
     try {
       const drawing = currentDrawing();
-      
-      // Machine data contains unified machine config and tools
-      // All values come from drawing.machine (which is the authoritative source)
-      const machineData = {
-        machine: {
-          max_x: drawing.machine.max_x,
-          max_y: drawing.machine.max_y,
-          max_z: drawing.machine.max_z,
-          z_reference: drawing.machine.z_reference,
-          home_x: drawing.machine.home_x ?? 0,
-          home_y: drawing.machine.home_y ?? 0,
-          z_gap: drawing.machine.z_gap ?? 10,
-          clearance_z: drawing.machine.clearance_z ?? 10,
-          plunge_z: drawing.machine.plunge_z ?? 5,
-          units: drawing.machine.units || "mm",
-          mist: drawing.machine.mist || false,
-          cooling: drawing.machine.cooling || false,
-        },
-        tools: currentState.tools,
+      const machine = {
+        max_x: drawing.machine.max_x,
+        max_y: drawing.machine.max_y,
+        max_z: drawing.machine.max_z,
+        z_reference: drawing.machine.z_reference,
+        home_x: drawing.machine.home_x ?? 0,
+        home_y: drawing.machine.home_y ?? 0,
+        z_gap: drawing.machine.z_gap ?? 10,
+        clearance_z: drawing.machine.clearance_z ?? 10,
+        plunge_z: drawing.machine.plunge_z ?? 5,
+        units: drawing.machine.units || "mm",
+        mist: drawing.machine.mist || false,
+        cooling: drawing.machine.cooling || false,
       };
-       
-      // Check if machine data contains meaningful information
-      const hasMachineData = hasMachineDataToSave(drawing);
-       
-      if (figUiAvailable) {
-        // Save only machine data under "machine" and "tools" keys; drawing data is stored separately
-        if (hasMachineData) {
-          let existingSettings = {};
-          try { existingSettings = extractSettingsPayload(await callFigUI("getSettings")); } catch { /* no prior settings */ }
-          await callFigUI("saveSettings", { data: { ...existingSettings, machine: machineData.machine, tools: machineData.tools } });
-        }
-      } else {
-        // In standalone mode, download machine.json
-        if (hasMachineData) {
-          downloadFile("machine.json", JSON.stringify(machineData, null, 2), "application/json");
-        }
-      }
+      let existingSettings = {};
+      try { existingSettings = extractSettingsPayload(await callFigUI("getSettings")); } catch { /* no prior settings */ }
+      await callFigUI("saveSettings", { data: { ...existingSettings, machine, tools: currentState.tools } });
     } catch (error) {
-      // Log error but don't interrupt the user workflow
       console.error("Error saving machine settings:", error?.message || String(error));
     }
   }
@@ -1179,17 +1258,23 @@
     // Show filename dialog and wait for user input
     const dialog = document.getElementById("filenameDialog");
     const input = document.getElementById("filenameInput");
+    const storageSelect = document.getElementById("storageSelect");
+    const directoryInput = document.getElementById("directoryInput");
     const form = document.getElementById("filenameForm");
     
     input.value = defaultName;
+    storageSelect.value = "sd"; // Default to SD card
+    directoryInput.value = "/";
     input.focus();
     
     return new Promise((resolve) => {
       const handleSubmit = (e) => {
         e.preventDefault();
         const filename = input.value.trim();
+        const storage = storageSelect.value;
+        const directory = directoryInput.value.trim() || "/";
         cleanup();
-        resolve(filename || null);
+        resolve(filename ? { filename, storage, directory } : null);
       };
       
       const handleCancel = () => {
@@ -1209,10 +1294,215 @@
     });
   }
 
+  async function promptForDrawingToLoad() {
+    const dialog = document.getElementById("loadDialog");
+    const form = document.getElementById("loadForm");
+    const storageSelect = document.getElementById("loadStorageSelect");
+    const directoryInput = document.getElementById("loadDirectoryInput");
+    const fileSelect = document.getElementById("loadFileSelect");
+    const statusEl = document.getElementById("loadDialogStatus");
+    const refreshBtn = document.getElementById("loadRefreshBtn");
+
+    const normalizeDirectory = (value) => {
+      let dir = (value || "/").trim() || "/";
+      if (!dir.startsWith("/")) {
+        dir = `/${dir}`;
+      }
+      if (dir.length > 1 && dir.endsWith("/")) {
+        dir = dir.slice(0, -1);
+      }
+      return dir;
+    };
+
+    const refreshFiles = async () => {
+      const fs = storageSelect.value;
+      const directory = normalizeDirectory(directoryInput.value);
+      directoryInput.value = directory;
+      fileSelect.innerHTML = "";
+      statusEl.textContent = "Loading files...";
+      try {
+        const listPath = resolveApiDirectory(fs, directory);
+        const listing = await callFigUI("listFiles", { path: listPath, fs });
+        const files = Array.isArray(listing?.files) ? listing.files : [];
+        const jsonFiles = files
+          .filter((entry) => !entry.isDir && typeof entry.name === "string" && entry.name.toLowerCase().endsWith(".json"))
+          .map((entry) => entry.name)
+          .sort((a, b) => a.localeCompare(b));
+
+        if (jsonFiles.length === 0) {
+          statusEl.textContent = "No .json files found in this directory.";
+          return;
+        }
+
+        for (const name of jsonFiles) {
+          const option = document.createElement("option");
+          option.value = name;
+          option.textContent = name;
+          fileSelect.appendChild(option);
+        }
+        fileSelect.selectedIndex = 0;
+        statusEl.textContent = `${jsonFiles.length} drawing file(s) found.`;
+      } catch (error) {
+        statusEl.textContent = `Failed to list files: ${error.message}`;
+      }
+    };
+
+    return new Promise((resolve) => {
+      const handleSubmit = (event) => {
+        event.preventDefault();
+        const selected = fileSelect.value;
+        if (!selected) {
+          statusEl.textContent = "Select a .json file to load.";
+          return;
+        }
+        const result = {
+          storage: storageSelect.value,
+          directory: normalizeDirectory(directoryInput.value),
+          filename: selected,
+        };
+        cleanup();
+        resolve(result);
+      };
+
+      const handleCancel = () => {
+        cleanup();
+        resolve(null);
+      };
+
+      const handleRefresh = () => {
+        refreshFiles();
+      };
+
+      const handleStorageChange = () => {
+        refreshFiles();
+      };
+
+      const cleanup = () => {
+        form.removeEventListener("submit", handleSubmit);
+        document.getElementById("loadCancelBtn").removeEventListener("click", handleCancel);
+        refreshBtn.removeEventListener("click", handleRefresh);
+        storageSelect.removeEventListener("change", handleStorageChange);
+        dialog.close();
+      };
+
+      form.addEventListener("submit", handleSubmit);
+      document.getElementById("loadCancelBtn").addEventListener("click", handleCancel);
+      refreshBtn.addEventListener("click", handleRefresh);
+      storageSelect.addEventListener("change", handleStorageChange);
+      dialog.showModal();
+      refreshFiles();
+    });
+  }
+
+  function applyLoadedDrawingData(data, sourceName) {
+    const result = detectDrawingFormat(data);
+    if (!result) {
+      throw new Error("Invalid file format: expected drawing object or new drawing format");
+    }
+
+    const {
+      shapes: drawingShapes,
+      jobSettings: loadedJobSettings,
+      machine: loadedMachine,
+      machineSettings: loadedMachineSettings,
+      tools: loadedTools,
+    } = result;
+
+    const finalMachine = loadedMachine || currentDrawing().machine || DEFAULT_MACHINE;
+    const loadedDrawing = { machine: finalMachine, shapes: drawingShapes };
+    validateDrawing(loadedDrawing);
+
+    if (loadedJobSettings) {
+      currentState.jobSettings = loadedJobSettings;
+    }
+    if (loadedMachineSettings) {
+      currentState.machineSettings = loadedMachineSettings;
+    }
+    if (loadedTools) {
+      currentState.tools = loadedTools;
+    }
+
+    // Reset viewport so the next render recenters on the loaded drawing/job bounds.
+    currentState.zoomLevel = 1;
+    currentState.zoomCenterX = DEFAULT_ZOOM_CENTER_X;
+    currentState.zoomCenterY = DEFAULT_ZOOM_CENTER_Y;
+
+    setDrawing(loadedDrawing);
+
+    currentState.currentFilename = removeExtension(sourceName);
+    updateDrawingTitle();
+
+    if (currentState.jobSettings) {
+      document.getElementById("jobSettingsStatus").textContent =
+        `X:${currentState.jobSettings.x} Y:${currentState.jobSettings.y} Z:${currentState.jobSettings.z}`;
+    }
+    if (currentState.machineSettings) {
+      const status =
+        `X:${finalMachine.max_x} Y:${finalMachine.max_y} | Units: ${currentState.machineSettings.units} | Mist: ${currentState.machineSettings.mist ? "Yes" : "No"} | Cooling: ${currentState.machineSettings.cooling ? "Yes" : "No"}`;
+      document.getElementById("machineSettingsStatus").textContent = status;
+    }
+
+    if (currentState.tools && currentState.tools.length > 0) {
+      document.getElementById("toolsList").innerHTML = currentState.tools.map((tool) =>
+        `<div style="padding: 0.5rem; border-bottom: 1px solid #ddd; cursor: pointer;"><strong>Tool ${tool.number}:</strong> ${tool.name} | Dia: ${tool.diameter} | Feed: ${tool.feed_rate} | Plunge: ${tool.plunge_rate} | Depth/pass: ${tool.depth_pass}</div>`
+      ).join("");
+    }
+  }
+
   function setStatus(message, isError) {
     const status = document.getElementById("status");
     status.textContent = message;
     status.className = isError ? "error" : "";
+  }
+
+  function resolveApiDirectory(fs, directory) {
+    let dir = (directory || "/").trim() || "/";
+    if (!dir.startsWith("/")) {
+      dir = `/${dir}`;
+    }
+    if (dir.length > 1 && dir.endsWith("/")) {
+      dir = dir.slice(0, -1);
+    }
+
+    if (fs === "sd") {
+      if (dir === "/") {
+        return "/sd";
+      }
+      return dir.startsWith("/sd") ? dir : `/sd${dir}`;
+    }
+
+    // local FS paths should not be sd-prefixed
+    if (dir === "/sd") {
+      return "/";
+    }
+    if (dir.startsWith("/sd/")) {
+      return dir.slice(3);
+    }
+    return dir;
+  }
+
+  function joinDevicePath(fs, directory, filename) {
+    const dir = resolveApiDirectory(fs, directory);
+    const cleanName = String(filename || "").replace(/^\/+/, "");
+    if (!cleanName) {
+      return dir;
+    }
+    if (dir === "/") {
+      return `/${cleanName}`;
+    }
+    const cleanDir = dir.endsWith("/") ? dir.slice(0, -1) : dir;
+    return `${cleanDir}/${cleanName}`;
+  }
+
+  function updateDrawingTitle() {
+    const el = document.getElementById("drawingTitle");
+    if (currentState.currentFilename) {
+      el.textContent = currentState.currentFilename;
+      el.classList.remove("unsaved");
+    } else {
+      el.textContent = "New Drawing";
+      el.classList.add("unsaved");
+    }
   }
 
   let currentState = {
@@ -1380,207 +1670,92 @@
     document.getElementById("toolDialog").showModal();
   }
 
-  async function saveDrawing(figUiAvailable) {
+  async function saveDrawing() {
     try {
-      const drawing = currentDrawing();
-      
-      // Drawing file contains only job settings and shapes
       const drawingData = {
         jobSettings: currentState.jobSettings,
-        shapes: drawing.shapes,
+        shapes: currentDrawing().shapes,
       };
-      
-      // Machine file contains unified machine config (including settings) and tools
-      const machineData = {
-        machine: {
-          max_x: drawing.machine.max_x,
-          max_y: drawing.machine.max_y,
-          max_z: drawing.machine.max_z,
-          z_reference: drawing.machine.z_reference,
-          home_x: drawing.machine.home_x ?? 0,
-          home_y: drawing.machine.home_y ?? 0,
-          z_gap: drawing.machine.z_gap ?? 10,
-          clearance_z: drawing.machine.clearance_z ?? 10,
-          plunge_z: drawing.machine.plunge_z ?? 5,
-          units: drawing.machine.units || "mm",
-          mist: drawing.machine.mist || false,
-          cooling: drawing.machine.cooling || false,
-        },
-        tools: currentState.tools,
-      };
-      
-      // Check if machine data contains meaningful information
-      const hasMachineData = hasMachineDataToSave(drawing);
-      
-      if (figUiAvailable) {
-        // Save only drawing data under the "drawing" key; machine settings are stored separately
-        let existingSettings = {};
-        try { existingSettings = extractSettingsPayload(await callFigUI("getSettings")); } catch { /* no prior settings */ }
-        await callFigUI("saveSettings", { data: { ...existingSettings, drawing: drawingData } });
-        setStatus("Drawing saved in plugin settings.", false);
-      } else {
-        // Prompt for filename in standalone mode
-        let filename = await promptForFilename(currentState.currentFilename || "drawing");
-        if (filename === null) {
-          return; // User cancelled
-        }
-        filename = filename.trim();
-        
-        // Validate filename (ensureExtension will handle removing any existing extension)
-        validateFilename(filename);
-        
-        // Add .json extension
-        filename = ensureExtension(filename, ".json");
-        
-        currentState.currentFilename = removeExtension(filename);
-        // Save drawing file
-        downloadFile(filename, JSON.stringify(drawingData, null, 2), "application/json");
-        
-        // Save machine settings to machine.json only if there's meaningful data
-        if (hasMachineData) {
-          downloadFile("machine.json", JSON.stringify(machineData, null, 2), "application/json");
-        }
-        setStatus(filename + " saved locally.", false);
+
+      const result = await promptForFilename(currentState.currentFilename || "drawing");
+      if (!result) return;
+
+      let filename = result.filename.trim();
+      const storage = result.storage;
+      let directory = result.directory.trim();
+
+      validateFilename(filename);
+      filename = ensureExtension(filename, ".json");
+      currentState.currentFilename = removeExtension(filename);
+      updateDrawingTitle();
+
+      if (!directory.startsWith("/")) directory = "/" + directory;
+      if (directory.endsWith("/")) directory = directory.slice(0, -1);
+
+      const filePath = joinDevicePath(storage, directory, filename);
+      try {
+        await callFigUI("writeFile", { path: filePath, fs: storage, content: JSON.stringify(drawingData, null, 2) });
+        setStatus(`Drawing saved to ${storage === "sd" ? "SD" : "Internal"}: ${filePath}`, false);
+      } catch (error) {
+        setStatus(`Save failed: ${error.message}. Check that the directory exists on the device.`, true);
       }
     } catch (error) {
       setStatus(error.message, true);
     }
   }
 
-  async function loadDrawing(figUiAvailable) {
-    if (figUiAvailable) {
-      try {
-        const settings = extractSettingsPayload(await callFigUI("getSettings"));
-        const drawingData = settings.drawing;
-
-        if (!drawingData || !Array.isArray(drawingData.shapes)) {
-          throw new Error("No saved drawing found in plugin settings.");
-        }
-
-        // Reconstruct drawing using the current machine config (machine settings are separate)
-        const reconstructedDrawing = { machine: currentDrawing().machine, shapes: drawingData.shapes };
-        validateDrawing(reconstructedDrawing);
-        setDrawing(reconstructedDrawing);
-
-        if (drawingData.jobSettings) {
-          currentState.jobSettings = drawingData.jobSettings;
-          document.getElementById("jobSettingsStatus").textContent =
-            `X:${drawingData.jobSettings.x} Y:${drawingData.jobSettings.y} Z:${drawingData.jobSettings.z}`;
-        }
-
-        setStatus("Drawing loaded from plugin settings.", false);
-      } catch (error) {
-        setStatus(error.message, true);
+  async function loadDrawing() {
+    try {
+      setStatus("Opening drawing picker...", false);
+      const selected = await promptForDrawingToLoad();
+      if (!selected) {
+        setStatus("Load canceled.", false);
+        return;
       }
-      return;
+      const fullPath = joinDevicePath(selected.storage, selected.directory, selected.filename);
+      const raw = await callFigUI("readFile", { path: fullPath, fs: selected.storage });
+      const data = JSON.parse(raw);
+      applyLoadedDrawingData(data, selected.filename);
+      setStatus(`${selected.filename} loaded from ${selected.storage === "sd" ? "SD" : "Internal"}: ${fullPath}`, false);
+    } catch (error) {
+      setStatus(error.message, true);
     }
-
-    document.getElementById("openJsonInput").click();
   }
 
-  async function saveGcode(figUiAvailable) {
+  async function saveGcode() {
     const gcode = document.getElementById("gcodeOutput").textContent;
     if (!gcode.trim()) {
       setStatus("Generate G-code first.", true);
       return;
     }
 
-    // Calculate G-code filename from current filename or default
     const baseFilename = currentState.currentFilename || "output";
     const gcodeFilename = ensureExtension(baseFilename, ".gcode");
 
-    if (figUiAvailable) {
+    try {
+      validateFilename(gcodeFilename);
+      const sanitized = gcodeFilename.replace(/^\/+/, "");
+      const path = `/sd/${sanitized}`;
+      await callFigUI("writeFile", { path, fs: "sd", content: gcode });
       try {
-        // Validate filename strictly to prevent injection attacks
-        validateFilename(gcodeFilename);
-        // Remove leading slashes as defensive sanitization before constructing path
-        const sanitized = gcodeFilename.replace(/^\/+/, "");
-        const path = `/sd/${sanitized}`;
-        await callFigUI("writeFile", { path, fs: "sd", content: gcode });
-        try {
-          await callFigUI("openFile", { path });
-          setStatus(`${sanitized} saved to SD and opened in FigUI.`, false);
-        } catch {
-          setStatus(`${sanitized} saved to SD.`, false);
-        }
-      } catch (error) {
-        setStatus(error.message, true);
+        await callFigUI("openFile", { path });
+        setStatus(`${sanitized} saved to SD and opened in FigUI.`, false);
+      } catch {
+        setStatus(`${sanitized} saved to SD.`, false);
       }
-      return;
+    } catch (error) {
+      setStatus(error.message, true);
     }
-
-    // Standalone mode: use current filename if available, otherwise use default
-    downloadFile(gcodeFilename, gcode, "text/plain");
-    setStatus(gcodeFilename + " saved locally.", false);
   }
 
-  async function wireEvents(figUiAvailable) {
+  async function wireEvents() {
     // Save/Load/Generate buttons
     document.getElementById("saveDrawingBtn").addEventListener("click", () => {
-      saveDrawing(figUiAvailable);
+      saveDrawing();
     });
 
     document.getElementById("loadDrawingBtn").addEventListener("click", () => {
-      loadDrawing(figUiAvailable);
-    });
-
-    document.getElementById("openJsonInput").addEventListener("change", async (event) => {
-      const file = event.target.files && event.target.files[0];
-      if (!file) {
-        return;
-      }
-      try {
-        const text = await file.text();
-        const data = JSON.parse(text);
-        
-        // Handle multiple file formats:
-        // 1. New drawing format: { jobSettings, shapes }
-        // 2. Old format with drawing object: { drawing, jobSettings, machineSettings, tools } or { machine, shapes, jobSettings, machineSettings, tools }
-        // 3. Direct drawing object: { machine, shapes }
-        
-        // Detect drawing format and extract components
-        const result = detectDrawingFormat(data);
-        if (!result) {
-          throw new Error("Invalid file format: expected drawing object or new drawing format");
-        }
-        
-        const { shapes: drawingShapes, jobSettings: loadedJobSettings, machine: loadedMachine, 
-                machineSettings: loadedMachineSettings, tools: loadedTools } = result;
-        
-        // Reconstruct drawing object with proper machine config
-        // Use loaded machine, fall back to current drawing machine, then to default
-        const finalMachine = loadedMachine || currentDrawing().machine || DEFAULT_MACHINE;
-        const loadedDrawing = { machine: finalMachine, shapes: drawingShapes };
-        validateDrawing(loadedDrawing);
-        setDrawing(loadedDrawing);
-        
-        if (loadedJobSettings) currentState.jobSettings = loadedJobSettings;
-        if (loadedMachineSettings) currentState.machineSettings = loadedMachineSettings;
-        if (loadedTools) currentState.tools = loadedTools;
-        
-        // Store filename for use when saving G-code
-        currentState.currentFilename = removeExtension(file.name);
-        
-        // Update UI with loaded settings
-        if (currentState.jobSettings) {
-          document.getElementById("jobSettingsStatus").textContent = `X:${currentState.jobSettings.x} Y:${currentState.jobSettings.y} Z:${currentState.jobSettings.z}`;
-        }
-        if (currentState.machineSettings) {
-          const status = `X:${finalMachine.max_x} Y:${finalMachine.max_y} | Units: ${currentState.machineSettings.units} | Mist: ${currentState.machineSettings.mist ? "Yes" : "No"} | Cooling: ${currentState.machineSettings.cooling ? "Yes" : "No"}`;
-          document.getElementById("machineSettingsStatus").textContent = status;
-        }
-        
-        // Refresh tools list if loaded
-        if (currentState.tools && currentState.tools.length > 0) {
-          document.getElementById("toolsList").innerHTML = currentState.tools.map((tool, index) => 
-            `<div style="padding: 0.5rem; border-bottom: 1px solid #ddd; cursor: pointer;"><strong>Tool ${tool.number}:</strong> ${tool.name} | Dia: ${tool.diameter} | Feed: ${tool.feed_rate} | Plunge: ${tool.plunge_rate} | Depth/pass: ${tool.depth_pass}</div>`
-          ).join("");
-        }
-        
-        setStatus(`${file.name} loaded locally.`, false);
-      } catch (error) {
-        setStatus(error.message, true);
-      }
+      loadDrawing();
     });
 
     document.getElementById("generateBtn").addEventListener("click", async () => {
@@ -1628,8 +1803,7 @@
         
         document.getElementById("gcodeOutput").textContent = gcode;
         
-        // Save G-code and report both operations
-        await saveGcode(figUiAvailable);
+        await saveGcode();
       } catch (error) {
         setStatus(error.message, true);
       }
@@ -1836,8 +2010,7 @@
         setStatus("Machine settings saved.", false);
         setDrawing(drawing);
          
-        // Save machine.json after settings are updated
-        await saveMachineJson(figUiAvailable);
+        await saveMachineSettings();
          
         document.getElementById("machineSettingsDialog").close();
       } catch (error) {
@@ -1935,8 +2108,7 @@
 
         refreshToolsList();
          
-        // Save machine.json after tools are updated
-        await saveMachineJson(figUiAvailable);
+        await saveMachineSettings();
          
         document.getElementById("toolDialog").close();
       } catch (error) {
@@ -2015,16 +2187,14 @@
     // Initialize
     try {
       currentState.drawing = getDefaultDrawing();
+      updateDrawingTitle();
       renderPreview(currentState.drawing);
       refreshShapeList(currentState.drawing.shapes);
       refreshToolsList();
 
-      if (figUiAvailable) {
-        // Load previously saved settings from the FigUI plugin API on startup.
-        // Machine settings (machine config + tools) and drawing data (shapes + job settings)
-        // are stored under separate keys and loaded independently.
-        setStatus("Loading saved settings…", false);
-        try {
+      // Load previously saved settings from the FigUI plugin API on startup.
+      setStatus("Loading saved settings…", false);
+      try {
           logStartupDebug("FigUI host available, starting settings load");
           const settings = await getSettingsWithRetry();
           let loaded = false;
@@ -2086,23 +2256,17 @@
           logStartupDebug("Startup load complete", { loaded });
           const statusMessage = loaded ? "Settings loaded." : "Connected to FigUI plugin host.";
           setStatus(STARTUP_DEBUG ? `${statusMessage} Startup debug logged to console.` : statusMessage, false);
-        } catch (error) {
-          // No saved settings yet or load failed — start with defaults
-          console.error("Failed to read settings at startup:", error);
-          logStartupDebug("Startup load failed", { error: error?.message || String(error) });
-          setStatus(STARTUP_DEBUG ? "Connected to FigUI plugin host. Startup debug logged to console." : "Connected to FigUI plugin host.", false);
-        }
-      } else {
-        setStatus("Running in standalone browser mode.", false);
+      } catch (error) {
+        console.error("Failed to read settings at startup:", error);
+        logStartupDebug("Startup load failed", { error: error?.message || String(error) });
+        setStatus("Ready.", false);
       }
     } catch (error) {
       setStatus(error.message, true);
     }
   }
 
-  canUseFigUI().then((figUiAvailable) => {
-    wireEvents(figUiAvailable);
-  });
+  wireEvents();
 })();
   </script>
 </body>
