@@ -158,8 +158,8 @@ Tablet Layout
 ![Tablet](docs/screenshots/figUI-tablet.png)
 
 Mobile Layout
-![Mobile](docs/screenshots/figUI-mobile.png)
 
+<img src="docs/screenshots/figUI-mobile.png" alt="Mobile" width="280">
 ---
 
 ## Plugin API
