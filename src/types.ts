@@ -92,8 +92,28 @@ export interface ControllerSettings {
   maxTravelX?: number
   maxTravelY?: number
   maxTravelZ?: number
+  machineRangePositiveX?: boolean
+  machineRangePositiveY?: boolean
+  machineRangePositiveZ?: boolean
+  machineMinX?: number
+  machineMaxX?: number
+  machineMinY?: number
+  machineMaxY?: number
+  machineMinZ?: number
+  machineMaxZ?: number
   hasMist?: boolean
   hasFlood?: boolean
+}
+
+export interface FluidNCSetting {
+  F?: string  // 'nvs' | 'tree'
+  P: string
+  T: string
+  V: string
+  H: string
+  M?: string
+  S?: string
+  O?: Array<Record<string, number>>
 }
 
 export interface Macro {

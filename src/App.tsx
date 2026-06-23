@@ -5,6 +5,7 @@ import { useTerminalStore } from './store/terminal'
 import { connect, isSocketOpen, onLine, sendStartupQueries } from './lib/ws'
 import { setBase, getDeviceInfo, getDeviceInfoFast, loadMacroCfg } from './lib/http'
 import { parseESP800 } from './lib/parser'
+import { prefetchControllerConfigSettings } from './lib/controllerConfig'
 import { CURRENT_VERSION, GITHUB_REPO, DISMISSED_VERSION_KEY, semverGt } from './lib/updateCheck'
 import { startWatchdog, stopWatchdog } from './lib/jogWatchdog'
 import { Header } from './components/Header'
@@ -222,7 +223,11 @@ export function App() {
       }
       backoffMs.current = 0
       setStartupPending(true)
-      sendStartupQueries().finally(() => setStartupPending(false))
+      sendStartupQueries()
+        .finally(() => {
+          setStartupPending(false)
+          prefetchControllerConfigSettings()
+        })
     } else {
       setStartupPending(false)
       if (!reconnectTimer.current) {

@@ -11,6 +11,7 @@ import type {
   Units,
   LayoutMode,
   ControllerSettings,
+  FluidNCSetting,
 } from './types'
 
 export type Theme = 'light' | 'dark' | 'anthracite-dark' | 'midnight-dark'
@@ -73,6 +74,109 @@ function addPos(a: Position, b: Position): Position {
   }
 }
 
+function inferMachineRangePositive(mpos: number, maxTravel?: number): boolean | undefined {
+  if (!Number.isFinite(mpos) || maxTravel == null || !Number.isFinite(maxTravel) || maxTravel <= 0) {
+    return undefined
+  }
+  const tolerance = Math.min(5, Math.max(1, maxTravel * 0.01))
+  if (mpos > tolerance) return true
+  if (mpos < -tolerance) return false
+  return undefined
+}
+
+function inferMachineRangeFromPosition(mpos: number, maxTravel?: number) {
+  const rangePositive = inferMachineRangePositive(mpos, maxTravel)
+  if (rangePositive === undefined || maxTravel == null) return null
+  return rangePositive
+    ? { min: 0, max: maxTravel }
+    : { min: -maxTravel, max: 0 }
+}
+
+function normalizeSettingPath(path: string) {
+  return path.replace(/^\/+/, '').toLowerCase()
+}
+
+function getSettingNumber(settings: FluidNCSetting[], path: string): number | undefined {
+  const normalized = normalizeSettingPath(path)
+  const setting = settings.find(s => normalizeSettingPath(s.P) === normalized)
+  if (!setting) return undefined
+  const value = Number.parseFloat(setting.V)
+  return Number.isFinite(value) ? value : undefined
+}
+
+function getSettingBoolean(settings: FluidNCSetting[], path: string): boolean | undefined {
+  const normalized = normalizeSettingPath(path)
+  const setting = settings.find(s => normalizeSettingPath(s.P) === normalized)
+  if (!setting) return undefined
+  const value = setting.V.trim().toLowerCase()
+  if (value === 'true' || value === '1') return true
+  if (value === 'false' || value === '0') return false
+  return undefined
+}
+
+function hasFluidNCAxisRange(settings: FluidNCSetting[] | null, axis: 'x' | 'y' | 'z') {
+  if (!settings) return false
+  return getSettingNumber(settings, `axes/${axis}/max_travel_mm`) !== undefined
+    && getSettingNumber(settings, `axes/${axis}/homing/mpos_mm`) !== undefined
+    && getSettingBoolean(settings, `axes/${axis}/homing/positive_direction`) !== undefined
+}
+
+function getFluidNCAxisRange(settings: FluidNCSetting[], axis: 'x' | 'y' | 'z') {
+  const maxTravel = getSettingNumber(settings, `axes/${axis}/max_travel_mm`)
+  const homingMpos = getSettingNumber(settings, `axes/${axis}/homing/mpos_mm`)
+  const positiveDirection = getSettingBoolean(settings, `axes/${axis}/homing/positive_direction`)
+  if (
+    maxTravel == null ||
+    homingMpos == null ||
+    positiveDirection == null ||
+    !Number.isFinite(maxTravel) ||
+    maxTravel <= 0
+  ) {
+    return null
+  }
+  return positiveDirection
+    ? { min: homingMpos - maxTravel, max: homingMpos, maxTravel }
+    : { min: homingMpos, max: homingMpos + maxTravel, maxTravel }
+}
+
+function deriveControllerSettingsFromFluidNCSettings(settings: FluidNCSetting[]): Partial<ControllerSettings> {
+  const derived: Partial<ControllerSettings> = {}
+
+  const xRange = getFluidNCAxisRange(settings, 'x')
+  const yRange = getFluidNCAxisRange(settings, 'y')
+  const zRange = getFluidNCAxisRange(settings, 'z')
+
+  if (xRange) {
+    derived.maxTravelX = xRange.maxTravel
+    derived.machineMinX = xRange.min
+    derived.machineMaxX = xRange.max
+    derived.machineRangePositiveX = xRange.min >= 0
+  } else {
+    const maxTravelX = getSettingNumber(settings, 'axes/x/max_travel_mm')
+    if (maxTravelX !== undefined) derived.maxTravelX = maxTravelX
+  }
+  if (yRange) {
+    derived.maxTravelY = yRange.maxTravel
+    derived.machineMinY = yRange.min
+    derived.machineMaxY = yRange.max
+    derived.machineRangePositiveY = yRange.min >= 0
+  } else {
+    const maxTravelY = getSettingNumber(settings, 'axes/y/max_travel_mm')
+    if (maxTravelY !== undefined) derived.maxTravelY = maxTravelY
+  }
+  if (zRange) {
+    derived.maxTravelZ = zRange.maxTravel
+    derived.machineMinZ = zRange.min
+    derived.machineMaxZ = zRange.max
+    derived.machineRangePositiveZ = zRange.min >= 0
+  } else {
+    const maxTravelZ = getSettingNumber(settings, 'axes/z/max_travel_mm')
+    if (maxTravelZ !== undefined) derived.maxTravelZ = maxTravelZ
+  }
+
+  return derived
+}
+
 const DEFAULT_STATUS: MachineStatus = {
   state: 'Unknown',
   wpos: { x: 0, y: 0, z: 0 },
@@ -114,6 +218,10 @@ interface Store {
   status: MachineStatus
   espInfo: ESPInfo | null
   controllerSettings: ControllerSettings
+  controllerConfigSettings: FluidNCSetting[] | null
+  controllerConfigLoading: boolean
+  controllerConfigError: string | null
+  controllerConfigLoadedAt: number | null
   theme: Theme
   units: Units
   layoutMode: LayoutMode
@@ -136,6 +244,9 @@ interface Store {
   updateStatus: (s: Partial<MachineStatus>) => void
   setEspInfo: (info: ESPInfo) => void
   updateControllerSettings: (settings: Partial<ControllerSettings>) => void
+  setControllerConfigLoading: (v: boolean) => void
+  setControllerConfigError: (v: string | null) => void
+  setControllerConfigSettings: (settings: FluidNCSetting[]) => void
   setTheme: (theme: Theme) => void
   toggleTheme: () => void
   setUnits: (units: Units) => void
@@ -158,6 +269,10 @@ export const useMachineStore = create<Store>((set) => ({
   status: DEFAULT_STATUS,
   espInfo: null,
   controllerSettings: {},
+  controllerConfigSettings: null,
+  controllerConfigLoading: false,
+  controllerConfigError: null,
+  controllerConfigLoadedAt: null,
   theme: _initialTheme,
   units: localStorage.getItem('units') === 'in' ? 'in' : 'mm',
   layoutMode: ((): LayoutMode => {
@@ -197,7 +312,49 @@ export const useMachineStore = create<Store>((set) => ({
         countDefinedAxes(merged.mpos),
         countDefinedAxes(merged.wpos),
       )
-      return { status: merged, axes: detectedAxes }
+
+      const detectedSettings: Partial<ControllerSettings> = {}
+      const xRange = inferMachineRangeFromPosition(merged.mpos.x, state.controllerSettings.maxTravelX)
+      const yRange = inferMachineRangeFromPosition(merged.mpos.y, state.controllerSettings.maxTravelY)
+      const zRange = inferMachineRangeFromPosition(merged.mpos.z, state.controllerSettings.maxTravelZ)
+      if (
+        xRange &&
+        !hasFluidNCAxisRange(state.controllerConfigSettings, 'x') &&
+        (xRange.min !== state.controllerSettings.machineMinX || xRange.max !== state.controllerSettings.machineMaxX)
+      ) {
+        detectedSettings.machineMinX = xRange.min
+        detectedSettings.machineMaxX = xRange.max
+        detectedSettings.machineRangePositiveX = xRange.min >= 0
+      }
+      if (
+        yRange &&
+        !hasFluidNCAxisRange(state.controllerConfigSettings, 'y') &&
+        (yRange.min !== state.controllerSettings.machineMinY || yRange.max !== state.controllerSettings.machineMaxY)
+      ) {
+        detectedSettings.machineMinY = yRange.min
+        detectedSettings.machineMaxY = yRange.max
+        detectedSettings.machineRangePositiveY = yRange.min >= 0
+      }
+      if (
+        zRange &&
+        !hasFluidNCAxisRange(state.controllerConfigSettings, 'z') &&
+        (zRange.min !== state.controllerSettings.machineMinZ || zRange.max !== state.controllerSettings.machineMaxZ)
+      ) {
+        detectedSettings.machineMinZ = zRange.min
+        detectedSettings.machineMaxZ = zRange.max
+        detectedSettings.machineRangePositiveZ = zRange.min >= 0
+      }
+
+      return Object.keys(detectedSettings).length > 0
+        ? {
+            status: merged,
+            axes: detectedAxes,
+            controllerSettings: {
+              ...state.controllerSettings,
+              ...detectedSettings,
+            },
+          }
+        : { status: merged, axes: detectedAxes }
     }),
 
   setEspInfo: (espInfo) =>
@@ -208,6 +365,20 @@ export const useMachineStore = create<Store>((set) => ({
       controllerSettings: {
         ...state.controllerSettings,
         ...settings,
+      },
+    })),
+
+  setControllerConfigLoading: (controllerConfigLoading) => set({ controllerConfigLoading }),
+  setControllerConfigError: (controllerConfigError) => set({ controllerConfigError }),
+  setControllerConfigSettings: (controllerConfigSettings) =>
+    set(state => ({
+      controllerConfigSettings,
+      controllerConfigLoading: false,
+      controllerConfigError: null,
+      controllerConfigLoadedAt: Date.now(),
+      controllerSettings: {
+        ...state.controllerSettings,
+        ...deriveControllerSettingsFromFluidNCSettings(controllerConfigSettings),
       },
     })),
 

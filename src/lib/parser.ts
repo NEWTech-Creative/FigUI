@@ -1,4 +1,4 @@
-import type { ControllerSettings, GCodeModes, MachineStatus, MachineState, Position } from '../types'
+import type { ControllerSettings, FluidNCSetting, GCodeModes, MachineStatus, MachineState, Position } from '../types'
 
 export function parseStatusReport(raw: string): Partial<MachineStatus> | null {
   if (!raw.startsWith('<') || !raw.endsWith('>')) return null
@@ -66,6 +66,36 @@ export function parseESP800(raw: string): Record<string, string> {
     }
   })
   return result
+}
+
+export function parseESP400Settings(raw: string): FluidNCSetting[] {
+  if (!raw?.trim()) {
+    throw new Error('Device returned an empty response for [ESP400].')
+  }
+
+  let json: unknown
+  try {
+    json = JSON.parse(raw)
+  } catch {
+    const preview = raw.slice(0, 200) + (raw.length > 200 ? '...' : '')
+    throw new Error(`Could not parse settings response.\n\nReceived:\n${preview}`)
+  }
+
+  const j = json as Record<string, unknown>
+  const list: FluidNCSetting[] =
+    Array.isArray(json) ? (json as FluidNCSetting[]) :
+    j.EEPROM            ? (j.EEPROM as FluidNCSetting[]) :
+    j.data              ? [
+        ...((j.data as Record<string, FluidNCSetting[]>).nvs  ?? []),
+        ...((j.data as Record<string, FluidNCSetting[]>).tree ?? []),
+      ] :
+    []
+
+  if (list.length === 0) {
+    throw new Error(`Parsed OK but found no settings.\n\nResponse starts with:\n${raw.slice(0, 200)}`)
+  }
+
+  return list
 }
 
 const MODAL_GROUPS: Array<{ key: keyof GCodeModes; values: ReadonlySet<string> }> = [

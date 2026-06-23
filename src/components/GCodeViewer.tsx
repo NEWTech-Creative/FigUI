@@ -4,7 +4,7 @@ import { type GCodeModel, type Segment } from '../lib/gcode'
 import { useMachineStore } from '../store'
 import { useGCodeStore } from '../store/gcode'
 import { sendRaw, sendRealtime } from '../lib/ws'
-import type { Units } from '../types'
+import type { ControllerSettings, MachineStatus, Units } from '../types'
 import { displayToMm, mmToDisplay } from '../lib/units'
 import { formatRuntime, useJobRuntimeEstimate } from '../lib/jobRuntime'
 import { createRenderer, renderLines, setStaticLineData, type WebGLRenderer, type Camera, type Vector3 } from '../lib/webgl'
@@ -28,6 +28,13 @@ interface Transform {
   ox: number
   oy: number
   scale: number
+}
+
+interface BedEnvelope {
+  originX: number
+  originY: number
+  width: number
+  height: number
 }
 
 interface ToolpathProgress {
@@ -101,6 +108,33 @@ const ENTRY_MARKER_LINE = [0.13, 0.77, 0.37, 1.0] as const
 const ENTRY_MARKER_FILL = [0.13, 0.77, 0.37, 0.26] as const
 const EXIT_MARKER_LINE = [0.94, 0.27, 0.27, 1.0] as const
 const EXIT_MARKER_FILL = [0.94, 0.27, 0.27, 0.26] as const
+
+function getAxisEnvelopeOrigin(wco: number, maxTravel: number, homingDirInvert: number, bit: number) {
+  return -wco - ((homingDirInvert & bit) ? 0 : maxTravel)
+}
+
+function getAxisEnvelopeFromMachineRange(machineMin: number | undefined, machineMax: number | undefined, wco: number) {
+  if (machineMin == null || machineMax == null) return null
+  return {
+    origin: machineMin - wco,
+    size: machineMax - machineMin,
+  }
+}
+
+function getBedEnvelope(settings: ControllerSettings, status: MachineStatus): BedEnvelope | null {
+  const { maxTravelX, maxTravelY, homingDirInvert = 0 } = settings
+  if (maxTravelX == null || maxTravelY == null) return null
+
+  const xEnvelope = getAxisEnvelopeFromMachineRange(settings.machineMinX, settings.machineMaxX, status.wco.x)
+  const yEnvelope = getAxisEnvelopeFromMachineRange(settings.machineMinY, settings.machineMaxY, status.wco.y)
+
+  return {
+    originX: xEnvelope?.origin ?? getAxisEnvelopeOrigin(status.wco.x, maxTravelX, homingDirInvert, 1),
+    originY: yEnvelope?.origin ?? getAxisEnvelopeOrigin(status.wco.y, maxTravelY, homingDirInvert, 2),
+    width: xEnvelope?.size ?? maxTravelX,
+    height: yEnvelope?.size ?? maxTravelY,
+  }
+}
 
 interface StaticPathGeometry {
   model: GCodeModel
@@ -470,7 +504,6 @@ function getBoundsCorners(bounds: GCodeModel['bounds']) {
 
 function getClipBounds(modelBounds: GCodeModel['bounds'] | null) {
   const store = useMachineStore.getState()
-  const { maxTravelX, maxTravelY, homingDirInvert = 0 } = store.controllerSettings
 
   let minX = modelBounds ? modelBounds.minX : Infinity
   let minY = modelBounds ? modelBounds.minY : Infinity
@@ -479,17 +512,16 @@ function getClipBounds(modelBounds: GCodeModel['bounds'] | null) {
   let maxY = modelBounds ? modelBounds.maxY : -Infinity
   let maxZ = modelBounds ? modelBounds.maxZ : -Infinity
 
-  if (maxTravelX != null && maxTravelY != null) {
-    const bedOx = -store.status.wco.x - ((homingDirInvert & 1) ? 0 : maxTravelX)
-    const bedOy = -store.status.wco.y - ((homingDirInvert & 2) ? 0 : maxTravelY)
-    const bedMaxX = bedOx + maxTravelX
-    const bedMaxY = bedOy + maxTravelY
+  const bed = getBedEnvelope(store.controllerSettings, store.status)
+  if (bed) {
+    const bedMaxX = bed.originX + bed.width
+    const bedMaxY = bed.originY + bed.height
 
-    minX = Math.min(minX, bedOx, bedMaxX)
-    minY = Math.min(minY, bedOy, bedMaxY)
+    minX = Math.min(minX, bed.originX, bedMaxX)
+    minY = Math.min(minY, bed.originY, bedMaxY)
     minZ = Math.min(minZ, 0)
-    maxX = Math.max(maxX, bedOx, bedMaxX)
-    maxY = Math.max(maxY, bedOy, bedMaxY)
+    maxX = Math.max(maxX, bed.originX, bedMaxX)
+    maxY = Math.max(maxY, bed.originY, bedMaxY)
     maxZ = Math.max(maxZ, 0)
   }
 
@@ -1514,12 +1546,12 @@ export function GCodeViewer({ className, isTablet, showOverrides }: Props) {
         bMaxX = mdl.bounds.maxX
         bMaxY = mdl.bounds.maxY
       } else {
-        const hdi = machineStore.controllerSettings.homingDirInvert ?? 0
-        const wco = machineStore.status.wco
-        bMinX = -wco.x - ((hdi & 1) ? 0 : (bedW as number))
-        bMinY = -wco.y - ((hdi & 2) ? 0 : (bedH as number))
-        bMaxX = bMinX + (bedW as number)
-        bMaxY = bMinY + (bedH as number)
+        const bed = getBedEnvelope(machineStore.controllerSettings, machineStore.status)
+        if (!bed) return
+        bMinX = bed.originX
+        bMinY = bed.originY
+        bMaxX = bed.originX + bed.width
+        bMaxY = bed.originY + bed.height
       }
       const modelW = bMaxX - bMinX || 1
       const modelH = bMaxY - bMinY || 1
@@ -1556,7 +1588,7 @@ export function GCodeViewer({ className, isTablet, showOverrides }: Props) {
 
       const mdl = modelRef.current
       const store = useMachineStore.getState()
-      const { maxTravelX: btx, maxTravelY: bty, homingDirInvert: hdi3d = 0 } = store.controllerSettings
+      const { maxTravelX: btx, maxTravelY: bty } = store.controllerSettings
       const bedReady3d = btx != null && bty != null
 
       if (needsFitRef.current && w > 1 && h > 1 && (mdl || bedReady3d)) {
@@ -1573,10 +1605,8 @@ export function GCodeViewer({ className, isTablet, showOverrides }: Props) {
       const use3DProgressOverlay = mdl !== null && progress3d !== null && mdl.segments.length <= LARGE_PROGRESS_OVERLAY_SEGMENT_LIMIT
       const wpos3d = showToolRef.current ? store.status.wpos : null
       const markerGeometry = mdl ? ensureEntryExitMarkerGeometry(mdl) : { vertices: EMPTY_FLOAT32, colors: EMPTY_FLOAT32, triangleVertices: EMPTY_FLOAT32, triangleColors: EMPTY_FLOAT32 }
-      const wco3d = store.status.wco
-      const bedOx3d = -wco3d.x - ((hdi3d & 1) ? 0 : btx ?? 0)
-      const bedOy3d = -wco3d.y - ((hdi3d & 2) ? 0 : bty ?? 0)
-      const bedGeometry = bedReady3d ? buildBedLineGeometry(btx as number, bty as number, bedOx3d, bedOy3d) : null
+      const bed3d = getBedEnvelope(store.controllerSettings, store.status)
+      const bedGeometry = bed3d ? buildBedLineGeometry(bed3d.width, bed3d.height, bed3d.originX, bed3d.originY) : null
 
       if (!mdl) {
         if (!bedReady3d && !wpos3d) {
@@ -1664,13 +1694,8 @@ export function GCodeViewer({ className, isTablet, showOverrides }: Props) {
 
       const store2d = useMachineStore.getState()
       const bedSettings = store2d.controllerSettings
-      if (bedSettings.maxTravelX != null && bedSettings.maxTravelY != null) {
-        const wco2d = store2d.status.wco
-        const hdi2d = bedSettings.homingDirInvert ?? 0
-        const bedOx2d = -wco2d.x - ((hdi2d & 1) ? 0 : bedSettings.maxTravelX)
-        const bedOy2d = -wco2d.y - ((hdi2d & 2) ? 0 : bedSettings.maxTravelY)
-        drawBedBoundary(ctx, t, bedSettings.maxTravelX, bedSettings.maxTravelY, bedOx2d, bedOy2d)
-      }
+      const bed2d = getBedEnvelope(bedSettings, store2d.status)
+      if (bed2d) drawBedBoundary(ctx, t, bed2d.width, bed2d.height, bed2d.originX, bed2d.originY)
 
       const mdl = modelRef.current
       const store = useMachineStore.getState()
@@ -1740,7 +1765,17 @@ export function GCodeViewer({ className, isTablet, showOverrides }: Props) {
       needsFitRef.current = true
       scheduleRender()
     }
-  }, [controllerSettings.maxTravelX, controllerSettings.maxTravelY, controllerSettings.homingDirInvert, model, is3D])
+  }, [
+    controllerSettings.maxTravelX,
+    controllerSettings.maxTravelY,
+    controllerSettings.homingDirInvert,
+    controllerSettings.machineMinX,
+    controllerSettings.machineMaxX,
+    controllerSettings.machineMinY,
+    controllerSettings.machineMaxY,
+    model,
+    is3D,
+  ])
 
   useEffect(() => {
     if (isRunning && modelRef.current) {
@@ -1769,7 +1804,27 @@ export function GCodeViewer({ className, isTablet, showOverrides }: Props) {
       ensureToolVisible(status.wpos.x, status.wpos.y)
     }
     scheduleRender()
-  }, [model, showRapids, showTool, isRunning, autoFollow, status.wpos.x, status.wpos.y, status.wpos.z, units, is3D])
+  }, [
+    model,
+    showRapids,
+    showTool,
+    isRunning,
+    autoFollow,
+    status.wpos.x,
+    status.wpos.y,
+    status.wpos.z,
+    status.wco.x,
+    status.wco.y,
+    controllerSettings.maxTravelX,
+    controllerSettings.maxTravelY,
+    controllerSettings.homingDirInvert,
+    controllerSettings.machineMinX,
+    controllerSettings.machineMaxX,
+    controllerSettings.machineMinY,
+    controllerSettings.machineMaxY,
+    units,
+    is3D,
+  ])
 
   useLayoutEffect(() => {
     if (is3D) {
