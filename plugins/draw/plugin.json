@@ -1,7 +1,7 @@
 {
   "name": "Draw",
-  "description": "Create simple shapes and generate LinuxCNC G-code in FigUI.",
-  "version": "1.0.1",
+  "description": "Create simple shapes and generate G-code in FigUI.",
+  "version": "1.0.0",
   "entry": "index.html",
   "layout": "full",
   "icon": "draw.png",
