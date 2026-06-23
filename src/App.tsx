@@ -15,7 +15,7 @@ import { ProbePanel } from './components/ProbePanel'
 import { TabletAccordion } from './components/TabletAccordion'
 
 import { GCodeViewer } from './components/GCodeViewer'
-import { FileManager } from './components/FileManager'
+import { FileManager, prefetchInternalFiles } from './components/FileManager'
 import { Terminal } from './components/Terminal'
 import { Macros } from './components/Macros'
 import { SettingsPanel } from './components/SettingsPanel'
@@ -227,6 +227,7 @@ export function App() {
         .finally(() => {
           setStartupPending(false)
           prefetchControllerConfigSettings()
+          window.setTimeout(() => prefetchInternalFiles(), 1000)
         })
     } else {
       setStartupPending(false)

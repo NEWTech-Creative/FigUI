@@ -327,8 +327,31 @@ function FileRow({
 
 const _fmCache = new Map<Filesystem, { result: FileListResult; path: string }>()
 let _fmLastFs: Filesystem = 'sd'
+let _internalPrefetch: Promise<void> | null = null
+let _fmCacheVersion = 0
 
-export function invalidateFileCache() { _fmCache.clear() }
+export function invalidateFileCache() {
+  _fmCacheVersion++
+  _fmCache.clear()
+}
+
+export function prefetchInternalFiles() {
+  if (_fmCache.has('local')) return Promise.resolve()
+  if (_internalPrefetch) return _internalPrefetch
+
+  const cacheVersion = _fmCacheVersion
+  _internalPrefetch = listFiles('/', 'local')
+    .then(result => {
+      if (cacheVersion !== _fmCacheVersion) return
+      _fmCache.set('local', { result, path: '/' })
+    })
+    .catch(() => {})
+    .finally(() => {
+      _internalPrefetch = null
+    })
+
+  return _internalPrefetch
+}
 
 export function FileManager({ isTablet }: { isTablet?: boolean }) {
   const espInfo = useMachineStore(s => s.espInfo)
