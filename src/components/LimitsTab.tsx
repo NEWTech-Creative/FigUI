@@ -120,6 +120,19 @@ function parseSnapshotLine(line: string, columns: LimitColumns): Pick<
   return { positive, negative, probe, toolsetter }
 }
 
+function parseHeaderColumns(line: string): LimitColumns | null {
+  const payloadStart = line.indexOf(':') >= 0 ? line.indexOf(':') + 1 : 0
+  const payload = line.slice(payloadStart)
+  const pos = payload.indexOf('PosLimitPins')
+  const neg = payload.indexOf('NegLimitPins')
+  const probe = payload.indexOf('Probe', neg)
+  const toolsetter = payload.indexOf('Toolsetter', probe)
+  if (pos >= 0 && neg > pos && probe > neg && toolsetter > probe) {
+    return { pos, neg, probe, toolsetter }
+  }
+  return null
+}
+
 function parseAxesWithMotor(value: string): string[] {
   return [...new Set(value.match(/[a-z]/gi) ?? [])].sort((a, b) => {
     const axisDiff = axisSort(a.toLowerCase(), b.toLowerCase())
@@ -220,12 +233,9 @@ export function LimitsTab({ settings }: Props) {
       }
 
       if (line.includes('PosLimitPins') && line.includes('NegLimitPins')) {
-        const pos = line.indexOf('PosLimitPins')
-        const neg = line.indexOf('NegLimitPins')
-        const probe = line.indexOf('Probe', neg)
-        const toolsetter = line.indexOf('Toolsetter', probe)
-        if (pos >= 0 && neg > pos && probe > neg && toolsetter > probe) {
-          columnsRef.current = { pos, neg, probe, toolsetter }
+        const columns = parseHeaderColumns(line)
+        if (columns) {
+          columnsRef.current = columns
           markLive()
         }
         return

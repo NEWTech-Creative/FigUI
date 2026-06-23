@@ -5,6 +5,7 @@ import { useTerminalStore } from './store/terminal'
 import { connect, isSocketOpen, onLine, sendStartupQueries } from './lib/ws'
 import { setBase, getDeviceInfo, getDeviceInfoFast, loadMacroCfg } from './lib/http'
 import { parseESP800 } from './lib/parser'
+import { prefetchControllerConfigSettings } from './lib/controllerConfig'
 import { CURRENT_VERSION, GITHUB_REPO, DISMISSED_VERSION_KEY, semverGt } from './lib/updateCheck'
 import { startWatchdog, stopWatchdog } from './lib/jogWatchdog'
 import { Header } from './components/Header'
@@ -14,7 +15,7 @@ import { ProbePanel } from './components/ProbePanel'
 import { TabletAccordion } from './components/TabletAccordion'
 
 import { GCodeViewer } from './components/GCodeViewer'
-import { FileManager } from './components/FileManager'
+import { FileManager, prefetchInternalFiles } from './components/FileManager'
 import { Terminal } from './components/Terminal'
 import { Macros } from './components/Macros'
 import { SettingsPanel } from './components/SettingsPanel'
@@ -222,7 +223,12 @@ export function App() {
       }
       backoffMs.current = 0
       setStartupPending(true)
-      sendStartupQueries().finally(() => setStartupPending(false))
+      sendStartupQueries()
+        .finally(() => {
+          setStartupPending(false)
+          prefetchControllerConfigSettings()
+          window.setTimeout(() => prefetchInternalFiles(), 1000)
+        })
     } else {
       setStartupPending(false)
       if (!reconnectTimer.current) {

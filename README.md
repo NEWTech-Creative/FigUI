@@ -2,7 +2,7 @@
 
 A modern web-based interface built with React & Typescript for [FluidNC](https://github.com/bdring/FluidNC), the ESP32-based CNC controller firmware. FigUI is designed as a drop-in replacement for the legacy WebUIs, offering a more capable and responsive experience across desktop, tablet, and mobile devices.
 
-**[Try the live demo →](https://figamore.github.io/FigUI/)** — no hardware needed, runs a simulated machine in the browser.
+**[Try the live demo](https://figamore.github.io/FigUI/)** - no hardware needed, runs a simulated machine in the browser.
 
 ---
 
@@ -33,7 +33,7 @@ A modern web-based interface built with React & Typescript for [FluidNC](https:/
 
 FigUI connects to your FluidNC controller over WebSocket and HTTP, providing real-time machine control, job management, file operations, and configuration.
 
-![FigUI](docs/screenshots/FigUI.png)  
+![FigUI](docs/screenshots/figUI.png)
 
 ---
 
@@ -54,8 +54,8 @@ The DRO displays live axis positions in both work coordinates (WPos) and machine
 
 The jog pad offers two modes:
 
-- **Step jog** — A ring-based interface where each press moves the axis by a configured increment. Step sizes are selectable per axis.
-- **Continuous jog** — Hold to move; the machine jogs at the set feed rate for as long as the button is held.
+- **Step jog** - A ring-based interface where each press moves the axis by a configured increment. Step sizes are selectable per axis.
+- **Continuous jog** - Hold to move; the machine jogs at the set feed rate for as long as the button is held.
 
 Keyboard jogging is supported: arrow keys for X/Y, `+`/`-` for Z. Feed rates for XY, Z, and rotary axes are configured independently and saved to local storage between sessions.
 
@@ -113,7 +113,7 @@ Macros are custom one-click buttons that send a sequence of G-code or FluidNC co
 
 Macros are saved to controller storage so they persist across sessions and devices.
 
-![Macros](docs/screenshots/FigUI-macros.png)  
+![Macros](docs/screenshots/figUI-macros.png)
 
 
 ---
@@ -122,7 +122,7 @@ Macros are saved to controller storage so they persist across sessions and devic
 
 The settings panel allows full configuration of the FluidNC host over HTTP and is fully searchable. Device information (firmware version, hostname, IP address) is displayed alongside editable settings organized by category, including network, WiFi, axes, limits, and services.
 
-![Settings](docs/screenshots/FigUI-settings.png)  
+![Settings](docs/screenshots/figUI-settings.png)
 
 
 ---
@@ -139,12 +139,12 @@ Four built-in themes are available and can be switched at any time:
 
 <table>
   <tr>
-    <td align="center"><b>Light</b><br/><img src="docs/screenshots/themes/FigUI-light.png"/></td>
-    <td align="center"><b>Dark</b><br/><img src="docs/screenshots/themes/FigUI.png"/></td>
+    <td align="center"><b>Light</b><br/><img src="docs/screenshots/themes/figUI-light.png"/></td>
+    <td align="center"><b>Dark</b><br/><img src="docs/screenshots/themes/figUI.png"/></td>
   </tr>
   <tr>
-    <td align="center"><b>Anthracite Dark</b><br/><img src="docs/screenshots/themes/FigUI-anthracite.png"/></td>
-    <td align="center"><b>Midnight Dark</b><br/><img src="docs/screenshots/themes/FigUI-midnight.png"/></td>
+    <td align="center"><b>Anthracite Dark</b><br/><img src="docs/screenshots/themes/figUI-anthracite.png"/></td>
+    <td align="center"><b>Midnight Dark</b><br/><img src="docs/screenshots/themes/figUI-midnight.png"/></td>
   </tr>
 </table>
 
@@ -155,16 +155,16 @@ The selected theme persists to local storage.
 ### Responsive Layouts
 
 Tablet Layout
-![Tablet](docs/screenshots/FigUI-tablet.png) 
+![Tablet](docs/screenshots/figUI-tablet.png)
 
 Mobile Layout
-![Mobile](docs/screenshots/FigUI-mobile.png) 
 
+<img src="docs/screenshots/figUI-mobile.png" alt="Mobile" width="280">
 ---
 
 ## Plugin API
 
-FigUI supports custom plugins — self-contained HTML files that run inside sandboxed iframes with access to machine control, file I/O, and UI theme integration.
+FigUI supports custom plugins - self-contained HTML files that run inside sandboxed iframes with access to machine control, file I/O, and UI theme integration.
 
 **[Plugin Developer Guide →](plugins/PLUGIN_GUIDE.md)**
 
@@ -180,20 +180,6 @@ npm run build:esp32
 ```
 
 The `dist/` directory contains the static index.html.gz file you can upload to the internal filesystem of the ESP32. Simply refresh the page to show changes.
-
----
-
-## Tech Stack
-
-| Layer | Technology |
-|---|---|
-| Framework | React 18, TypeScript 5 |
-| Build | Vite 5 |
-| Styling | Tailwind CSS 3 |
-| State | Zustand 5 |
-| Icons | Lucide React |
-| Editor | CodeJar |
-| Rendering | WebGL (G-code viewer) |
 
 ---
 

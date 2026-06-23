@@ -176,9 +176,10 @@ export async function uploadFile(
 
 export function fetchFileContent(fullPath: string, fs: 'sd' | 'local' = 'sd'): Promise<string> {
   return serialize(async () => {
-    const url = fs === 'sd'
-      ? `${base}${fullPath}`
-      : `${base}${fullPath}`
+    const mountedPath = fs === 'sd' && !/^\/sd(?:\/|$)/.test(fullPath)
+      ? `/sd${fullPath.startsWith('/') ? '' : '/'}${fullPath}`
+      : fullPath
+    const url = `${base}${mountedPath}`
     const res = await fetch(url)
     if (!res.ok) throw new Error(`HTTP ${res.status}`)
     return res.text()

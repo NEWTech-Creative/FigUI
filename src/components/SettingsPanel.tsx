@@ -8,18 +8,11 @@ import type { LucideIcon } from 'lucide-react'
 import { sendCommand, fetchFileContent, saveFileContent, uploadFirmware, getDeviceInfoFast } from '../lib/http'
 import { useMachineStore } from '../store'
 import type { Theme } from '../store'
+import type { FluidNCSetting } from '../types'
+import { loadControllerConfigSettings } from '../lib/controllerConfig'
 import { LimitsTab } from './LimitsTab'
 
-interface Setting {
-  F?: string  // 'nvs' | 'tree'
-  P: string
-  T: string
-  V: string
-  H: string
-  M?: string
-  S?: string
-  O?: Array<Record<string, number>>
-}
+type Setting = FluidNCSetting
 
 const PREFIX_TO_CAT: Record<string, string> = {
   WiFi: 'wifi', Sta: 'wifi', AP: 'wifi', Hostname: 'wifi',
@@ -1209,8 +1202,10 @@ export function SettingsPanel({ onClose }: SettingsPanelProps) {
   const setLayoutMode = useMachineStore(s => s.setLayoutMode)
   const theme = useMachineStore(s => s.theme)
   const setTheme = useMachineStore(s => s.setTheme)
+  const cachedSettings = useMachineStore(s => s.controllerConfigSettings)
+  const cachedSettingsLoading = useMachineStore(s => s.controllerConfigLoading)
 
-  const [settings, setSettings]     = useState<Setting[]>([])
+  const [settings, setSettings]     = useState<Setting[]>(() => useMachineStore.getState().controllerConfigSettings ?? [])
   const [loading, setLoading]       = useState(false)
   const [error, setError]           = useState('')
   const [filter, setFilter]         = useState('')
@@ -1218,42 +1213,17 @@ export function SettingsPanel({ onClose }: SettingsPanelProps) {
   const [subKey, setSubKey]         = useState('')
   const [restarting, setRestarting] = useState(false)
 
-  async function load() {
+  async function load(force = false) {
+    if (!force && cachedSettings) {
+      setSettings(cachedSettings)
+      setError('')
+      return
+    }
+
     setLoading(true)
     setError('')
     try {
-      const raw = await sendCommand('[ESP400]')
-
-      if (!raw?.trim()) {
-        setError('Device returned an empty response for [ESP400].')
-        return
-      }
-
-      let json: unknown
-      try {
-        json = JSON.parse(raw)
-      } catch {
-        const preview = raw.slice(0, 200) + (raw.length > 200 ? '…' : '')
-        setError(`Could not parse settings response.\n\nReceived:\n${preview}`)
-        return
-      }
-
-      const j = json as Record<string, unknown>
-      const list: Setting[] =
-        Array.isArray(json) ? (json as Setting[]) :
-        j.EEPROM            ? (j.EEPROM as Setting[]) :
-        j.data              ? [
-            ...((j.data as Record<string, Setting[]>).nvs  ?? []),
-            ...((j.data as Record<string, Setting[]>).tree ?? []),
-          ] :
-        []
-
-      if (list.length === 0) {
-        setError(`Parsed OK but found no settings.\n\nResponse starts with:\n${raw.slice(0, 200)}`)
-        return
-      }
-
-      setSettings(list)
+      setSettings(await loadControllerConfigSettings(force))
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Failed to load settings')
     } finally {
@@ -1261,8 +1231,17 @@ export function SettingsPanel({ onClose }: SettingsPanelProps) {
     }
   }
 
-  useEffect(() => { load() }, [])
+  useEffect(() => {
+    if (settings.length === 0) load(false)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
 
+  useEffect(() => {
+    if (cachedSettings) {
+      setSettings(cachedSettings)
+      setError('')
+    }
+  }, [cachedSettings])
 
   useEffect(() => {
     if (category === 'machine' || category === 'config') {
@@ -1276,6 +1255,10 @@ export function SettingsPanel({ onClose }: SettingsPanelProps) {
   async function saveSetting(p: string, t: string, v: string) {
     // Always update runtime configuration first
     await sendCommand(`[ESP401]P=${p} T=${t} V=${v}`)
+
+    const updatedSettings = settings.map(s => s.P === p ? { ...s, V: v } : s)
+    setSettings(updatedSettings)
+    useMachineStore.getState().setControllerConfigSettings(updatedSettings)
 
     // For 'tree' settings (config.yaml sourced), also update the persistent config file
     const setting = settings.find(s => s.P === p)
@@ -1364,11 +1347,11 @@ export function SettingsPanel({ onClose }: SettingsPanelProps) {
           <button
             className="p-1.5 rounded hover:bg-elevated text-text-muted hover:text-text-primary
                        transition-colors disabled:opacity-40"
-            onClick={load}
-            disabled={loading || category === 'limits'}
+            onClick={() => load(true)}
+            disabled={loading || cachedSettingsLoading || category === 'limits'}
             title={category === 'limits' ? 'Unavailable while monitoring limits' : 'Reload settings'}
           >
-            <RefreshCw size={14} className={loading ? 'animate-spin' : ''} />
+            <RefreshCw size={14} className={loading || cachedSettingsLoading ? 'animate-spin' : ''} />
           </button>
           <button
             className="flex items-center gap-1.5 px-2.5 py-1.5 rounded text-sm font-medium
