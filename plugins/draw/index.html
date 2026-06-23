@@ -105,6 +105,55 @@
     .settings-label { font-weight: 600; display: block; margin-right: 0.5rem; margin-bottom: 0.25rem; font-size: 0.9rem; word-break: break-word; }
     .gcode-toggle { margin: 0.25rem 0; flex-shrink: 0; }
     .section-title { margin: 0.75rem 0 0.25rem; flex-shrink: 0; font-size: 0.95rem; }
+    .section-heading { display: flex; align-items: center; gap: 0.4rem; }
+    .section-heading .section-title { margin-bottom: 0.25rem; }
+    .help-trigger {
+      position: relative;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      width: 1.2rem;
+      height: 1.2rem;
+      border-radius: 999px;
+      border: 1px solid var(--control-border);
+      background: var(--control-bg);
+      color: var(--control-text);
+      font-size: 0.78rem;
+      font-weight: 700;
+      cursor: help;
+      flex-shrink: 0;
+      padding: 0;
+    }
+    .help-trigger:hover,
+    .help-trigger:focus-visible {
+      background: var(--control-hover);
+    }
+    .help-tooltip {
+      position: absolute;
+      left: calc(100% + 0.45rem);
+      top: 0;
+      width: min(18rem, 55vw);
+      padding: 0.55rem 0.65rem;
+      border-radius: 0.45rem;
+      border: 1px solid var(--panel-border);
+      background: var(--panel-bg);
+      color: var(--ui-text);
+      box-shadow: 0 0.5rem 1.2rem rgb(0 0 0 / 0.16);
+      font-size: 0.82rem;
+      font-weight: 400;
+      line-height: 1.35;
+      text-align: left;
+      opacity: 0;
+      visibility: hidden;
+      pointer-events: none;
+      transition: opacity 120ms ease, visibility 120ms ease;
+      z-index: 10;
+    }
+    .help-trigger:hover .help-tooltip,
+    .help-trigger:focus-visible .help-tooltip {
+      opacity: 1;
+      visibility: visible;
+    }
   </style>
 </head>
 <body>
@@ -121,13 +170,33 @@
   <div class="grid">
     <!-- Left column: Job Settings, Design elements, Machine Settings, Tools -->
     <div>
-      <h3 class="section-title">Job Settings</h3>
+      <div class="section-heading">
+        <h3 class="section-title">How to use Draw</h3>
+        <button type="button" class="help-trigger" aria-label="General help for Draw">
+          ?
+          <span class="help-tooltip">1. Start with Job Settings to define the work area and Z reference for the drawing. 2. Add one or more Design elements, then edit their size, position, cut mode, depth, and tool assignment. 3. Open Machine Settings to confirm travel limits, units, home position, and safe Z behavior. 4. Add the cutting tools you want to use. Each design element should reference a tool number that exists in the Tools list. 5. Review the Preview, then use Generate &amp; Save G-code when the layout and tool settings look correct.</span>
+        </button>
+      </div>
+
+      <div class="section-heading">
+        <h3 class="section-title">Job Settings</h3>
+        <button type="button" class="help-trigger" aria-label="Help for Job Settings">
+          ?
+          <span class="help-tooltip">Define the usable workpiece size for this drawing. These values drive the preview grid and give the operator a fixed area to design within.</span>
+        </button>
+      </div>
       <div class="settings-box">
         <span class="settings-label" id="jobSettingsStatus">Not configured</span>
         <button id="editJobSettingsBtn">Edit</button>
       </div>
 
-      <h3 class="section-title">Design elements</h3>
+      <div class="section-heading">
+        <h3 class="section-title">Design elements</h3>
+        <button type="button" class="help-trigger" aria-label="Help for Design elements">
+          ?
+          <span class="help-tooltip">Add the shapes that will be cut. Use Move up and Move down to control machining order, then edit the selected item to refine geometry, cut depth, and assigned tool.</span>
+        </button>
+      </div>
       <div id="shapeListContainer" class="shape-list" aria-label="Design elements"></div>
       <div class="element-controls">
         <button id="addShapeBtn">Add</button>
@@ -137,13 +206,25 @@
         <button id="deleteShapeBtn">Delete selected</button>
       </div>
 
-      <h3 class="section-title">Machine Settings</h3>
+      <div class="section-heading">
+        <h3 class="section-title">Machine Settings</h3>
+        <button type="button" class="help-trigger" aria-label="Help for Machine Settings">
+          ?
+          <span class="help-tooltip">Set machine travel limits and motion defaults. This is where the operator can review units, home offsets, safe clearance values, and coolant preferences before generating code.</span>
+        </button>
+      </div>
       <div class="settings-box">
         <span class="settings-label" id="machineSettingsStatus">Default</span>
         <button id="editMachineSettingsBtn">Edit</button>
       </div>
 
-      <h3 class="section-title">Tools</h3>
+      <div class="section-heading">
+        <h3 class="section-title">Tools</h3>
+        <button type="button" class="help-trigger" aria-label="Help for Tools">
+          ?
+          <span class="help-tooltip">Create the tool library for this drawing. Tool number, diameter, feed rate, plunge rate, and depth per pass are used during G-code generation, so keep these aligned with the physical cutter in the machine.</span>
+        </button>
+      </div>
       <div class="settings-box">
         <div id="toolsList"></div>
         <div class="element-controls">
@@ -158,6 +239,10 @@
     <div>
       <div class="preview-header">
         <h3 class="section-title preview-title">Preview <span class="label">Drawing:</span><span id="drawingTitle" class="drawing-name unsaved">New Drawing</span></h3>
+        <button type="button" class="help-trigger" aria-label="Help for Preview">
+          ?
+          <span class="help-tooltip">Use this panel to check scale, position, and cut order before generating code. The grid follows the job size, and mouse wheel zoom lets you inspect the drawing more closely.</span>
+        </button>
       </div>
       <svg id="preview" viewBox="0 0 300 200" role="img" aria-label="Drawing preview"></svg>
       <div class="gcode-toggle">
@@ -179,7 +264,6 @@
         <select id="shapeKind" required>
           <option value="box">box</option>
           <option value="circle">circle</option>
-          <option value="text">text</option>
         </select>
       </label>
       <label>
@@ -198,10 +282,6 @@
         Y
         <input id="shapeY" type="number" step="any" required />
       </label>
-      <label>
-        Depth
-        <input id="shapeDepth" type="number" step="any" min="0.000001" required />
-      </label>
       <label id="shapeWidthRow">
         Width
         <input id="shapeWidth" type="number" step="any" min="0.000001" />
@@ -214,13 +294,9 @@
         Radius
         <input id="shapeRadius" type="number" step="any" min="0.000001" />
       </label>
-      <label id="shapeValueRow" class="full">
-        Text
-        <input id="shapeValue" type="text" />
-      </label>
-      <label id="shapeSizeRow">
-        Text size
-        <input id="shapeSize" type="number" step="any" min="0.000001" />
+      <label>
+        Depth
+        <input id="shapeDepth" type="number" step="any" min="0.000001" required />
       </label>
       <label>
         Tool number
@@ -1589,36 +1665,27 @@
     const widthRow = document.getElementById("shapeWidthRow");
     const heightRow = document.getElementById("shapeHeightRow");
     const radiusRow = document.getElementById("shapeRadiusRow");
-    const valueRow = document.getElementById("shapeValueRow");
-    const sizeRow = document.getElementById("shapeSizeRow");
 
     const widthInput = document.getElementById("shapeWidth");
     const heightInput = document.getElementById("shapeHeight");
     const radiusInput = document.getElementById("shapeRadius");
-    const valueInput = document.getElementById("shapeValue");
-    const sizeInput = document.getElementById("shapeSize");
 
     const isBox = kind === "box";
     const isCircle = kind === "circle";
-    const isText = kind === "text";
 
     widthRow.hidden = !isBox;
     heightRow.hidden = !isBox;
     radiusRow.hidden = !isCircle;
-    valueRow.hidden = !isText;
-    sizeRow.hidden = !isText;
 
     widthInput.required = isBox;
     heightInput.required = isBox;
     radiusInput.required = isCircle;
-    valueInput.required = isText;
-    sizeInput.required = isText;
   }
 
   function openShapeDialog(mode, shape, index) {
     document.getElementById("shapeDialogTitle").textContent = mode === "edit" ? "Edit shape" : "Add shape";
     document.getElementById("shapeEditIndex").value = index == null ? "" : String(index);
-    document.getElementById("shapeKind").value = shape?.kind || "box";
+    document.getElementById("shapeKind").value = shape?.kind === "circle" ? "circle" : "box";
     document.getElementById("shapeMode").value = shape?.mode || "outside";
     document.getElementById("shapeX").value = shape?.x ?? 0;
     document.getElementById("shapeY").value = shape?.y ?? 0;
@@ -1626,8 +1693,6 @@
     document.getElementById("shapeWidth").value = shape?.width ?? "";
     document.getElementById("shapeHeight").value = shape?.height ?? "";
     document.getElementById("shapeRadius").value = shape?.radius ?? "";
-    document.getElementById("shapeValue").value = shape?.value ?? "";
-    document.getElementById("shapeSize").value = shape?.size ?? 10;
     document.getElementById("shapeTool").value = shape?.tool ?? 1;
 
     updateShapeFieldVisibility();
@@ -1648,14 +1713,15 @@
     if (kind === "box") {
       shape.width = Number(document.getElementById("shapeWidth").value);
       shape.height = Number(document.getElementById("shapeHeight").value);
-    } else if (kind === "circle") {
-      shape.radius = Number(document.getElementById("shapeRadius").value);
-    } else {
-      shape.value = document.getElementById("shapeValue").value;
-      shape.size = Number(document.getElementById("shapeSize").value);
+      return shape;
     }
 
-    return shape;
+    if (kind === "circle") {
+      shape.radius = Number(document.getElementById("shapeRadius").value);
+      return shape;
+    }
+
+    throw new Error(`Unsupported shape kind: ${kind}`);
   }
 
   function openAddToolDialog() {
