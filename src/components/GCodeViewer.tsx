@@ -1,5 +1,5 @@
 import { useRef, useEffect, useLayoutEffect, useState, useCallback } from 'react'
-import { Eye, Axis3D, Maximize2, Crosshair, Navigation, Play, Pause, Square, CloudDrizzle, Waves, PowerOff, Box, Zap, Orbit, Hand } from 'lucide-react'
+import { Eye, Axis3D, Maximize2, Crosshair, Navigation, Play, Pause, Square, CloudDrizzle, Waves, PowerOff, Box, Zap, Orbit, Hand, ListStart, RotateCcw } from 'lucide-react'
 import { type GCodeModel, type Segment } from '../lib/gcode'
 import { useMachineStore } from '../store'
 import { useGCodeStore } from '../store/gcode'
@@ -9,6 +9,7 @@ import { displayToMm, mmToDisplay } from '../lib/units'
 import { formatRuntime, useJobRuntimeEstimate } from '../lib/jobRuntime'
 import { createRenderer, renderLines, setStaticLineData, type WebGLRenderer, type Camera, type Vector3 } from '../lib/webgl'
 import { addSegmentToPath, clamp01, getArcGeometry, normalizeAngle } from '../lib/gcodeBuild'
+import { RestartFromLineDialog } from './RestartFromLineDialog'
 
 const RAPID_COLOR     = 'rgba(110,140,220,0.65)'
 const TRAVERSE_COLOR  = 'rgba(90,185,90,0.6)'
@@ -1004,6 +1005,8 @@ export function GCodeViewer({ className, isTablet, showOverrides }: Props) {
   const model = useGCodeStore(s => s.model)
   const fileName = useGCodeStore(s => s.fileName)
   const loadedPath = useGCodeStore(s => s.loadedPath)
+  const sourceText = useGCodeStore(s => s.sourceText)
+  const restartSource = useGCodeStore(s => s.restartSource)
   const loading = useGCodeStore(s => s.loading)
   const pendingPath = useGCodeStore(s => s.pendingPath)
   const downloadProgress = useGCodeStore(s => s.downloadProgress)
@@ -1016,6 +1019,7 @@ export function GCodeViewer({ className, isTablet, showOverrides }: Props) {
   const setShowRapids = useGCodeStore(s => s.setShowRapids)
   const storePaths2D = useGCodeStore(s => s.paths2D)
   const storeGeometry3D = useGCodeStore(s => s.geometry3D)
+  const loadFile = useGCodeStore(s => s.loadFile)
   const modelRef = useRef<GCodeModel | null>(null)
   const staticPathGeometryRef = useRef<StaticPathGeometry | null>(null)
   const static2DPathsRef = useRef<Static2DPaths | null>(null)
@@ -1512,6 +1516,10 @@ export function GCodeViewer({ className, isTablet, showOverrides }: Props) {
   const is3DToggleDisabled = pendingPath !== null || isProcessing2D || (!!model && !is3DReady)
   const [autoFollow, setAutoFollow] = useState(true)
   const [coolantState, setCoolantState] = useState<'off' | 'mist' | 'flood'>('off')
+  const [showRestartFromLine, setShowRestartFromLine] = useState(false)
+  const safeMachineZ = controllerSettings.machineMaxZ == null
+    ? null
+    : controllerSettings.machineMaxZ - Math.min(1, Math.max(0.1, (controllerSettings.maxTravelZ ?? 100) * 0.005))
 
   // Keep refs in sync so render() (called from non-React contexts) reads current values
   showRapidsRef.current = showRapids
@@ -2117,6 +2125,11 @@ export function GCodeViewer({ className, isTablet, showOverrides }: Props) {
           ) : (
             <span className="text-text-dim text-sm whitespace-nowrap">No file loaded</span>
           )}
+          {restartSource && (
+            <span className="px-1.5 py-0.5 rounded text-xs font-semibold text-accent bg-accent/10 border border-accent/25 shrink-0" title={`Prepared from ${restartSource.fileName}, requested line ${restartSource.requestedLine}`}>
+              Restart L{restartSource.resumeLine}
+            </span>
+          )}
           {isLargeProgressOverlayDisabled && (
             <span
               className="px-1.5 py-0.5 rounded text-sm text-text-dim bg-elevated shrink-0"
@@ -2495,6 +2508,28 @@ export function GCodeViewer({ className, isTablet, showOverrides }: Props) {
         </>}
 
         <div className={`flex gap-1.5 ${(controllerSettings.hasMist || controllerSettings.hasFlood) ? 'sm:flex-[3]' : 'sm:ml-auto'}`}>
+          {!isJobRunning && !isJobHeld && restartSource && (
+            <button
+              className={`btn btn-ghost gap-1.5 justify-center ${isTablet ? 'text-xl py-3' : 'text-sm'}`}
+              onClick={() => loadFile(restartSource.path)}
+              disabled={isViewerStartBlocked}
+              title={`Return to ${restartSource.fileName}`}
+            >
+              <RotateCcw size={isTablet ? 18 : 14} />
+              Original
+            </button>
+          )}
+          {!isJobRunning && !isJobHeld && !restartSource && (
+            <button
+              className={`btn btn-ghost gap-1.5 justify-center ${isTablet ? 'text-xl py-3' : 'text-sm'}`}
+              onClick={() => setShowRestartFromLine(true)}
+              disabled={!loadedPath || !sourceText || isViewerStartBlocked}
+              title="Prepare a reviewable SD-card program that restarts from a file line"
+            >
+              <ListStart size={isTablet ? 18 : 14} />
+              From line
+            </button>
+          )}
           {!isJobRunning && !isJobHeld && (
             <button
               className={`btn btn-ok-solid gap-2 justify-center font-bold ${isTablet ? 'text-xl py-3' : 'text-base'} flex-1`}
@@ -2529,9 +2564,16 @@ export function GCodeViewer({ className, isTablet, showOverrides }: Props) {
         {isTablet && (
           <div className="flex items-center gap-2 min-w-0 pt-1 border-t border-border">
             {fileName ? (
-              <span className="text-text-primary font-mono normal-case tracking-normal font-normal truncate text-base">
-                {fileName}
-              </span>
+              <>
+                <span className="text-text-primary font-mono normal-case tracking-normal font-normal truncate text-base">
+                  {fileName}
+                </span>
+                {restartSource && (
+                  <span className="px-1.5 py-0.5 rounded text-sm font-semibold text-accent bg-accent/10 border border-accent/25 shrink-0">
+                    Restart L{restartSource.resumeLine}
+                  </span>
+                )}
+              </>
             ) : (
               <span className="text-text-dim text-base">No file loaded</span>
             )}
@@ -2554,6 +2596,15 @@ export function GCodeViewer({ className, isTablet, showOverrides }: Props) {
           </div>
         )}
       </div>
+      {showRestartFromLine && sourceText && loadedPath && fileName && (
+        <RestartFromLineDialog
+          sourceText={sourceText}
+          sourcePath={loadedPath}
+          sourceName={fileName}
+          defaultSafeMachineZMm={safeMachineZ}
+          onClose={() => setShowRestartFromLine(false)}
+        />
+      )}
     </div>
   )
 }

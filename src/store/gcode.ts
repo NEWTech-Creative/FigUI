@@ -19,6 +19,13 @@ interface GCodeStore {
   // Identity
   loadedPath: string | null
   fileName: string | null
+  sourceText: string | null
+  restartSource: {
+    path: string
+    fileName: string
+    requestedLine: number
+    resumeLine: number
+  } | null
 
   // Built data (shared across all GCodeViewer instances — one parse, one build)
   model: GCodeModel | null
@@ -40,7 +47,12 @@ interface GCodeStore {
 
   // Actions
   loadFile: (path: string) => Promise<void>
-  loadFromText: (text: string, name: string) => Promise<void>
+  loadFromText: (
+    text: string,
+    name: string,
+    path?: string | null,
+    restartSource?: GCodeStore['restartSource'],
+  ) => Promise<void>
   cancelAndStartJob: (path: string) => void
   setShowRapids: (v: boolean) => void
   clear: () => void
@@ -73,6 +85,8 @@ function abortInFlight() {
 export const useGCodeStore = create<GCodeStore>((set, get) => ({
   loadedPath: null,
   fileName: null,
+  sourceText: null,
+  restartSource: null,
   model: null,
   paths2D: null,
   geometry3D: null,
@@ -174,6 +188,8 @@ export const useGCodeStore = create<GCodeStore>((set, get) => ({
         paths2D: built2DPaths,
         fileName,
         loadedPath: path,
+        sourceText: text,
+        restartSource: null,
         processing2DProgress: 100,
         isProcessing2D: false,
         loading: false,
@@ -223,7 +239,7 @@ export const useGCodeStore = create<GCodeStore>((set, get) => ({
     }
   },
 
-  loadFromText: async (text: string, name: string) => {
+  loadFromText: async (text: string, name: string, path = null, restartSource = null) => {
     if (isLoadBlockedByMachineState()) return
     abortInFlight()
     const requestId = ++loadRequestId
@@ -262,7 +278,9 @@ export const useGCodeStore = create<GCodeStore>((set, get) => ({
         model: parsed,
         paths2D: built2DPaths,
         fileName: name,
-        loadedPath: null,
+        loadedPath: path,
+        sourceText: text,
+        restartSource,
         processing2DProgress: 100,
         isProcessing2D: false,
         loading: false,
@@ -316,6 +334,8 @@ export const useGCodeStore = create<GCodeStore>((set, get) => ({
       // re-fetch it. The user explicitly chose to skip the preview.
       loadedPath: path,
       fileName: path.split('/').pop() ?? path,
+      sourceText: null,
+      restartSource: null,
       // Drop any partial built data — they're stale now.
       model: null,
       paths2D: null,
@@ -363,6 +383,8 @@ export const useGCodeStore = create<GCodeStore>((set, get) => ({
     set({
       loadedPath: null,
       fileName: null,
+      sourceText: null,
+      restartSource: null,
       model: null,
       paths2D: null,
       geometry3D: null,
