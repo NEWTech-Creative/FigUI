@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
-import { ChevronDown, CircleDot, Crosshair, Pause, Play, Target } from 'lucide-react'
+import { ChevronDown, CircleDot, Crosshair, Pause, Play, Square, Target } from 'lucide-react'
 import {
   onLine,
   onSoftReset,
@@ -174,8 +174,9 @@ function ProbeGraphic({
     const fill = state === 'completed'
       ? 'rgb(var(--ok-rgb) / .16)'
       : state === 'active' ? 'rgb(var(--accent-rgb) / .14)' : 'var(--surface)'
-    return <g className={state === 'active' && !held ? 'animate-pulse' : undefined}>
-      {state === 'active' && <circle cx={x} cy={y} r="10" fill="none" stroke="var(--accent)" strokeWidth="1" opacity=".35" />}
+    return <g>
+      {state === 'active' && !held && <circle className="probe-step-pulse" cx={x} cy={y} r="9.5" fill="none" stroke="var(--accent)" strokeWidth="1.4" />}
+      {state === 'active' && held && <circle cx={x} cy={y} r="9.5" fill="none" stroke="var(--warn)" strokeWidth="1" opacity=".45" />}
       <circle cx={x} cy={y} r="7.5" fill={fill} stroke={color} strokeWidth={state === 'active' ? 2 : 1.4} />
       <text x={x} y={y + 3.5} textAnchor="middle" fill={color} fontSize="10" fontWeight="800">{value}</text>
     </g>
@@ -519,6 +520,12 @@ export function ProbePanel({ isTablet }: { isTablet?: boolean }) {
     armTimeout()
   }
 
+  function abortProbe() {
+    if (!runningRef.current) return
+    if (!confirm('Abort probing and reset the controller? Machine position may be lost.')) return
+    sendRealtime(0x18)
+  }
+
   const selectedCycle = CYCLES.find(c => c.id === selected)!
   const usesDiameter = selected !== 'z-surface'
 
@@ -578,7 +585,7 @@ export function ProbePanel({ isTablet }: { isTablet?: boolean }) {
         </div>
 
         <div className={`flex items-center gap-3 rounded-md border px-3 py-2 ${running ? 'border-warn/40 bg-warn/5 text-warn' : 'border-border bg-elevated/20 text-text-muted'}`}>
-          {running ? <CircleDot className="animate-pulse shrink-0" size={18} /> : <Crosshair className="shrink-0" size={18} />}
+          {running ? <CircleDot className="shrink-0" size={18} /> : <Crosshair className="shrink-0" size={18} />}
           <span className={`${isTablet ? 'text-lg' : 'text-sm'} flex-1`}>{message}</span>
         </div>
 
@@ -586,15 +593,21 @@ export function ProbePanel({ isTablet }: { isTablet?: boolean }) {
           <button className={`btn flex-1 justify-center font-semibold gap-2 ${isTablet ? 'h-16 text-xl' : 'h-11 text-base'} ${canProbe && !running ? 'btn-warn' : 'btn-ghost'}`}
             onClick={runProbe} disabled={!canProbe || !!running}>
             <Target size={isTablet ? 22 : 17} />
-            {running ? 'Cycle active' : canProbe ? `Run ${selectedCycle.label}` : connected ? 'Machine not Idle' : 'Controller offline'}
+            {running ? probeHeld ? 'Cycle held' : 'Cycle active' : canProbe ? `Run ${selectedCycle.label}` : connected ? 'Machine not Idle' : 'Controller offline'}
           </button>
-          {running && <button
-            className={`btn ${probeHeld ? 'btn-ok' : 'btn-danger'} justify-center gap-2 ${isTablet ? 'h-16 px-6 text-xl' : 'h-11 px-4'}`}
-            onClick={probeHeld ? resumeProbe : holdProbe}>
-            {probeHeld
-              ? <><Play size={isTablet ? 22 : 17} /> Resume</>
-              : <><Pause size={isTablet ? 22 : 17} /> Feed hold</>}
+          {running && !probeHeld && <button
+            className={`btn btn-danger justify-center gap-2 ${isTablet ? 'h-16 px-6 text-xl' : 'h-11 px-4'}`}
+            onClick={holdProbe}>
+            <Pause size={isTablet ? 22 : 17} /> Feed hold
           </button>}
+          {running && probeHeld && <>
+            <button className={`btn btn-ok justify-center gap-2 ${isTablet ? 'h-16 px-6 text-xl' : 'h-11 px-4'}`} onClick={resumeProbe}>
+              <Play size={isTablet ? 22 : 17} /> Resume
+            </button>
+            <button className={`btn btn-danger justify-center gap-2 ${isTablet ? 'h-16 px-6 text-xl' : 'h-11 px-4'}`} onClick={abortProbe}>
+              <Square className="fill-current" size={isTablet ? 20 : 15} /> Abort
+            </button>
+          </>}
         </div>
       </div>}
     </div>

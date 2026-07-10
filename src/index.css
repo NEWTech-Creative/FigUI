@@ -713,4 +713,17 @@ button, a, [role="button"], label, input, select, textarea {
 }
 .animate-in { animation: modal-in 150ms ease-out; }
 
+@keyframes probe-step-pulse {
+  0%   { opacity: 0.75; transform: scale(0.82); }
+  70%  { opacity: 0; transform: scale(1.35); }
+  100% { opacity: 0; transform: scale(1.35); }
+}
+
+.probe-step-pulse {
+  transform-box: fill-box;
+  transform-origin: center;
+  animation: probe-step-pulse 1.35s ease-out infinite;
+  pointer-events: none;
+}
+
 } /* end @layer components */
