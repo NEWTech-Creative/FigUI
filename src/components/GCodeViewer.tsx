@@ -3,7 +3,7 @@ import { Eye, Axis3D, Maximize2, Crosshair, Navigation, Play, Pause, Square, Clo
 import { type GCodeModel, type Segment } from '../lib/gcode'
 import { useMachineStore } from '../store'
 import { useGCodeStore } from '../store/gcode'
-import { sendRaw, sendRealtime } from '../lib/ws'
+import { sendRaw, sendRealtime, STATUS_POLL_INTERVAL_MS } from '../lib/ws'
 import type { ControllerSettings, MachineStatus, Units } from '../types'
 import { displayToMm, mmToDisplay } from '../lib/units'
 import { formatRuntime, useJobRuntimeEstimate } from '../lib/jobRuntime'
@@ -40,6 +40,7 @@ interface BedEnvelope {
 interface ToolpathProgress {
   segmentIndex: number
   fraction: number
+  misses?: number
 }
 
 interface OrbitState {
@@ -90,6 +91,10 @@ const INITIAL_LOCK_TOLERANCE_MM = 0.25
 const FOLLOW_TOLERANCE_MM = 0.2
 const ENDPOINT_TOLERANCE_MM = 0.2
 const SEGMENT_LOOKAHEAD = 12
+const LOOKAHEAD_DISTANCE_FLOOR_MM = 30
+const LOOKAHEAD_FEED_MARGIN = 3
+const LOOKAHEAD_MAX_SEGMENTS = 4000
+const REACQUIRE_MISS_THRESHOLD = 2
 const LARGE_PROGRESS_OVERLAY_SEGMENT_LIMIT = 100_000
 const EMPTY_FLOAT32 = new Float32Array(0)
 const WHEEL_ZOOM_SENSITIVITY = 0.0012
@@ -713,11 +718,34 @@ function findNearbyProgress(
   return best ? { segmentIndex: best.segmentIndex, fraction: best.fraction } : null
 }
 
+function segmentXYLength(seg: Segment) {
+  if (seg.i !== undefined) {
+    const arc = getArcGeometry(seg)
+    return arc.sweep * arc.r
+  }
+  return Math.hypot(seg.x1 - seg.x0, seg.y1 - seg.y0)
+}
+
+function buildCumulativeXYLengths(segments: Segment[]) {
+  const cumulative = new Float64Array(segments.length + 1)
+  for (let i = 0; i < segments.length; i++) {
+    cumulative[i + 1] = cumulative[i] + segmentXYLength(segments[i])
+  }
+  return cumulative
+}
+
+function getLookaheadDistanceMm(feedMmPerMin: number) {
+  const pollSeconds = STATUS_POLL_INTERVAL_MS / 1000
+  return Math.max(LOOKAHEAD_DISTANCE_FLOOR_MM, (feedMmPerMin / 60) * pollSeconds * LOOKAHEAD_FEED_MARGIN)
+}
+
 function findToolpathProgress(
   segments: Segment[],
+  cumulativeXYLengths: Float64Array,
   px: number,
   py: number,
   previous: ToolpathProgress | null,
+  lookaheadDistanceMm: number,
 ): ToolpathProgress | null {
   if (segments.length === 0) return null
 
@@ -734,24 +762,65 @@ function findToolpathProgress(
     )
   }
 
-  const candidate = findNearbyProgress(
+  const startIndex = previous.segmentIndex
+  const maxEndIndex = Math.min(startIndex + LOOKAHEAD_MAX_SEGMENTS, segments.length - 1)
+  const nearEndIndex = Math.min(startIndex + SEGMENT_LOOKAHEAD, segments.length - 1)
+
+  const near = findNearbyProgress(
     segments,
     px,
     py,
-    previous.segmentIndex,
-    previous.segmentIndex + SEGMENT_LOOKAHEAD,
+    startIndex,
+    nearEndIndex,
     FOLLOW_TOLERANCE_MM ** 2,
     previous,
     true,
   )
-  if (candidate) return candidate
+  if (near) return { ...near, misses: 0 }
 
-  const current = segments[previous.segmentIndex]
-  if (pointDistanceSq(px, py, current.x1, current.y1) <= ENDPOINT_TOLERANCE_MM ** 2) {
-    return { segmentIndex: previous.segmentIndex, fraction: 1 }
+  const distanceLimit = cumulativeXYLengths[startIndex] + lookaheadDistanceMm
+  let farEndIndex = nearEndIndex
+  while (farEndIndex < maxEndIndex && cumulativeXYLengths[farEndIndex + 1] < distanceLimit) farEndIndex++
+
+  if (farEndIndex > nearEndIndex) {
+    const far = findNearbyProgress(
+      segments,
+      px,
+      py,
+      nearEndIndex + 1,
+      farEndIndex,
+      FOLLOW_TOLERANCE_MM ** 2,
+      previous,
+      false,
+    )
+    if (far) return { ...far, misses: 0 }
   }
 
-  return previous
+  const current = segments[startIndex]
+  if (pointDistanceSq(px, py, current.x1, current.y1) <= ENDPOINT_TOLERANCE_MM ** 2) {
+    return { segmentIndex: startIndex, fraction: 1, misses: 0 }
+  }
+
+  const misses = (previous.misses ?? 0) + 1
+  if (misses >= REACQUIRE_MISS_THRESHOLD) {
+    const reacquireLimit = cumulativeXYLengths[startIndex] + lookaheadDistanceMm * (misses + 1)
+    let reacquireEndIndex = farEndIndex
+    while (reacquireEndIndex < maxEndIndex && cumulativeXYLengths[reacquireEndIndex + 1] < reacquireLimit) reacquireEndIndex++
+
+    const reacquired = findNearbyProgress(
+      segments,
+      px,
+      py,
+      startIndex,
+      reacquireEndIndex,
+      INITIAL_LOCK_TOLERANCE_MM ** 2,
+      previous,
+      false,
+    )
+    if (reacquired) return { ...reacquired, misses: 0 }
+  }
+
+  return { ...previous, misses }
 }
 
 function drawGrid(ctx: CanvasRenderingContext2D, w: number, h: number, t: Transform, units: Units) {
@@ -951,6 +1020,7 @@ export function GCodeViewer({ className, isTablet, showOverrides }: Props) {
   const staticPathGeometryRef = useRef<StaticPathGeometry | null>(null)
   const static2DPathsRef = useRef<Static2DPaths | null>(null)
   const markerGeometryRef = useRef<MarkerGeometry | null>(null)
+  const pathXYLengthsRef = useRef<{ model: GCodeModel; cumulative: Float64Array } | null>(null)
   const [showTool, setShowTool] = useState(true)
   const showRapidsRef = useRef(true)
   const showToolRef = useRef(true)
@@ -1384,6 +1454,15 @@ export function GCodeViewer({ className, isTablet, showOverrides }: Props) {
     }
   }
 
+  function ensureCumulativeXYLengths(mdl: GCodeModel) {
+    const cached = pathXYLengthsRef.current
+    if (cached && cached.model === mdl) return cached.cumulative
+
+    const built = { model: mdl, cumulative: buildCumulativeXYLengths(mdl.segments) }
+    pathXYLengthsRef.current = built
+    return built.cumulative
+  }
+
   function ensureEntryExitMarkerGeometry(mdl: GCodeModel) {
     const cached = markerGeometryRef.current
     if (cached && cached.model === mdl) return cached
@@ -1453,6 +1532,7 @@ export function GCodeViewer({ className, isTablet, showOverrides }: Props) {
         }
       : null
     markerGeometryRef.current = null
+    pathXYLengthsRef.current = null
     progressRef.current = null
     if (model && model !== prevModelRef.current) {
       needsFitRef.current = true
@@ -1789,9 +1869,11 @@ export function GCodeViewer({ className, isTablet, showOverrides }: Props) {
       } else {
         progressRef.current = findToolpathProgress(
           modelRef.current.segments,
+          ensureCumulativeXYLengths(modelRef.current),
           status.wpos.x,
           status.wpos.y,
           progressRef.current,
+          getLookaheadDistanceMm(status.feed),
         )
       }
     } else {
