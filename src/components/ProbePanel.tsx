@@ -1,6 +1,12 @@
 import { useEffect, useRef, useState } from 'react'
 import { ChevronDown, CircleDot, Crosshair, OctagonX, Target } from 'lucide-react'
-import { onLine, sendRaw, sendRealtime } from '../lib/ws'
+import {
+  onLine,
+  resumeBackgroundTraffic,
+  sendRaw,
+  sendRealtime,
+  suspendBackgroundTraffic,
+} from '../lib/ws'
 import { useMachineStore } from '../store'
 import { displayToMm, feedUnitLabel, linearUnitLabel, mmToDisplay } from '../lib/units'
 
@@ -11,6 +17,18 @@ type CycleId = 'z-surface' | 'x-negative' | 'x-positive' | 'y-negative' | 'y-pos
 
 interface ProbePoint { x: number; y: number; z: number }
 interface RunningCycle { id: CycleId; phase: string; first?: number }
+
+const PROBE_ALARM_MESSAGES: Record<number, string> = {
+  1: 'Hard limit triggered',
+  2: 'Soft limit exceeded',
+  3: 'Cycle aborted',
+  4: 'Probe fail — initial state',
+  5: 'Probe fail — no contact',
+  13: 'Hard stop',
+  14: 'Machine is unhomed',
+  17: 'G-code command error',
+  18: 'Probe hard limit',
+}
 
 const CYCLES: Array<{ id: CycleId; label: string; short: string; group: 'edge' | 'center' }> = [
   { id: 'z-surface', label: 'Z surface', short: 'Z−', group: 'edge' },
@@ -47,6 +65,24 @@ function parseProbePoint(line: string): ProbePoint | null {
   const match = line.match(/^\[PRB:([+-]?[\d.]+),([+-]?[\d.]+),([+-]?[\d.]+):1\]$/i)
   if (!match) return null
   return { x: Number(match[1]), y: Number(match[2]), z: Number(match[3]) }
+}
+
+function alarmMessageFromLine(line: string): string | null {
+  const activeAlarm = line.match(/^Active alarm:\s*(\d+)\s*(?:\(([^)]+)\))?/i)
+  if (activeAlarm) {
+    const code = Number(activeAlarm[1])
+    return activeAlarm[2]?.trim() || PROBE_ALARM_MESSAGES[code] || `Controller alarm ${code}`
+  }
+
+  const alarmCode = line.match(/^ALARM:(\d+)$/i)
+    || line.match(/^<Alarm(?::(\d+))?(?:[|>])/i)
+  if (alarmCode) {
+    const code = Number(alarmCode[1])
+    return PROBE_ALARM_MESSAGES[code] || (Number.isFinite(code) ? `Controller alarm ${code}` : 'Controller alarm')
+  }
+
+  const namedAlarm = line.match(/\[MSG:(?:INFO|ERR):\s*ALARM:\s*(.+?)\]/i)
+  return namedAlarm?.[1]?.trim() || null
 }
 
 function axisValue(point: ProbePoint, axis: Axis) {
@@ -219,6 +255,7 @@ export function ProbePanel({ isTablet }: { isTablet?: boolean }) {
   const [running, setRunning] = useState<RunningCycle | null>(null)
   const runningRef = useRef<RunningCycle | null>(null)
   const timeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const backgroundPausedRef = useRef(false)
   const [message, setMessage] = useState('Select a cycle and position the probe near the target surface.')
   const [probeFeed, setProbeFeed] = usePersisted('probe.feed', 100)
   const [maxTravel, setMaxTravel] = usePersisted('probe.travel', 50)
@@ -235,9 +272,22 @@ export function ProbePanel({ isTablet }: { isTablet?: boolean }) {
     setRunning(next)
   }
 
+  function pauseBackgroundTraffic() {
+    if (backgroundPausedRef.current) return
+    backgroundPausedRef.current = true
+    suspendBackgroundTraffic()
+  }
+
+  function restoreBackgroundTraffic() {
+    if (!backgroundPausedRef.current) return
+    backgroundPausedRef.current = false
+    resumeBackgroundTraffic()
+  }
+
   function armTimeout() {
     if (timeoutRef.current) clearTimeout(timeoutRef.current)
     timeoutRef.current = setTimeout(() => {
+      restoreBackgroundTraffic()
       updateRun(null)
       setMessage('No probe contact report received. Check the probe and controller state.')
     }, 90_000)
@@ -251,6 +301,7 @@ export function ProbePanel({ isTablet }: { isTablet?: boolean }) {
   function finish(messageText: string) {
     if (timeoutRef.current) clearTimeout(timeoutRef.current)
     timeoutRef.current = null
+    restoreBackgroundTraffic()
     updateRun(null)
     setMessage(messageText)
   }
@@ -272,9 +323,23 @@ export function ProbePanel({ isTablet }: { isTablet?: boolean }) {
   }
 
   useEffect(() => onLine(line => {
-    const point = parseProbePoint(line)
     const active = runningRef.current
-    if (!point || !active) return
+    if (!active) return
+
+    const alarmMessage = alarmMessageFromLine(line)
+    if (alarmMessage) {
+      finish(`Probe cycle stopped — ${alarmMessage}.`)
+      return
+    }
+
+    const commandError = line.match(/^error:(\d+)$/i)
+    if (commandError) {
+      finish(`Probe command rejected by the controller (error ${commandError[1]}).`)
+      return
+    }
+
+    const point = parseProbePoint(line)
+    if (!point) return
     const radius = probeDiameter / 2
 
     if (active.id === 'z-surface') {
@@ -313,10 +378,34 @@ export function ProbePanel({ isTablet }: { isTablet?: boolean }) {
     finishAxisCenter(axis, active.first!, second, bothAxes && axis === 'X')
   }), [maxTravel, plateThick, probeDiameter, probeFeed, retract])
 
-  useEffect(() => () => { if (timeoutRef.current) clearTimeout(timeoutRef.current) }, [])
+  useEffect(() => {
+    if (!runningRef.current || status.state !== 'Alarm') return
+    const alarmMessage = status.alarmName
+      || (status.alarmCode != null ? PROBE_ALARM_MESSAGES[status.alarmCode] : undefined)
+      || 'Controller alarm'
+    finish(`Probe cycle stopped — ${alarmMessage}.`)
+  }, [status.state, status.alarmCode, status.alarmName])
+
+  useEffect(() => {
+    if (connected || !runningRef.current) return
+    if (timeoutRef.current) clearTimeout(timeoutRef.current)
+    timeoutRef.current = null
+    restoreBackgroundTraffic()
+    updateRun(null)
+    setMessage('Probe cycle interrupted because the controller disconnected.')
+  }, [connected])
+
+  useEffect(() => () => {
+    if (timeoutRef.current) clearTimeout(timeoutRef.current)
+    if (backgroundPausedRef.current) {
+      backgroundPausedRef.current = false
+      resumeBackgroundTraffic()
+    }
+  }, [])
 
   function runProbe() {
     if (!canProbe || running || probeFeed <= 0 || maxTravel <= 0 || retract <= 0) return
+    pauseBackgroundTraffic()
     const edge = selected.match(/^([xy])-(negative|positive)$/)
     if (selected === 'z-surface') {
       updateRun({ id: selected, phase: 'z-negative' })
@@ -339,6 +428,8 @@ export function ProbePanel({ isTablet }: { isTablet?: boolean }) {
   function holdProbe() {
     sendRealtime(0x21)
     if (timeoutRef.current) clearTimeout(timeoutRef.current)
+    timeoutRef.current = null
+    restoreBackgroundTraffic()
     updateRun(null)
     setMessage('Feed hold requested. Resume or reset the controller before starting another cycle.')
   }

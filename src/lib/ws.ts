@@ -329,6 +329,7 @@ function stopGcStatePoll() {
 }
 
 function startLivenessWatchdog() {
+  if (backgroundTrafficSuspensions > 0) return
   stopLivenessWatchdog()
   livenessTimer = setInterval(() => {
     if (!socket) return
@@ -430,6 +431,7 @@ function handleLine(line: string) {
   const alarmMatch = line.match(/^Active alarm:\s*(\d+)\s*\(([^)]+)\)/)
   if (alarmMatch) {
     useMachineStore.getState().updateStatus({
+      state: 'Alarm',
       alarmCode: parseInt(alarmMatch[1], 10),
       alarmName: alarmMatch[2],
     })
@@ -440,7 +442,10 @@ function handleLine(line: string) {
 
   const alarmCodeMatch = line.match(/^ALARM:(\d+)$/)
   if (alarmCodeMatch) {
-    useMachineStore.getState().updateStatus({ alarmCode: parseInt(alarmCodeMatch[1], 10) })
+    useMachineStore.getState().updateStatus({
+      state: 'Alarm',
+      alarmCode: parseInt(alarmCodeMatch[1], 10),
+    })
     if (isSilentLine) return
     lineHandlers.forEach(fn => fn(line))
     return
@@ -448,7 +453,10 @@ function handleLine(line: string) {
 
   const msgAlarmMatch = line.match(/\[MSG:INFO:\s*ALARM:\s*(.+?)\]/)
   if (msgAlarmMatch) {
-    useMachineStore.getState().updateStatus({ alarmName: msgAlarmMatch[1].trim() })
+    useMachineStore.getState().updateStatus({
+      state: 'Alarm',
+      alarmName: msgAlarmMatch[1].trim(),
+    })
     if (isSilentLine) return
     lineHandlers.forEach(fn => fn(line))
     return
@@ -496,14 +504,19 @@ export function suspendBackgroundTraffic() {
   stopPing()
   stopStatusPoll()
   stopGcStatePoll()
+  stopLivenessWatchdog()
 }
 
 export function resumeBackgroundTraffic() {
   backgroundTrafficSuspensions = Math.max(0, backgroundTrafficSuspensions - 1)
   if (backgroundTrafficSuspensions > 0 || socket?.readyState !== WebSocket.OPEN) return
+  // A long controller-side operation may legitimately have produced no
+  // websocket traffic. Start its liveness window again from this point.
+  connectionHealth.lastResponseTime = Date.now()
   startPing()
   startStatusPoll()
   startGcStatePoll()
+  startLivenessWatchdog()
 }
 
 
