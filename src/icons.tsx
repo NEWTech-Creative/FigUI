@@ -91,7 +91,6 @@ export const Minimize = /*#__PURE__*/createIcon('minimize', [["path",{"d":"M8 3v
 export const Monitor = /*#__PURE__*/createIcon('monitor', [["rect",{"width":"20","height":"14","x":"2","y":"3","rx":"2"}],["line",{"x1":"8","x2":"16","y1":"21","y2":"21"}],["line",{"x1":"12","x2":"12","y1":"17","y2":"21"}]])
 export const Moon = /*#__PURE__*/createIcon('moon', [["path",{"d":"M12 3a6 6 0 0 0 9 9 9 9 0 1 1-9-9Z"}]])
 export const Navigation = /*#__PURE__*/createIcon('navigation', [["polygon",{"points":"3 11 22 2 13 21 11 13 3 11"}]])
-export const OctagonX = /*#__PURE__*/createIcon('octagon-x', [["path",{"d":"m15 9-6 6"}],["path",{"d":"M2.586 16.726A2 2 0 0 1 2 15.312V8.688a2 2 0 0 1 .586-1.414l4.688-4.688A2 2 0 0 1 8.688 2h6.624a2 2 0 0 1 1.414.586l4.688 4.688A2 2 0 0 1 22 8.688v6.624a2 2 0 0 1-.586 1.414l-4.688 4.688a2 2 0 0 1-1.414.586H8.688a2 2 0 0 1-1.414-.586z"}],["path",{"d":"m9 9 6 6"}]])
 export const Orbit = /*#__PURE__*/createIcon('orbit', [["circle",{"cx":"12","cy":"12","r":"3"}],["circle",{"cx":"19","cy":"5","r":"2"}],["circle",{"cx":"5","cy":"19","r":"2"}],["path",{"d":"M10.4 21.9a10 10 0 0 0 9.941-15.416"}],["path",{"d":"M13.5 2.1a10 10 0 0 0-9.841 15.416"}]])
 export const PanelBottom = /*#__PURE__*/createIcon('panel-bottom', [["rect",{"width":"18","height":"18","x":"3","y":"3","rx":"2"}],["path",{"d":"M3 15h18"}]])
 export const PanelRight = /*#__PURE__*/createIcon('panel-right', [["rect",{"width":"18","height":"18","x":"3","y":"3","rx":"2"}],["path",{"d":"M15 3v18"}]])

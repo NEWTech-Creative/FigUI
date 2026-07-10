@@ -141,12 +141,19 @@ function queueCommand(command: QueuedCommand) {
 
 type LineHandler = (line: string) => void
 const lineHandlers = new Set<LineHandler>()
+type SoftResetHandler = () => void
+const softResetHandlers = new Set<SoftResetHandler>()
 
 export const getPageId = () => pageId
 
 export function onLine(fn: LineHandler): () => void {
   lineHandlers.add(fn)
   return () => { lineHandlers.delete(fn) }
+}
+
+export function onSoftReset(fn: SoftResetHandler): () => void {
+  softResetHandlers.add(fn)
+  return () => { softResetHandlers.delete(fn) }
 }
 
 const PING_INTERVAL_MS = 5000
@@ -546,7 +553,13 @@ export async function sendStartupQueries() {
 }
 
 export function sendRealtime(byte: number) {
-  queueCommand({ command: byte.toString(), isRealtime: true, priority: 'normal', timestamp: Date.now() })
+  queueCommand({
+    command: byte.toString(),
+    isRealtime: true,
+    priority: byte === 0x18 ? 'emergency' : 'normal',
+    timestamp: Date.now(),
+  })
+  if (byte === 0x18) softResetHandlers.forEach(handler => handler())
   return socket?.readyState === WebSocket.OPEN
 }
 

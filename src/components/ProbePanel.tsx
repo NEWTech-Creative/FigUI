@@ -1,7 +1,8 @@
 import { useEffect, useRef, useState } from 'react'
-import { ChevronDown, CircleDot, Crosshair, OctagonX, Target } from 'lucide-react'
+import { ChevronDown, CircleDot, Crosshair, Pause, Play, Target } from 'lucide-react'
 import {
   onLine,
+  onSoftReset,
   resumeBackgroundTraffic,
   sendRaw,
   sendRealtime,
@@ -17,6 +18,7 @@ type CycleId = 'z-surface' | 'x-negative' | 'x-positive' | 'y-negative' | 'y-pos
 
 interface ProbePoint { x: number; y: number; z: number }
 interface RunningCycle { id: CycleId; phase: string; first?: number }
+type ProbeStepState = 'idle' | 'pending' | 'active' | 'completed'
 
 const PROBE_ALARM_MESSAGES: Record<number, string> = {
   1: 'Hard limit triggered',
@@ -41,6 +43,18 @@ const CYCLES: Array<{ id: CycleId; label: string; short: string; group: 'edge' |
   { id: 'bore-center', label: 'Bore center', short: '○ ⊕', group: 'center' },
   { id: 'rectangle-center', label: 'Rectangle center', short: '▭ ⊕', group: 'center' },
 ]
+
+const CYCLE_INSTRUCTIONS: Record<CycleId, string> = {
+  'z-surface': 'Position the probe above the touch plate or work surface, then verify the plate thickness.',
+  'x-negative': 'Position the probe on the X+ side of the target face with a clear path for X− travel.',
+  'x-positive': 'Position the probe on the X− side of the target face with a clear path for X+ travel.',
+  'y-negative': 'Position the probe on the Y+ side of the target face with a clear path for Y− travel.',
+  'y-positive': 'Position the probe on the Y− side of the target face with a clear path for Y+ travel.',
+  'x-center': 'Start between the opposing X faces near center, with both faces within the configured travel.',
+  'y-center': 'Start between the opposing Y faces near center, with both faces within the configured travel.',
+  'bore-center': 'Start inside the bore near center. The cycle touches X−/X+, centers X, then touches Y−/Y+ and sets X0 Y0.',
+  'rectangle-center': 'Start inside the feature near center. The cycle touches X−/X+, centers X, then touches Y−/Y+ and sets X0 Y0.',
+}
 
 function usePersisted<T>(key: string, init: T): [T, (v: T) => void] {
   const [val, setVal] = useState<T>(() => {
@@ -93,7 +107,17 @@ function moveWord(axis: Axis, side: Side, distance: number) {
   return `${axis}${side === 'negative' ? '-' : ''}${number(distance)}`
 }
 
-function ProbeGraphic({ cycle }: { cycle: CycleId }) {
+function ProbeGraphic({
+  cycle,
+  running,
+  held,
+  cycleCompleted,
+}: {
+  cycle: CycleId
+  running?: RunningCycle | null
+  held?: boolean
+  cycleCompleted?: boolean
+}) {
   const isZ = cycle === 'z-surface'
   const isBore = cycle === 'bore-center'
   const isRectangle = cycle === 'rectangle-center'
@@ -108,6 +132,26 @@ function ProbeGraphic({ cycle }: { cycle: CycleId }) {
   const edgeProbeY = horizontal ? 60 : (side === 'negative' ? 78 : 42)
   const id = cycle.replace(/-/g, '')
 
+  function activeCenterStep() {
+    if (!running || running.id !== cycle) return null
+    const bothAxes = cycle === 'bore-center' || cycle === 'rectangle-center'
+    if (running.phase === 'x-negative') return 1
+    if (running.phase === 'x-positive') return 2
+    if (running.phase === 'y-negative') return bothAxes ? 3 : 1
+    if (running.phase === 'y-positive') return bothAxes ? 4 : 2
+    return null
+  }
+
+  const currentStep = activeCenterStep()
+
+  function stepState(step: number): ProbeStepState {
+    if (cycleCompleted) return 'completed'
+    if (currentStep == null) return 'idle'
+    if (step < currentStep) return 'completed'
+    if (step === currentStep) return 'active'
+    return 'pending'
+  }
+
   const TopProbe = ({ x = 60, y = 60 }: { x?: number; y?: number }) => <g>
     <circle cx={x} cy={y} r="10" fill={`url(#probeMetal${id})`} stroke="var(--text-muted)" strokeWidth="1.2" />
     <circle cx={x} cy={y} r="6.5" fill="var(--surface)" stroke="var(--border-strong)" />
@@ -119,13 +163,23 @@ function ProbeGraphic({ cycle }: { cycle: CycleId }) {
   const Datum = ({ x, y, label }: { x: number; y: number; label: string }) => <g>
     <circle cx={x} cy={y} r="3.7" fill="var(--surface)" stroke="var(--ok)" strokeWidth="1.6" />
     <circle cx={x} cy={y} r="1.4" fill="var(--ok)" />
-    <text x={x + 5} y={y - 4} fill="var(--ok)" fontSize="6.5" fontWeight="700">{label}</text>
+    <text x={x + 5} y={y - 5} fill="var(--ok)" fontSize="8" fontWeight="700">{label}</text>
   </g>
 
-  const SequenceBadge = ({ x, y, value }: { x: number; y: number; value: number }) => <g>
-    <circle cx={x} cy={y} r="6" fill="var(--surface)" stroke="var(--accent)" strokeWidth="1.2" />
-    <text x={x} y={y + 2.5} textAnchor="middle" fill="var(--accent)" fontSize="7.5" fontWeight="800">{value}</text>
-  </g>
+  const SequenceBadge = ({ x, y, value }: { x: number; y: number; value: number }) => {
+    const state = stepState(value)
+    const color = state === 'completed'
+      ? 'var(--ok)'
+      : state === 'pending' ? 'var(--text-dim)' : 'var(--accent)'
+    const fill = state === 'completed'
+      ? 'rgb(var(--ok-rgb) / .16)'
+      : state === 'active' ? 'rgb(var(--accent-rgb) / .14)' : 'var(--surface)'
+    return <g className={state === 'active' && !held ? 'animate-pulse' : undefined}>
+      {state === 'active' && <circle cx={x} cy={y} r="10" fill="none" stroke="var(--accent)" strokeWidth="1" opacity=".35" />}
+      <circle cx={x} cy={y} r="7.5" fill={fill} stroke={color} strokeWidth={state === 'active' ? 2 : 1.4} />
+      <text x={x} y={y + 3.5} textAnchor="middle" fill={color} fontSize="10" fontWeight="800">{value}</text>
+    </g>
+  }
 
   return (
     <svg viewBox="0 0 120 120" className="w-full h-full" role="img" aria-label={`${cycle} probing diagram`}>
@@ -163,8 +217,8 @@ function ProbeGraphic({ cycle }: { cycle: CycleId }) {
       {axis && !centerAxis && <>
         <path d="M12 108 H31" stroke="#ef4444" strokeWidth="1.2" markerEnd={`url(#axis-x-${id})`} />
         <path d="M12 108 V89" stroke="#22c55e" strokeWidth="1.2" markerEnd={`url(#axis-y-${id})`} />
-        <text x="34" y="110" fill="var(--text-dim)" fontSize="6.5">X+</text>
-        <text x="6" y="85" fill="var(--text-dim)" fontSize="6.5">Y+</text>
+        <text x="35" y="111" fill="var(--text-dim)" fontSize="8">X+</text>
+        <text x="4" y="84" fill="var(--text-dim)" fontSize="8">Y+</text>
       </>}
       {isZ ? <>
         <path d="M13 84 H107 V104 H13Z" fill={`url(#probeHatch${id})`} stroke="var(--border-strong)" />
@@ -172,39 +226,39 @@ function ProbeGraphic({ cycle }: { cycle: CycleId }) {
         <path d="M20 84 L27 77 H100 L93 84Z" fill="rgb(var(--accent-rgb) / .14)" stroke="var(--accent)" strokeWidth="1" />
         <TopProbe x={60} y={35} />
         <path d="M60 45 V81" stroke="var(--accent)" strokeWidth="2.5" strokeDasharray="5 3" markerEnd={`url(#probe-arrow-${cycle})`} />
-        <text x="66" y="62" fill="var(--accent)" fontSize="8" fontWeight="800">Z−</text>
+        <text x="67" y="62" fill="var(--accent)" fontSize="9" fontWeight="800">Z−</text>
         <Datum x={60} y={84} label="Z0" />
         <path d="M101 77 V84 M97 77 H105 M97 84 H105" stroke="var(--text-muted)" strokeWidth=".9" />
-        <text x="84" y="73" fill="var(--text-muted)" fontSize="6.5" fontWeight="700">PLATE</text>
+        <text x="82" y="73" fill="var(--text-muted)" fontSize="8" fontWeight="700">PLATE</text>
       </> : isBore || isRectangle ? <>
         {isBore ? <>
-          <circle cx="60" cy="57" r="46" fill={`url(#probeHatch${id})`} stroke="var(--border-strong)" />
-          <circle cx="60" cy="57" r="35" fill="var(--surface)" stroke="var(--text-muted)" strokeWidth="1.2" />
+          <circle cx="60" cy="60" r="46" fill={`url(#probeHatch${id})`} stroke="var(--border-strong)" />
+          <circle cx="60" cy="60" r="35" fill="var(--surface)" stroke="var(--text-muted)" strokeWidth="1.2" />
         </> : <>
-          <rect x="10" y="13" width="100" height="88" rx="4" fill={`url(#probeHatch${id})`} stroke="var(--border-strong)" />
-          <rect x="22" y="24" width="76" height="66" rx="3" fill="var(--surface)" stroke="var(--text-muted)" strokeWidth="1.2" />
+          <rect x="10" y="10" width="100" height="100" rx="4" fill={`url(#probeHatch${id})`} stroke="var(--border-strong)" />
+          <rect x="22" y="22" width="76" height="76" rx="3" fill="var(--surface)" stroke="var(--text-muted)" strokeWidth="1.2" />
         </>}
-        <path d="M27 57 H49 M93 57 H71 M60 24 V46 M60 90 V68" stroke="var(--accent)" strokeWidth="2" strokeDasharray="3 2" />
-        <path d="M49 57 L44 54 V60Z M71 57 L76 54 V60Z M60 46 L57 41 H63Z M60 68 L57 73 H63Z" fill="var(--accent)" />
-        <circle cx="60" cy="57" r="15" fill="rgb(var(--accent-rgb) / .07)" stroke="var(--accent)" strokeDasharray="2 2" />
-        <TopProbe x={60} y={57} />
-        <path d="M48 57 H72 M60 45 V69" stroke="var(--ok)" strokeWidth=".8" />
-        <SequenceBadge x={20} y={57} value={1} />
-        <SequenceBadge x={100} y={57} value={2} />
-        <SequenceBadge x={60} y={17} value={3} />
-        <SequenceBadge x={60} y={97} value={4} />
+        <path d="M27 60 H49 M93 60 H71 M60 27 V49 M60 93 V71" stroke="var(--accent)" strokeWidth="2" strokeDasharray="3 2" />
+        <path d="M49 60 L44 57 V63Z M71 60 L76 57 V63Z M60 49 L57 44 H63Z M60 71 L57 76 H63Z" fill="var(--accent)" />
+        <circle cx="60" cy="60" r="15" fill="rgb(var(--accent-rgb) / .07)" stroke="var(--accent)" strokeDasharray="2 2" />
+        <TopProbe x={60} y={60} />
+        <path d="M48 60 H72 M60 48 V72" stroke="var(--ok)" strokeWidth=".8" />
+        <SequenceBadge x={18} y={60} value={1} />
+        <SequenceBadge x={102} y={60} value={2} />
+        <SequenceBadge x={60} y={18} value={4} />
+        <SequenceBadge x={60} y={102} value={3} />
       </> : centerAxis ? <>
-        <rect x="10" y="13" width="100" height="88" rx="4" fill={`url(#probeHatch${id})`} stroke="var(--border-strong)" />
-        <rect x="22" y="24" width="76" height="66" rx="3" fill="var(--surface)" stroke="var(--text-muted)" strokeWidth="1.2" />
+        <rect x="10" y="10" width="100" height="100" rx="4" fill={`url(#probeHatch${id})`} stroke="var(--border-strong)" />
+        <rect x="22" y="22" width="76" height="76" rx="3" fill="var(--surface)" stroke="var(--text-muted)" strokeWidth="1.2" />
         {centerAxis === 'X'
-          ? <><path d="M27 57 H49 M93 57 H71" stroke="var(--accent)" strokeWidth="2" strokeDasharray="3 2" />
-            <path d="M49 57 L44 54 V60Z M71 57 L76 54 V60Z" fill="var(--accent)" /></>
-          : <><path d="M60 28 V46 M60 86 V68" stroke="var(--accent)" strokeWidth="2" strokeDasharray="3 2" />
-            <path d="M60 46 L57 41 H63Z M60 68 L57 73 H63Z" fill="var(--accent)" /></>}
-        <TopProbe x={60} y={57} />
-        <path d={centerAxis === 'X' ? 'M44 57 H76 M60 49 V65' : 'M52 57 H68 M60 40 V74'} stroke="var(--ok)" strokeWidth=".8" />
-        <SequenceBadge x={centerAxis === 'X' ? 29 : 72} y={centerAxis === 'X' ? 46 : 30} value={1} />
-        <SequenceBadge x={centerAxis === 'X' ? 91 : 72} y={centerAxis === 'X' ? 46 : 84} value={2} />
+          ? <><path d="M27 60 H49 M93 60 H71" stroke="var(--accent)" strokeWidth="2" strokeDasharray="3 2" />
+            <path d="M49 60 L44 57 V63Z M71 60 L76 57 V63Z" fill="var(--accent)" /></>
+          : <><path d="M60 27 V49 M60 93 V71" stroke="var(--accent)" strokeWidth="2" strokeDasharray="3 2" />
+            <path d="M60 49 L57 44 H63Z M60 71 L57 76 H63Z" fill="var(--accent)" /></>}
+        <TopProbe x={60} y={60} />
+        <path d={centerAxis === 'X' ? 'M44 60 H76 M60 52 V68' : 'M52 60 H68 M60 43 V77'} stroke="var(--ok)" strokeWidth=".8" />
+        <SequenceBadge x={centerAxis === 'X' ? 29 : 74} y={centerAxis === 'X' ? 48 : 29} value={1} />
+        <SequenceBadge x={centerAxis === 'X' ? 91 : 74} y={centerAxis === 'X' ? 48 : 91} value={2} />
       </> : <>
         <path d={horizontal
           ? side === 'negative' ? 'M17 18 H40 V102 H17Z' : 'M80 18 H103 V102 H80Z'
@@ -218,8 +272,8 @@ function ProbeGraphic({ cycle }: { cycle: CycleId }) {
         <circle cx={horizontal ? (side === 'negative' ? 40 : 80) : 60} cy={horizontal ? 60 : (side === 'negative' ? 40 : 80)}
           r="3.2" fill="var(--surface)" stroke="var(--ok)" strokeWidth="1.5" />
         <text x={horizontal ? (side === 'negative' ? 20 : 85) : 69} y={horizontal ? 55 : (side === 'negative' ? 32 : 94)}
-          fill="var(--ok)" fontSize="7" fontWeight="700">{axis}0</text>
-        <text x={horizontal ? 54 : 72} y={horizontal ? 50 : (side === 'negative' ? 52 : 75)} fill="var(--accent)" fontSize="6.5" fontWeight="700">
+          fill="var(--ok)" fontSize="8.5" fontWeight="700">{axis}0</text>
+        <text x={horizontal ? 54 : 72} y={horizontal ? 49 : (side === 'negative' ? 52 : 76)} fill="var(--accent)" fontSize="8" fontWeight="700">
           {axis}{side === 'negative' ? '−' : '+'}
         </text>
       </>}
@@ -239,7 +293,7 @@ function ParamRow({ label, value, onChange, unit, step = 0.1, min = 0, isTablet 
       <span className="flex items-center gap-1.5">
         <input type="number" value={value} onChange={e => onChange(Number(e.target.value))} step={step} min={min}
           className={`input-field font-mono text-right ${isTablet ? 'w-36 py-2 text-xl' : 'w-28 py-1 text-base'}`} />
-        <span className={`text-text-dim shrink-0 ${isTablet ? 'text-base w-20' : 'text-xs w-14'}`}>{unit}</span>
+        <span className={`text-text-dim shrink-0 ${isTablet ? 'text-lg w-20' : 'text-sm w-14'}`}>{unit}</span>
       </span>
     </label>
   )
@@ -253,10 +307,12 @@ export function ProbePanel({ isTablet }: { isTablet?: boolean }) {
   const [open, setOpen] = useState(false)
   const [selected, setSelected] = usePersisted<CycleId>('probe.cycle', 'z-surface')
   const [running, setRunning] = useState<RunningCycle | null>(null)
+  const [probeHeld, setProbeHeld] = useState(false)
+  const [completedCycle, setCompletedCycle] = useState<CycleId | null>(null)
   const runningRef = useRef<RunningCycle | null>(null)
   const timeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const backgroundPausedRef = useRef(false)
-  const [message, setMessage] = useState('Select a cycle and position the probe near the target surface.')
+  const [message, setMessage] = useState(() => CYCLE_INSTRUCTIONS[selected])
   const [probeFeed, setProbeFeed] = usePersisted('probe.feed', 100)
   const [maxTravel, setMaxTravel] = usePersisted('probe.travel', 50)
   const [retract, setRetract] = usePersisted('probe.retract', 3)
@@ -270,6 +326,14 @@ export function ProbePanel({ isTablet }: { isTablet?: boolean }) {
   function updateRun(next: RunningCycle | null) {
     runningRef.current = next
     setRunning(next)
+    if (!next) setProbeHeld(false)
+  }
+
+  function selectCycle(cycle: CycleId) {
+    if (runningRef.current) return
+    setSelected(cycle)
+    setCompletedCycle(null)
+    setMessage(CYCLE_INSTRUCTIONS[cycle])
   }
 
   function pauseBackgroundTraffic() {
@@ -298,9 +362,10 @@ export function ProbePanel({ isTablet }: { isTablet?: boolean }) {
     armTimeout()
   }
 
-  function finish(messageText: string) {
+  function finish(messageText: string, markCycleCompleted = false) {
     if (timeoutRef.current) clearTimeout(timeoutRef.current)
     timeoutRef.current = null
+    if (markCycleCompleted && runningRef.current) setCompletedCycle(runningRef.current.id)
     restoreBackgroundTraffic()
     updateRun(null)
     setMessage(messageText)
@@ -314,11 +379,14 @@ export function ProbePanel({ isTablet }: { isTablet?: boolean }) {
     if (continueWithY) {
       const next = { id: runningRef.current!.id, phase: 'y-negative' }
       updateRun(next)
-      setMessage('X center found. Probing Y−…')
+      setMessage('Points 1–2 complete. Point 3/4 — probing Y−…')
       probe('Y', 'negative')
     } else {
       sendRaw('G90')
-      finish(`${axis} center found and ${axis} work zero set.`)
+      const featureCenter = runningRef.current?.id === 'bore-center' || runningRef.current?.id === 'rectangle-center'
+      finish(featureCenter
+        ? 'Feature center found and X/Y work zero set.'
+        : `${axis} center found and ${axis} work zero set.`, true)
     }
   }
 
@@ -368,7 +436,10 @@ export function ProbePanel({ isTablet }: { isTablet?: boolean }) {
       sendRaw(`G21 G91 G0 ${moveWord(axis, 'positive', retract)}`)
       const next = { ...active, phase: `${axis.toLowerCase()}-positive`, first }
       updateRun(next)
-      setMessage(`First ${axis} side captured. Probing ${axis}+…`)
+      const bothAxes = active.id === 'bore-center' || active.id === 'rectangle-center'
+      const pointNumber = axis === 'Y' && bothAxes ? 4 : 2
+      const total = bothAxes ? 4 : 2
+      setMessage(`Point ${pointNumber - 1} complete. Point ${pointNumber}/${total} — probing ${axis}+…`)
       probe(axis, 'positive', maxTravel * 2)
       return
     }
@@ -377,6 +448,11 @@ export function ProbePanel({ isTablet }: { isTablet?: boolean }) {
     const bothAxes = active.id === 'bore-center' || active.id === 'rectangle-center'
     finishAxisCenter(axis, active.first!, second, bothAxes && axis === 'X')
   }), [maxTravel, plateThick, probeDiameter, probeFeed, retract])
+
+  useEffect(() => onSoftReset(() => {
+    if (!runningRef.current) return
+    finish('Probe cycle aborted by controller reset.')
+  }), [])
 
   useEffect(() => {
     if (!runningRef.current || status.state !== 'Alarm') return
@@ -405,6 +481,7 @@ export function ProbePanel({ isTablet }: { isTablet?: boolean }) {
 
   function runProbe() {
     if (!canProbe || running || probeFeed <= 0 || maxTravel <= 0 || retract <= 0) return
+    setCompletedCycle(null)
     pauseBackgroundTraffic()
     const edge = selected.match(/^([xy])-(negative|positive)$/)
     if (selected === 'z-surface') {
@@ -419,8 +496,9 @@ export function ProbePanel({ isTablet }: { isTablet?: boolean }) {
       probe(axis, side)
     } else {
       const axis: Axis = selected === 'y-center' ? 'Y' : 'X'
+      const total = selected === 'bore-center' || selected === 'rectangle-center' ? 4 : 2
       updateRun({ id: selected, phase: `${axis.toLowerCase()}-negative` })
-      setMessage(`Probing first ${axis} side (${axis}−)…`)
+      setMessage(`Point 1/${total} — probing ${axis}−…`)
       probe(axis, 'negative')
     }
   }
@@ -430,8 +508,15 @@ export function ProbePanel({ isTablet }: { isTablet?: boolean }) {
     if (timeoutRef.current) clearTimeout(timeoutRef.current)
     timeoutRef.current = null
     restoreBackgroundTraffic()
-    updateRun(null)
-    setMessage('Feed hold requested. Resume or reset the controller before starting another cycle.')
+    setProbeHeld(true)
+  }
+
+  function resumeProbe() {
+    if (!runningRef.current) return
+    pauseBackgroundTraffic()
+    sendRealtime(0x7e)
+    setProbeHeld(false)
+    armTimeout()
   }
 
   const selectedCycle = CYCLES.find(c => c.id === selected)!
@@ -451,26 +536,33 @@ export function ProbePanel({ isTablet }: { isTablet?: boolean }) {
 
       {open && <div className={`p-4 ${isTablet ? 'space-y-5' : 'space-y-4'}`}>
         <div>
-          <div className="text-[11px] font-bold uppercase tracking-[.12em] text-text-dim mb-2">Single surface</div>
+          <div className="text-[13px] font-bold uppercase tracking-[.12em] text-text-dim mb-2">Single surface</div>
           <div className="grid grid-cols-5 gap-2">
-            {CYCLES.filter(c => c.group === 'edge').map(c => <button key={c.id} onClick={() => setSelected(c.id)} disabled={!!running}
-              className={`btn justify-center font-mono ${isTablet ? 'h-14 text-lg' : 'h-10 text-sm'} ${selected === c.id ? 'btn-primary' : 'btn-ghost'}`}>
+            {CYCLES.filter(c => c.group === 'edge').map(c => <button key={c.id} onClick={() => selectCycle(c.id)} disabled={!!running}
+              className={`btn justify-center font-mono ${isTablet ? 'h-14 text-xl' : 'h-10 text-base'} ${selected === c.id ? 'btn-primary' : 'btn-ghost'}`}>
               {c.short}
             </button>)}
           </div>
         </div>
         <div>
-          <div className="text-[11px] font-bold uppercase tracking-[.12em] text-text-dim mb-2">Center finding</div>
+          <div className="text-[13px] font-bold uppercase tracking-[.12em] text-text-dim mb-2">Center finding</div>
           <div className="grid grid-cols-4 gap-2">
-            {CYCLES.filter(c => c.group === 'center').map(c => <button key={c.id} onClick={() => setSelected(c.id)} disabled={!!running}
-              className={`btn justify-center ${isTablet ? 'h-14 text-lg' : 'h-10 text-sm'} ${selected === c.id ? 'btn-primary' : 'btn-ghost'}`}>
+            {CYCLES.filter(c => c.group === 'center').map(c => <button key={c.id} onClick={() => selectCycle(c.id)} disabled={!!running}
+              className={`btn justify-center ${isTablet ? 'h-14 text-xl' : 'h-10 text-base'} ${selected === c.id ? 'btn-primary' : 'btn-ghost'}`}>
               {c.label}
             </button>)}
           </div>
         </div>
 
         <div className={`grid gap-4 ${isTablet ? 'grid-cols-[220px_1fr]' : 'grid-cols-[150px_1fr]'}`}>
-          <div className={`${isTablet ? 'h-[220px]' : 'h-[150px]'}`}><ProbeGraphic cycle={selected} /></div>
+          <div className={`${isTablet ? 'h-[220px]' : 'h-[150px]'}`}>
+            <ProbeGraphic
+              cycle={selected}
+              running={running}
+              held={probeHeld}
+              cycleCompleted={completedCycle === selected}
+            />
+          </div>
           <div className={`rounded-md border border-border bg-elevated/30 p-3 ${isTablet ? 'space-y-4' : 'space-y-2'}`}>
             <ParamRow isTablet={isTablet} label="Probe feed" value={toDisplayInput(probeFeed, units, units === 'in' ? 2 : 0)}
               onChange={v => setProbeFeed(displayToMm(v, units))} unit={feedUnitLabel(units)} step={units === 'in' ? .1 : 10} min={units === 'in' ? .1 : 1} />
@@ -496,12 +588,14 @@ export function ProbePanel({ isTablet }: { isTablet?: boolean }) {
             <Target size={isTablet ? 22 : 17} />
             {running ? 'Cycle active' : canProbe ? `Run ${selectedCycle.label}` : connected ? 'Machine not Idle' : 'Controller offline'}
           </button>
-          {running && <button className={`btn btn-danger justify-center gap-2 ${isTablet ? 'h-16 px-6 text-xl' : 'h-11 px-4'}`} onClick={holdProbe}>
-            <OctagonX size={isTablet ? 22 : 17} /> Feed hold
+          {running && <button
+            className={`btn ${probeHeld ? 'btn-ok' : 'btn-danger'} justify-center gap-2 ${isTablet ? 'h-16 px-6 text-xl' : 'h-11 px-4'}`}
+            onClick={probeHeld ? resumeProbe : holdProbe}>
+            {probeHeld
+              ? <><Play size={isTablet ? 22 : 17} /> Resume</>
+              : <><Pause size={isTablet ? 22 : 17} /> Feed hold</>}
           </button>}
         </div>
-        {(selected === 'bore-center' || selected === 'rectangle-center') &&
-          <p className="text-xs text-text-dim">Start with the probe inside the feature, near its center. The cycle touches X−/X+, centers X, then touches Y−/Y+ and sets X0 Y0.</p>}
       </div>}
     </div>
   )
