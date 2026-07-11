@@ -1,146 +1,187 @@
-import { useState, useEffect, useRef, useCallback } from 'react'
+import { useState, useEffect, useRef, useCallback } from "react";
 import {
-  Folder, File, Upload, Trash2, RefreshCw,
-  ChevronRight, HardDrive, FolderPlus, X, Pencil,
-  Check, Download, Server, FileCode, FilePlus, Search,
+  Folder,
+  File,
+  Upload,
+  Trash2,
+  RefreshCw,
+  ChevronRight,
+  HardDrive,
+  FolderPlus,
+  X,
+  Pencil,
+  Check,
+  Download,
+  Server,
+  FileCode,
+  FilePlus,
+  Search,
   Loader2,
-} from 'lucide-react'
-import { listFiles, deleteFile, deleteDir, uploadFile, createDir, renameFile, getBase, fetchFileContent, saveFileContent } from '../lib/http'
-import { CodeEditor, isEditable } from './CodeEditor'
-import { useMachineStore } from '../store'
-import type { FileEntry, FileListResult } from '../types'
+} from "lucide-react";
+import {
+  listFiles,
+  deleteFile,
+  deleteDir,
+  uploadFile,
+  createDir,
+  renameFile,
+  getBase,
+  fetchFileContent,
+  saveFileContent,
+} from "../lib/http";
+import { CodeEditor, isEditable } from "./CodeEditor";
+import { useMachineStore } from "../store";
+import type { FileEntry, FileListResult } from "../types";
 
-type Filesystem = 'sd' | 'local'
+type Filesystem = "sd" | "local";
 
-const GCODE_EXT = new Set(['.g', '.gco', '.gcode', '.nc', '.ncc', '.txt'])
-const isGcode = (name: string) => GCODE_EXT.has(name.slice(name.lastIndexOf('.')).toLowerCase())
+const GCODE_EXT = new Set([".g", ".gco", ".gcode", ".nc", ".ncc", ".txt"]);
+const isGcode = (name: string) =>
+  GCODE_EXT.has(name.slice(name.lastIndexOf(".")).toLowerCase());
 
 function fmtSize(bytes: number): string {
-  if (bytes < 1024) return `${bytes} B`
-  if (bytes < 1048576) return `${(bytes / 1024).toFixed(1)} KB`
-  if (bytes < 1073741824) return `${(bytes / 1048576).toFixed(1)} MB`
-  return `${(bytes / 1073741824).toFixed(1)} GB`
+  if (bytes < 1024) return `${bytes} B`;
+  if (bytes < 1048576) return `${(bytes / 1024).toFixed(1)} KB`;
+  if (bytes < 1073741824) return `${(bytes / 1048576).toFixed(1)} MB`;
+  return `${(bytes / 1073741824).toFixed(1)} GB`;
 }
 
 interface FileRowProps {
-  entry: FileEntry
-  path: string
-  fs: Filesystem
-  canLoadGcode: boolean
-  selectionMode: boolean
-  selected: boolean
-  selectionDisabled: boolean
-  onToggleSelection: () => void
-  onNavigate: (path: string) => void
-  onRefresh: () => void
-  onEdit: (fullPath: string, filename: string) => void
-  isTablet?: boolean
+  entry: FileEntry;
+  path: string;
+  fs: Filesystem;
+  canLoadGcode: boolean;
+  selectionMode: boolean;
+  selected: boolean;
+  selectionDisabled: boolean;
+  onToggleSelection: () => void;
+  onNavigate: (path: string) => void;
+  onRefresh: () => void;
+  onEdit: (fullPath: string, filename: string) => void;
+  isTablet?: boolean;
 }
 
 function FileRow({
-  entry, path, fs, canLoadGcode, selectionMode, selected, selectionDisabled, onToggleSelection,
-  onNavigate, onRefresh, onEdit, isTablet,
+  entry,
+  path,
+  fs,
+  canLoadGcode,
+  selectionMode,
+  selected,
+  selectionDisabled,
+  onToggleSelection,
+  onNavigate,
+  onRefresh,
+  onEdit,
+  isTablet,
 }: FileRowProps) {
-  const [deleting, setDeleting] = useState(false)
-  const [renaming, setRenaming] = useState(false)
-  const [newName, setNewName]   = useState(entry.name)
-  const [showMenu, setShowMenu] = useState(false)
-  const renameRef = useRef<HTMLInputElement>(null)
+  const [deleting, setDeleting] = useState(false);
+  const [renaming, setRenaming] = useState(false);
+  const [newName, setNewName] = useState(entry.name);
+  const [showMenu, setShowMenu] = useState(false);
+  const renameRef = useRef<HTMLInputElement>(null);
 
-  const fullPath = path.endsWith('/') ? path : `${path}/`
-  const fullName = `${fullPath}${entry.name}`
+  const fullPath = path.endsWith("/") ? path : `${path}/`;
+  const fullName = `${fullPath}${entry.name}`;
 
   function startRename() {
-    setNewName(entry.name)
-    setRenaming(true)
-    setTimeout(() => renameRef.current?.select(), 0)
+    setNewName(entry.name);
+    setRenaming(true);
+    setTimeout(() => renameRef.current?.select(), 0);
   }
 
   async function commitRename() {
-    const trimmed = newName.trim()
-    if (!trimmed || trimmed === entry.name) { setRenaming(false); return }
+    const trimmed = newName.trim();
+    if (!trimmed || trimmed === entry.name) {
+      setRenaming(false);
+      return;
+    }
     try {
-      await renameFile(fullPath, entry.name, trimmed, fs)
-      onRefresh()
+      await renameFile(fullPath, entry.name, trimmed, fs);
+      onRefresh();
     } catch {}
-    setRenaming(false)
+    setRenaming(false);
   }
 
   async function handleDelete() {
-    if (!confirm(`Delete ${entry.name}?`)) return
-    setDeleting(true)
+    if (!confirm(`Delete ${entry.name}?`)) return;
+    setDeleting(true);
     try {
-      if (entry.isDir) await deleteDir(fullPath, entry.name, fs)
-      else await deleteFile(fullPath, entry.name, fs)
-      onRefresh()
+      if (entry.isDir) await deleteDir(fullPath, entry.name, fs);
+      else await deleteFile(fullPath, entry.name, fs);
+      onRefresh();
     } finally {
-      setDeleting(false)
+      setDeleting(false);
     }
   }
 
   function handleDownload() {
-    const url = `${getBase()}${fullName}`
-    const a = document.createElement('a')
-    a.href = url
-    a.download = entry.name
-    document.body.appendChild(a)
-    a.click()
-    document.body.removeChild(a)
+    const url = `${getBase()}${fullName}`;
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = entry.name;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
   }
 
   function handleTap() {
     if (entry.isDir) {
-      onNavigate(`${fullPath}${entry.name}`)
+      onNavigate(`${fullPath}${entry.name}`);
     } else {
-      setShowMenu(true)
+      setShowMenu(true);
     }
   }
 
   function handleGcodeLoad() {
-    setShowMenu(false)
-    window.dispatchEvent(new CustomEvent('gcode:load', { detail: fullName }))
+    setShowMenu(false);
+    window.dispatchEvent(new CustomEvent("gcode:load", { detail: fullName }));
   }
 
   function handleMenuEdit() {
-    setShowMenu(false)
-    onEdit(fullPath, entry.name)
+    setShowMenu(false);
+    onEdit(fullPath, entry.name);
   }
 
   function handleMenuDownload() {
-    setShowMenu(false)
-    handleDownload()
+    setShowMenu(false);
+    handleDownload();
   }
 
   function handleMenuRename() {
-    setShowMenu(false)
-    startRename()
+    setShowMenu(false);
+    startRename();
   }
 
   async function handleMenuDelete() {
-    setShowMenu(false)
-    await handleDelete()
+    setShowMenu(false);
+    await handleDelete();
   }
 
   return (
     <>
-      <div className={`flex items-center gap-2 px-3 ${isTablet ? 'py-3' : 'py-2'} hover:bg-elevated group transition-colors ${
-        selectionMode && selected ? 'bg-accent/10' : ''
-      }`}>
+      <div
+        className={`flex items-center gap-2 px-3 ${isTablet ? "py-3" : "py-2"} hover:bg-elevated group transition-colors ${
+          selectionMode && selected ? "bg-accent/10" : ""
+        }`}
+      >
         {selectionMode && (
           <input
             type="checkbox"
             checked={selected}
             disabled={selectionDisabled}
             onChange={onToggleSelection}
-            className={`${isTablet ? 'w-5 h-5' : 'w-4 h-4'} shrink-0 accent-[var(--accent)] cursor-pointer`}
+            className={`${isTablet ? "w-5 h-5" : "w-4 h-4"} shrink-0 accent-[var(--accent)] cursor-pointer`}
             aria-label={`Select ${entry.name}`}
           />
         )}
 
         <div className="text-text-dim shrink-0">
-          {entry.isDir
-            ? <Folder size={isTablet ? 20 : 14} className="text-accent/70" />
-            : <File size={isTablet ? 20 : 14} />}
+          {entry.isDir ? (
+            <Folder size={isTablet ? 20 : 14} className="text-accent/70" />
+          ) : (
+            <File size={isTablet ? 20 : 14} />
+          )}
         </div>
 
         {renaming ? (
@@ -148,10 +189,10 @@ function FileRow({
             ref={renameRef}
             className={`flex-1 input-field py-0.5 text-lg`}
             value={newName}
-            onChange={e => setNewName(e.target.value)}
-            onKeyDown={e => {
-              if (e.key === 'Enter') commitRename()
-              if (e.key === 'Escape') setRenaming(false)
+            onChange={(e) => setNewName(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === "Enter") commitRename();
+              if (e.key === "Escape") setRenaming(false);
             }}
             onBlur={commitRename}
             autoFocus
@@ -160,10 +201,12 @@ function FileRow({
           <button
             className={`flex-1 text-left text-2xl truncate ${
               entry.isDir
-                ? 'text-text-primary'
+                ? "text-text-primary"
                 : isGcode(entry.name)
-                  ? canLoadGcode ? 'text-text-primary' : 'text-text-dim'
-                  : 'text-text-primary'
+                  ? canLoadGcode
+                    ? "text-text-primary"
+                    : "text-text-dim"
+                  : "text-text-primary"
             }`}
             onClick={handleTap}
           >
@@ -178,23 +221,33 @@ function FileRow({
           </button>
         ) : isGcode(entry.name) ? (
           <button
-            className={`flex-1 text-left text-xl truncate ${canLoadGcode ? 'text-text-primary hover:text-accent' : 'text-text-dim cursor-not-allowed'}`}
+            className={`flex-1 text-left text-xl truncate ${canLoadGcode ? "text-text-primary hover:text-accent" : "text-text-dim cursor-not-allowed"}`}
             onClick={() => {
-              if (!canLoadGcode) return
-              window.dispatchEvent(new CustomEvent('gcode:load', { detail: fullName }))
+              if (!canLoadGcode) return;
+              window.dispatchEvent(
+                new CustomEvent("gcode:load", { detail: fullName }),
+              );
             }}
-            title={canLoadGcode ? 'Load in G-code viewer' : 'Cannot load another file while a job is running or held'}
+            title={
+              canLoadGcode
+                ? "Load in G-code viewer"
+                : "Cannot load another file while a job is running or held"
+            }
           >
             {entry.name}
           </button>
         ) : (
-          <span className={`flex-1 text-xl text-text-primary truncate`}>{entry.name}</span>
+          <span className={`flex-1 text-xl text-text-primary truncate`}>
+            {entry.name}
+          </span>
         )}
 
         {!renaming && !isTablet && (
           <div className="w-28 shrink-0 flex items-center justify-end">
             {!entry.isDir && (
-              <span className="text-base text-text-dim font-mono text-right group-hover:hidden">{fmtSize(entry.size)}</span>
+              <span className="text-base text-text-dim font-mono text-right group-hover:hidden">
+                {fmtSize(entry.size)}
+              </span>
             )}
             <div className="hidden group-hover:flex items-center gap-1">
               {!entry.isDir && isEditable(entry.name) && (
@@ -252,14 +305,18 @@ function FileRow({
         >
           <div
             className="w-full bg-surface border-t border-border rounded-t-xl shadow-xl"
-            onClick={e => e.stopPropagation()}
+            onClick={(e) => e.stopPropagation()}
           >
             <div className="flex items-center justify-between px-5 py-4 border-b border-border">
               <div className="flex items-center gap-3 min-w-0">
-                {entry.isDir
-                  ? <Folder size={20} className="text-accent/70 shrink-0" />
-                  : <File size={20} className="text-text-dim shrink-0" />}
-                <span className="text-xl font-medium text-text-primary truncate">{entry.name}</span>
+                {entry.isDir ? (
+                  <Folder size={20} className="text-accent/70 shrink-0" />
+                ) : (
+                  <File size={20} className="text-text-dim shrink-0" />
+                )}
+                <span className="text-xl font-medium text-text-primary truncate">
+                  {entry.name}
+                </span>
               </div>
               <button
                 className="p-2 rounded text-text-muted hover:text-text-primary shrink-0"
@@ -273,15 +330,19 @@ function FileRow({
                 <button
                   className={`flex items-center gap-4 px-4 py-4 rounded-lg text-xl w-full text-left transition-colors ${
                     canLoadGcode
-                      ? 'text-accent hover:bg-accent/10'
-                      : 'text-text-dim cursor-not-allowed'
+                      ? "text-accent hover:bg-accent/10"
+                      : "text-text-dim cursor-not-allowed"
                   }`}
                   onClick={canLoadGcode ? handleGcodeLoad : undefined}
                   disabled={!canLoadGcode}
                 >
                   <ChevronRight size={22} />
                   <span>Load in Viewer</span>
-                  {!canLoadGcode && <span className="text-base text-text-dim ml-auto">Job running</span>}
+                  {!canLoadGcode && (
+                    <span className="text-base text-text-dim ml-auto">
+                      Job running
+                    </span>
+                  )}
                 </button>
               )}
               {!entry.isDir && isEditable(entry.name) && (
@@ -323,366 +384,463 @@ function FileRow({
         </div>
       )}
     </>
-  )
+  );
 }
 
-const _fmCache = new Map<Filesystem, { result: FileListResult; path: string }>()
-let _fmLastFs: Filesystem = 'sd'
-let _internalPrefetch: Promise<void> | null = null
-let _fmCacheVersion = 0
+const _fmCache = new Map<
+  Filesystem,
+  { result: FileListResult; path: string }
+>();
+let _fmLastFs: Filesystem = "sd";
+let _internalPrefetch: Promise<void> | null = null;
+let _fmCacheVersion = 0;
 
 export function invalidateFileCache() {
-  _fmCacheVersion++
-  _fmCache.clear()
+  _fmCacheVersion++;
+  _fmCache.clear();
 }
 
 export function prefetchInternalFiles() {
-  if (_fmCache.has('local')) return Promise.resolve()
-  if (_internalPrefetch) return _internalPrefetch
+  if (_fmCache.has("local")) return Promise.resolve();
+  if (_internalPrefetch) return _internalPrefetch;
 
-  const cacheVersion = _fmCacheVersion
-  _internalPrefetch = listFiles('/', 'local')
-    .then(result => {
-      if (cacheVersion !== _fmCacheVersion) return
-      _fmCache.set('local', { result, path: '/' })
+  const cacheVersion = _fmCacheVersion;
+  _internalPrefetch = listFiles("/", "local")
+    .then((result) => {
+      if (cacheVersion !== _fmCacheVersion) return;
+      _fmCache.set("local", { result, path: "/" });
     })
     .catch(() => {})
     .finally(() => {
-      _internalPrefetch = null
-    })
+      _internalPrefetch = null;
+    });
 
-  return _internalPrefetch
+  return _internalPrefetch;
 }
 
 export function FileManager({ isTablet }: { isTablet?: boolean }) {
-  const espInfo = useMachineStore(s => s.espInfo)
-  const machineState = useMachineStore(s => s.status.state)
-  const primarySd   = espInfo?.primarySd   ?? '/sd/'
-  const canLoadGcode = machineState !== 'Run' && machineState !== 'Hold'
+  const espInfo = useMachineStore((s) => s.espInfo);
+  const machineState = useMachineStore((s) => s.status.state);
+  const primarySd = espInfo?.primarySd ?? "/sd/";
+  const canLoadGcode = machineState !== "Run" && machineState !== "Hold";
 
-  const [fs, setFs]             = useState<Filesystem>(_fmLastFs)
-  const [path, setPath]         = useState(_fmCache.get(_fmLastFs)?.path ?? primarySd)
-  const [result, setResult]     = useState<FileListResult | null>(_fmCache.get(_fmLastFs)?.result ?? null)
-  const [loading, setLoading]   = useState(false)
-  const [error, setError]       = useState('')
-  const [uploading, setUploading]       = useState(false)
-  const [uploadPct, setUploadPct]       = useState(0)
-  const [uploadPhase, setUploadPhase]   = useState<'preparing' | 'uploading' | 'finishing'>('preparing')
-  const [uploadIdx, setUploadIdx]       = useState(0)
-  const [uploadTotal, setUploadTotal]   = useState(0)
-  const [newDirName, setNewDirName] = useState('')
-  const [showNewDir, setShowNewDir] = useState(false)
-  const [newFileName, setNewFileName] = useState('')
-  const [showNewFile, setShowNewFile] = useState(false)
-  const [editing, setEditing]       = useState<{ path: string; filename: string; content: string } | null>(null)
-  const [editLoading, setEditLoading] = useState<string | null>(null)
-  const [dragOver, setDragOver] = useState(false)
-  const [search, setSearch] = useState('')
-  const [selectionMode, setSelectionMode] = useState(false)
-  const [selectedNames, setSelectedNames] = useState<Set<string>>(() => new Set())
-  const [deletingSelected, setDeletingSelected] = useState(false)
-  const fileInput = useRef<HTMLInputElement>(null)
-  const searchRef = useRef<HTMLInputElement>(null)
+  const [fs, setFs] = useState<Filesystem>(_fmLastFs);
+  const [path, setPath] = useState(_fmCache.get(_fmLastFs)?.path ?? primarySd);
+  const [result, setResult] = useState<FileListResult | null>(
+    _fmCache.get(_fmLastFs)?.result ?? null,
+  );
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState("");
+  const [uploading, setUploading] = useState(false);
+  const [uploadPct, setUploadPct] = useState(0);
+  const [uploadPhase, setUploadPhase] = useState<
+    "preparing" | "uploading" | "finishing"
+  >("preparing");
+  const [uploadIdx, setUploadIdx] = useState(0);
+  const [uploadTotal, setUploadTotal] = useState(0);
+  const [newDirName, setNewDirName] = useState("");
+  const [showNewDir, setShowNewDir] = useState(false);
+  const [newFileName, setNewFileName] = useState("");
+  const [showNewFile, setShowNewFile] = useState(false);
+  const [editing, setEditing] = useState<{
+    path: string;
+    filename: string;
+    content: string;
+    openStudio?: boolean;
+  } | null>(null);
+  const [editLoading, setEditLoading] = useState<string | null>(null);
+  const [dragOver, setDragOver] = useState(false);
+  const [search, setSearch] = useState("");
+  const [selectionMode, setSelectionMode] = useState(false);
+  const [selectedNames, setSelectedNames] = useState<Set<string>>(
+    () => new Set(),
+  );
+  const [deletingSelected, setDeletingSelected] = useState(false);
+  const fileInput = useRef<HTMLInputElement>(null);
+  const searchRef = useRef<HTMLInputElement>(null);
 
-  const sdRoot    = primarySd
-  const localRoot = '/'
+  const sdRoot = primarySd;
+  const localRoot = "/";
 
   const load = useCallback(async (p: string, filesystem: Filesystem) => {
-    setLoading(true)
-    setError('')
+    setLoading(true);
+    setError("");
     try {
-      const data = await listFiles(p, filesystem)
-      setResult(data)
-      setPath(p)
-      _fmCache.set(filesystem, { result: data, path: p })
-      _fmLastFs = filesystem
+      const data = await listFiles(p, filesystem);
+      setResult(data);
+      setPath(p);
+      _fmCache.set(filesystem, { result: data, path: p });
+      _fmLastFs = filesystem;
     } catch (e) {
-      setError(e instanceof Error ? e.message : 'Failed to load')
+      setError(e instanceof Error ? e.message : "Failed to load");
     } finally {
-      setLoading(false)
+      setLoading(false);
     }
-  }, [])
+  }, []);
 
   useEffect(() => {
-    if (_fmCache.has('sd')) return
-    load(sdRoot, 'sd')
-  }, [load, sdRoot])
+    if (_fmCache.has("sd")) return;
+    load(sdRoot, "sd");
+  }, [load, sdRoot]);
 
-  const refreshTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const refreshTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const scheduleRefresh = useCallback(() => {
-    if (refreshTimerRef.current !== null) clearTimeout(refreshTimerRef.current)
+    if (refreshTimerRef.current !== null) clearTimeout(refreshTimerRef.current);
     refreshTimerRef.current = setTimeout(() => {
-      refreshTimerRef.current = null
-      load(path, fs)
-    }, 500)
-  }, [load, path, fs])
+      refreshTimerRef.current = null;
+      load(path, fs);
+    }, 500);
+  }, [load, path, fs]);
 
   useEffect(() => {
-    window.addEventListener('files:changed', scheduleRefresh)
-    return () => window.removeEventListener('files:changed', scheduleRefresh)
-  }, [scheduleRefresh])
+    window.addEventListener("files:changed", scheduleRefresh);
+    return () => window.removeEventListener("files:changed", scheduleRefresh);
+  }, [scheduleRefresh]);
 
   useEffect(() => {
-    if (!result) return
-    const availableNames = new Set(result.files.map(entry => entry.name))
-    setSelectedNames(current => {
-      const next = new Set([...current].filter(name => availableNames.has(name)))
-      return next.size === current.size ? current : next
-    })
-  }, [result])
+    const openStudio = async () => {
+      setEditLoading("config.yaml");
+      try {
+        const content = await fetchFileContent("/config.yaml", "local");
+        setEditing({
+          path: "/",
+          filename: "config.yaml",
+          content,
+          openStudio: true,
+        });
+      } catch (e) {
+        alert(
+          `Failed to open config.yaml: ${e instanceof Error ? e.message : "Unknown error"}`,
+        );
+      } finally {
+        setEditLoading(null);
+      }
+    };
+    window.addEventListener("config:open-studio", openStudio);
+    return () => window.removeEventListener("config:open-studio", openStudio);
+  }, []);
+
+  useEffect(() => {
+    if (!result) return;
+    const availableNames = new Set(result.files.map((entry) => entry.name));
+    setSelectedNames((current) => {
+      const next = new Set(
+        [...current].filter((name) => availableNames.has(name)),
+      );
+      return next.size === current.size ? current : next;
+    });
+  }, [result]);
 
   function switchFs(newFs: Filesystem) {
-    _fmLastFs = newFs
-    setSelectionMode(false)
-    setSelectedNames(new Set())
-    setFs(newFs)
-    const cached = _fmCache.get(newFs)
+    _fmLastFs = newFs;
+    setSelectionMode(false);
+    setSelectedNames(new Set());
+    setFs(newFs);
+    const cached = _fmCache.get(newFs);
     if (cached) {
-      setResult(cached.result)
-      setPath(cached.path)
-      return
+      setResult(cached.result);
+      setPath(cached.path);
+      return;
     }
-    setResult(null)
-    const root = newFs === 'sd' ? sdRoot : localRoot
-    load(root, newFs)
+    setResult(null);
+    const root = newFs === "sd" ? sdRoot : localRoot;
+    load(root, newFs);
   }
 
   function navigate(p: string) {
-    setSearch('')
-    setSelectionMode(false)
-    setSelectedNames(new Set())
-    load(p, fs)
+    setSearch("");
+    setSelectionMode(false);
+    setSelectedNames(new Set());
+    load(p, fs);
   }
 
   function goUp() {
-    setSearch('')
-    setSelectionMode(false)
-    setSelectedNames(new Set())
-    const root = fs === 'sd' ? sdRoot : localRoot
-    const trimmed = path.replace(/\/$/, '')
-    const parts = trimmed.split('/')
+    setSearch("");
+    setSelectionMode(false);
+    setSelectedNames(new Set());
+    const root = fs === "sd" ? sdRoot : localRoot;
+    const trimmed = path.replace(/\/$/, "");
+    const parts = trimmed.split("/");
     if (parts.length <= 2) {
-      load(root, fs)
+      load(root, fs);
     } else {
-      parts.pop()
-      load(parts.join('/') + '/', fs)
+      parts.pop();
+      load(parts.join("/") + "/", fs);
     }
   }
 
   async function handleUpload(files: FileList | null) {
-    if (!files || !files.length) return
-    setUploading(true)
-    setUploadTotal(files.length)
-    setUploadPct(0)
+    if (!files || !files.length) return;
+    setUploading(true);
+    setUploadTotal(files.length);
+    setUploadPct(0);
     try {
       for (let i = 0; i < files.length; i++) {
-        setUploadIdx(i + 1)
-        setUploadPct(0)
-        setUploadPhase('preparing')
-        await uploadFile(path, files[i], fs, p => setUploadPct(p), setUploadPhase)
+        setUploadIdx(i + 1);
+        setUploadPct(0);
+        setUploadPhase("preparing");
+        await uploadFile(
+          path,
+          files[i],
+          fs,
+          (p) => setUploadPct(p),
+          setUploadPhase,
+        );
       }
-      load(path, fs)
+      load(path, fs);
     } catch (e) {
-      alert(e instanceof Error ? e.message : 'Upload failed')
+      alert(e instanceof Error ? e.message : "Upload failed");
     } finally {
-      setUploading(false)
-      if (fileInput.current) fileInput.current.value = ''
+      setUploading(false);
+      if (fileInput.current) fileInput.current.value = "";
     }
   }
 
   async function handleCreateDir() {
-    if (!newDirName.trim()) return
-    await createDir(path, newDirName.trim(), fs)
-    setNewDirName('')
-    setShowNewDir(false)
-    load(path, fs)
+    if (!newDirName.trim()) return;
+    await createDir(path, newDirName.trim(), fs);
+    setNewDirName("");
+    setShowNewDir(false);
+    load(path, fs);
   }
 
   function createNewFile() {
-    const name = newFileName.trim()
-    if (!name) return
-    setNewFileName('')
-    setShowNewFile(false)
+    const name = newFileName.trim();
+    if (!name) return;
+    setNewFileName("");
+    setShowNewFile(false);
     if (isEditable(name)) {
-      setEditing({ path: path.endsWith('/') ? path : `${path}/`, filename: name, content: '' })
+      setEditing({
+        path: path.endsWith("/") ? path : `${path}/`,
+        filename: name,
+        content: "",
+      });
     } else {
       // For non-editable extensions, create an empty file directly
-      saveFileContent(path.endsWith('/') ? path : `${path}/`, name, '', fs).then(() => load(path, fs))
+      saveFileContent(
+        path.endsWith("/") ? path : `${path}/`,
+        name,
+        "",
+        fs,
+      ).then(() => load(path, fs));
     }
   }
 
   async function openEditor(filePath: string, filename: string) {
-    setEditLoading(filename)
+    setEditLoading(filename);
     try {
-      const fullFilePath = `${filePath}${filename}`
-      const content = await fetchFileContent(fullFilePath, fs)
-      setEditing({ path: filePath, filename, content })
+      const fullFilePath = `${filePath}${filename}`;
+      const content = await fetchFileContent(fullFilePath, fs);
+      setEditing({ path: filePath, filename, content });
     } catch (e) {
-      alert(`Failed to load file: ${e instanceof Error ? e.message : 'Unknown error'}`)
+      alert(
+        `Failed to load file: ${e instanceof Error ? e.message : "Unknown error"}`,
+      );
     } finally {
-      setEditLoading(null)
+      setEditLoading(null);
     }
   }
 
   async function handleSaveFile(content: string) {
-    if (!editing) return
-    await saveFileContent(editing.path, editing.filename, content, fs)
-    load(path, fs)
+    if (!editing) return;
+    await saveFileContent(editing.path, editing.filename, content, fs);
+    load(path, fs);
   }
 
-  const root = fs === 'sd' ? sdRoot : localRoot
-  const breadcrumbs = path.replace(/\/$/, '').split('/').filter(Boolean)
-  const visibleEntries = result?.files?.slice().filter(
-    entry => !search || entry.name.toLowerCase().includes(search.toLowerCase())
-  ).sort((a, b) => {
-    if (a.isDir !== b.isDir) return a.isDir ? -1 : 1
-    return a.name.localeCompare(b.name)
-  }) ?? []
-  const selectedEntries = result?.files.filter(entry => selectedNames.has(entry.name)) ?? []
-  const allVisibleSelected = visibleEntries.length > 0 && visibleEntries.every(entry => selectedNames.has(entry.name))
+  const root = fs === "sd" ? sdRoot : localRoot;
+  const breadcrumbs = path.replace(/\/$/, "").split("/").filter(Boolean);
+  const visibleEntries =
+    result?.files
+      ?.slice()
+      .filter(
+        (entry) =>
+          !search || entry.name.toLowerCase().includes(search.toLowerCase()),
+      )
+      .sort((a, b) => {
+        if (a.isDir !== b.isDir) return a.isDir ? -1 : 1;
+        return a.name.localeCompare(b.name);
+      }) ?? [];
+  const selectedEntries =
+    result?.files.filter((entry) => selectedNames.has(entry.name)) ?? [];
+  const allVisibleSelected =
+    visibleEntries.length > 0 &&
+    visibleEntries.every((entry) => selectedNames.has(entry.name));
 
   function toggleSelection(name: string) {
-    setSelectedNames(current => {
-      const next = new Set(current)
-      if (next.has(name)) next.delete(name)
-      else next.add(name)
-      return next
-    })
+    setSelectedNames((current) => {
+      const next = new Set(current);
+      if (next.has(name)) next.delete(name);
+      else next.add(name);
+      return next;
+    });
   }
 
   function toggleSelectAllVisible() {
-    setSelectedNames(current => {
-      const next = new Set(current)
+    setSelectedNames((current) => {
+      const next = new Set(current);
       if (allVisibleSelected) {
-        visibleEntries.forEach(entry => next.delete(entry.name))
+        visibleEntries.forEach((entry) => next.delete(entry.name));
       } else {
-        visibleEntries.forEach(entry => next.add(entry.name))
+        visibleEntries.forEach((entry) => next.add(entry.name));
       }
-      return next
-    })
+      return next;
+    });
   }
 
   async function handleDeleteSelected() {
-    if (!selectedEntries.length) return
-    const folderCount = selectedEntries.filter(entry => entry.isDir).length
-    const itemLabel = selectedEntries.length === 1 ? selectedEntries[0].name : `${selectedEntries.length} selected items`
+    if (!selectedEntries.length) return;
+    const folderCount = selectedEntries.filter((entry) => entry.isDir).length;
+    const itemLabel =
+      selectedEntries.length === 1
+        ? selectedEntries[0].name
+        : `${selectedEntries.length} selected items`;
     const folderWarning = folderCount
-      ? `\n\nThis includes ${folderCount} folder${folderCount === 1 ? '' : 's'} and their contents.`
-      : ''
-    if (!confirm(`Delete ${itemLabel}?${folderWarning}`)) return
+      ? `\n\nThis includes ${folderCount} folder${folderCount === 1 ? "" : "s"} and their contents.`
+      : "";
+    if (!confirm(`Delete ${itemLabel}?${folderWarning}`)) return;
 
-    setDeletingSelected(true)
-    setError('')
-    const failed: FileEntry[] = []
-    const fullPath = path.endsWith('/') ? path : `${path}/`
+    setDeletingSelected(true);
+    setError("");
+    const failed: FileEntry[] = [];
+    const fullPath = path.endsWith("/") ? path : `${path}/`;
 
     for (const entry of selectedEntries) {
       try {
-        if (entry.isDir) await deleteDir(fullPath, entry.name, fs)
-        else await deleteFile(fullPath, entry.name, fs)
+        if (entry.isDir) await deleteDir(fullPath, entry.name, fs);
+        else await deleteFile(fullPath, entry.name, fs);
       } catch {
-        failed.push(entry)
+        failed.push(entry);
       }
     }
 
-    setSelectedNames(new Set(failed.map(entry => entry.name)))
-    await load(path, fs)
+    setSelectedNames(new Set(failed.map((entry) => entry.name)));
+    await load(path, fs);
     if (failed.length) {
-      setError(`Failed to delete: ${failed.map(entry => entry.name).join(', ')}`)
+      setError(
+        `Failed to delete: ${failed.map((entry) => entry.name).join(", ")}`,
+      );
     } else {
-      setSelectionMode(false)
+      setSelectionMode(false);
     }
-    setDeletingSelected(false)
+    setDeletingSelected(false);
   }
 
   return (
     <div className="flex flex-col h-full">
-
       <div className="flex border-b border-border shrink-0">
-        {([['sd', 'SD Card', HardDrive], ['local', 'Internal', Server]] as const).map(
-          ([id, label, Icon]) => (
-            <button
-              key={id}
-              onClick={() => switchFs(id)}
-              className={`flex-1 flex items-center justify-center gap-1.5 ${isTablet ? 'py-3 text-lg' : 'py-2 text-base'} font-medium
+        {(
+          [
+            ["sd", "SD Card", HardDrive],
+            ["local", "Internal", Server],
+          ] as const
+        ).map(([id, label, Icon]) => (
+          <button
+            key={id}
+            onClick={() => switchFs(id)}
+            className={`flex-1 flex items-center justify-center gap-1.5 ${isTablet ? "py-3 text-lg" : "py-2 text-base"} font-medium
                           uppercase tracking-wide transition-colors border-b-2 -mb-px ${
-                fs === id
-                  ? 'border-accent text-accent'
-                  : 'border-transparent text-text-muted hover:text-text-primary'
-              }`}
-            >
-              <Icon size={isTablet ? 18 : 11} />
-              {label}
-            </button>
-          )
-        )}
+                            fs === id
+                              ? "border-accent text-accent"
+                              : "border-transparent text-text-muted hover:text-text-primary"
+                          }`}
+          >
+            <Icon size={isTablet ? 18 : 11} />
+            {label}
+          </button>
+        ))}
       </div>
 
       <div className="panel-header justify-between">
-        <div className={`flex items-center gap-1.5 flex-wrap min-w-0 normal-case tracking-normal font-normal ${isTablet ? 'text-lg' : ''}`}>
+        <div
+          className={`flex items-center gap-1.5 flex-wrap min-w-0 normal-case tracking-normal font-normal ${isTablet ? "text-lg" : ""}`}
+        >
           <button
-            className={`hover:text-accent transition-colors ${isTablet ? 'p-2' : ''}`}
+            className={`hover:text-accent transition-colors ${isTablet ? "p-2" : ""}`}
             onClick={() => navigate(root)}
           >
-            {fs === 'sd' ? <HardDrive size={isTablet ? 20 : 13} /> : <Server size={isTablet ? 20 : 13} />}
+            {fs === "sd" ? (
+              <HardDrive size={isTablet ? 20 : 13} />
+            ) : (
+              <Server size={isTablet ? 20 : 13} />
+            )}
           </button>
           {breadcrumbs.map((seg, i) => (
             <div key={i} className="flex items-center gap-1">
-              <ChevronRight size={isTablet ? 16 : 10} className="text-text-dim" />
+              <ChevronRight
+                size={isTablet ? 16 : 10}
+                className="text-text-dim"
+              />
               <button
-                className={`hover:text-accent transition-colors max-w-[80px] truncate ${isTablet ? 'p-2' : ''}`}
-                onClick={() => navigate('/' + breadcrumbs.slice(0, i + 1).join('/') + '/')}
+                className={`hover:text-accent transition-colors max-w-[80px] truncate ${isTablet ? "p-2" : ""}`}
+                onClick={() =>
+                  navigate("/" + breadcrumbs.slice(0, i + 1).join("/") + "/")
+                }
               >
                 {seg}
               </button>
             </div>
           ))}
         </div>
-        <div className={`flex items-center ${isTablet ? 'gap-2' : 'gap-1'} shrink-0`}>
+        <div
+          className={`flex items-center ${isTablet ? "gap-2" : "gap-1"} shrink-0`}
+        >
           <button
-            className={`rounded hover:bg-elevated text-text-muted hover:text-text-primary transition-colors ${isTablet ? 'p-3' : 'p-1'}`}
-            onClick={() => { setShowNewFile(v => !v); setShowNewDir(false) }}
+            className={`rounded hover:bg-elevated text-text-muted hover:text-text-primary transition-colors ${isTablet ? "p-3" : "p-1"}`}
+            onClick={() => {
+              setShowNewFile((v) => !v);
+              setShowNewDir(false);
+            }}
             title="New file"
           >
             <FilePlus size={isTablet ? 20 : 13} />
           </button>
           <button
-            className={`rounded hover:bg-elevated text-text-muted hover:text-text-primary transition-colors ${isTablet ? 'p-3' : 'p-1'}`}
-            onClick={() => { setShowNewDir(v => !v); setShowNewFile(false) }}
+            className={`rounded hover:bg-elevated text-text-muted hover:text-text-primary transition-colors ${isTablet ? "p-3" : "p-1"}`}
+            onClick={() => {
+              setShowNewDir((v) => !v);
+              setShowNewFile(false);
+            }}
             title="New folder"
           >
             <FolderPlus size={isTablet ? 20 : 13} />
           </button>
           <button
-            className={`rounded transition-colors ${isTablet ? 'p-3' : 'p-1'} ${
+            className={`rounded transition-colors ${isTablet ? "p-3" : "p-1"} ${
               selectionMode
-                ? 'bg-danger/10 text-danger'
-                : 'hover:bg-danger/10 text-text-muted hover:text-danger'
+                ? "bg-danger/10 text-danger"
+                : "hover:bg-danger/10 text-text-muted hover:text-danger"
             }`}
             onClick={() => {
-              setSelectionMode(active => !active)
-              setSelectedNames(new Set())
+              setSelectionMode((active) => !active);
+              setSelectedNames(new Set());
             }}
             disabled={deletingSelected}
-            title={selectionMode ? 'Cancel multiple selection' : 'Select multiple items to delete'}
+            title={
+              selectionMode
+                ? "Cancel multiple selection"
+                : "Select multiple items to delete"
+            }
             aria-pressed={selectionMode}
           >
             <Trash2 size={isTablet ? 20 : 13} />
           </button>
           <button
-            className={`rounded hover:bg-elevated text-text-muted hover:text-text-primary transition-colors ${isTablet ? 'p-3' : 'p-1'}`}
+            className={`rounded hover:bg-elevated text-text-muted hover:text-text-primary transition-colors ${isTablet ? "p-3" : "p-1"}`}
             onClick={() => fileInput.current?.click()}
             title="Upload file"
           >
             <Upload size={isTablet ? 20 : 13} />
           </button>
           <button
-            className={`rounded hover:bg-elevated text-text-muted hover:text-accent transition-colors ${isTablet ? 'p-3' : 'p-1'}`}
+            className={`rounded hover:bg-elevated text-text-muted hover:text-accent transition-colors ${isTablet ? "p-3" : "p-1"}`}
             onClick={() => load(path, fs)}
             title="Refresh"
           >
-            <RefreshCw size={isTablet ? 20 : 13} className={loading ? 'animate-spin' : ''} />
+            <RefreshCw
+              size={isTablet ? 20 : 13}
+              className={loading ? "animate-spin" : ""}
+            />
           </button>
         </div>
       </div>
@@ -694,15 +852,23 @@ export function FileManager({ isTablet }: { isTablet?: boolean }) {
             className="input-field flex-1 py-1 text-base"
             placeholder="Filename (e.g. job.nc, config.yaml)"
             value={newFileName}
-            onChange={e => setNewFileName(e.target.value)}
-            onKeyDown={e => {
-              if (e.key === 'Enter') createNewFile()
-              if (e.key === 'Escape') setShowNewFile(false)
+            onChange={(e) => setNewFileName(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === "Enter") createNewFile();
+              if (e.key === "Escape") setShowNewFile(false);
             }}
             autoFocus
           />
-          <button className="btn-primary text-base px-2 py-1" onClick={createNewFile}>Create</button>
-          <button className="text-text-muted hover:text-text-primary" onClick={() => setShowNewFile(false)}>
+          <button
+            className="btn-primary text-base px-2 py-1"
+            onClick={createNewFile}
+          >
+            Create
+          </button>
+          <button
+            className="text-text-muted hover:text-text-primary"
+            onClick={() => setShowNewFile(false)}
+          >
             <X size={13} />
           </button>
         </div>
@@ -715,12 +881,20 @@ export function FileManager({ isTablet }: { isTablet?: boolean }) {
             className="input-field flex-1 py-1 text-base"
             placeholder="Folder name"
             value={newDirName}
-            onChange={e => setNewDirName(e.target.value)}
-            onKeyDown={e => e.key === 'Enter' && handleCreateDir()}
+            onChange={(e) => setNewDirName(e.target.value)}
+            onKeyDown={(e) => e.key === "Enter" && handleCreateDir()}
             autoFocus
           />
-          <button className="btn-primary text-base px-2 py-1" onClick={handleCreateDir}>Create</button>
-          <button className="text-text-muted hover:text-text-primary" onClick={() => setShowNewDir(false)}>
+          <button
+            className="btn-primary text-base px-2 py-1"
+            onClick={handleCreateDir}
+          >
+            Create
+          </button>
+          <button
+            className="text-text-muted hover:text-text-primary"
+            onClick={() => setShowNewDir(false)}
+          >
             <X size={13} />
           </button>
         </div>
@@ -733,78 +907,129 @@ export function FileManager({ isTablet }: { isTablet?: boolean }) {
           className="input-field flex-1 py-1 text-base"
           placeholder="Filter files…"
           value={search}
-          onChange={e => setSearch(e.target.value)}
-          onKeyDown={e => { if (e.key === 'Escape') setSearch('') }}
+          onChange={(e) => setSearch(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === "Escape") setSearch("");
+          }}
         />
         {search && (
-          <button className="text-text-muted hover:text-text-primary" onClick={() => setSearch('')}>
+          <button
+            className="text-text-muted hover:text-text-primary"
+            onClick={() => setSearch("")}
+          >
             <X size={13} />
           </button>
         )}
       </div>
 
-      {selectionMode && result && (visibleEntries.length > 0 || selectedEntries.length > 0) && (
-        <div className={`flex items-center gap-2 px-3 border-b border-border bg-elevated/40 ${
-          isTablet ? 'py-3' : 'py-2'
-        }`}>
-          <label className="flex items-center gap-2 cursor-pointer min-w-0">
-            <input
-              type="checkbox"
-              checked={allVisibleSelected}
-              disabled={deletingSelected || visibleEntries.length === 0}
-              onChange={toggleSelectAllVisible}
-              className={`${isTablet ? 'w-5 h-5' : 'w-4 h-4'} shrink-0 accent-[var(--accent)]`}
-            />
-            <span className={`${isTablet ? 'text-lg' : 'text-base'} text-text-muted`}>
-              {selectedEntries.length ? `${selectedEntries.length} selected` : 'Select all'}
-            </span>
-          </label>
-          {selectedEntries.length > 0 && (
-            <>
-              <button
-                className={`${isTablet ? 'text-lg' : 'text-base'} text-text-muted hover:text-text-primary ml-auto`}
-                onClick={() => setSelectedNames(new Set())}
-                disabled={deletingSelected}
+      {selectionMode &&
+        result &&
+        (visibleEntries.length > 0 || selectedEntries.length > 0) && (
+          <div
+            className={`flex items-center gap-2 px-3 border-b border-border bg-elevated/40 ${
+              isTablet ? "py-3" : "py-2"
+            }`}
+          >
+            <label className="flex items-center gap-2 cursor-pointer min-w-0">
+              <input
+                type="checkbox"
+                checked={allVisibleSelected}
+                disabled={deletingSelected || visibleEntries.length === 0}
+                onChange={toggleSelectAllVisible}
+                className={`${isTablet ? "w-5 h-5" : "w-4 h-4"} shrink-0 accent-[var(--accent)]`}
+              />
+              <span
+                className={`${isTablet ? "text-lg" : "text-base"} text-text-muted`}
               >
-                Clear
-              </button>
-              <button
-                className={`btn btn-danger gap-1.5 ${isTablet ? 'text-lg py-2 px-3' : 'text-base py-1 px-2'}`}
-                onClick={handleDeleteSelected}
-                disabled={deletingSelected}
-              >
-                <Trash2 size={isTablet ? 18 : 13} />
-                {deletingSelected ? 'Deleting…' : 'Delete'}
-              </button>
-            </>
-          )}
-        </div>
-      )}
+                {selectedEntries.length
+                  ? `${selectedEntries.length} selected`
+                  : "Select all"}
+              </span>
+            </label>
+            {selectedEntries.length > 0 && (
+              <>
+                <button
+                  className={`${isTablet ? "text-lg" : "text-base"} text-text-muted hover:text-text-primary ml-auto`}
+                  onClick={() => setSelectedNames(new Set())}
+                  disabled={deletingSelected}
+                >
+                  Clear
+                </button>
+                <button
+                  className={`btn btn-danger gap-1.5 ${isTablet ? "text-lg py-2 px-3" : "text-base py-1 px-2"}`}
+                  onClick={handleDeleteSelected}
+                  disabled={deletingSelected}
+                >
+                  <Trash2 size={isTablet ? 18 : 13} />
+                  {deletingSelected ? "Deleting…" : "Delete"}
+                </button>
+              </>
+            )}
+          </div>
+        )}
 
       {uploading && (
         <div className="px-3 py-2 bg-info/5 border-b border-info/20">
           <div className="flex justify-between text-base text-info mb-1">
-            <span>{uploadPhase === 'preparing' ? 'Checking storage' : uploadPhase === 'finishing' ? 'Finishing upload' : 'Uploading'}{uploadTotal > 1 ? ` (${uploadIdx} of ${uploadTotal})` : ''}…</span>
-            <span>{uploadPhase === 'uploading' ? `${uploadPct}%` : <Loader2 size={14} className="animate-spin" />}</span>
+            <span>
+              {uploadPhase === "preparing"
+                ? "Checking storage"
+                : uploadPhase === "finishing"
+                  ? "Finishing upload"
+                  : "Uploading"}
+              {uploadTotal > 1 ? ` (${uploadIdx} of ${uploadTotal})` : ""}…
+            </span>
+            <span>
+              {uploadPhase === "uploading" ? (
+                `${uploadPct}%`
+              ) : (
+                <Loader2 size={14} className="animate-spin" />
+              )}
+            </span>
           </div>
           <div className="w-full h-1 bg-elevated rounded-full overflow-hidden">
-            <div className={`h-full bg-info transition-all ${uploadPhase !== 'uploading' ? 'animate-pulse' : ''}`} style={{ width: uploadPhase === 'preparing' ? '0%' : uploadPhase === 'finishing' ? '100%' : `${uploadPct}%` }} />
+            <div
+              className={`h-full bg-info transition-all ${uploadPhase !== "uploading" ? "animate-pulse" : ""}`}
+              style={{
+                width:
+                  uploadPhase === "preparing"
+                    ? "0%"
+                    : uploadPhase === "finishing"
+                      ? "100%"
+                      : `${uploadPct}%`,
+              }}
+            />
           </div>
         </div>
       )}
 
       <div
         className="flex-1 overflow-y-auto min-h-0 relative"
-        onDragOver={e => { e.preventDefault(); setDragOver(true) }}
-        onDragEnter={e => { e.preventDefault(); setDragOver(true) }}
-        onDragLeave={e => { if (!e.currentTarget.contains(e.relatedTarget as Node)) setDragOver(false) }}
-        onDrop={e => { e.preventDefault(); setDragOver(false); handleUpload(e.dataTransfer.files) }}
+        onDragOver={(e) => {
+          e.preventDefault();
+          setDragOver(true);
+        }}
+        onDragEnter={(e) => {
+          e.preventDefault();
+          setDragOver(true);
+        }}
+        onDragLeave={(e) => {
+          if (!e.currentTarget.contains(e.relatedTarget as Node))
+            setDragOver(false);
+        }}
+        onDrop={(e) => {
+          e.preventDefault();
+          setDragOver(false);
+          handleUpload(e.dataTransfer.files);
+        }}
       >
         {dragOver && (
           <div className="absolute inset-0 z-10 flex items-center justify-center bg-accent/10 border-2 border-dashed border-accent rounded-sm pointer-events-none">
             <div className="flex flex-col items-center gap-2 text-accent">
               <Upload size={isTablet ? 40 : 28} />
-              <span className={isTablet ? 'text-xl' : 'text-base'}>Drop files to upload</span>
+              <span className={isTablet ? "text-xl" : "text-base"}>
+                Drop files to upload
+              </span>
             </div>
           </div>
         )}
@@ -832,9 +1057,13 @@ export function FileManager({ isTablet }: { isTablet?: boolean }) {
           </button>
         )}
 
-        {visibleEntries.map(entry => (
-          <div key={entry.name} className="border-b border-border last:border-b-0">
-            <FileRow isTablet={isTablet}
+        {visibleEntries.map((entry) => (
+          <div
+            key={entry.name}
+            className="border-b border-border last:border-b-0"
+          >
+            <FileRow
+              isTablet={isTablet}
               entry={entry}
               path={path}
               fs={fs}
@@ -852,7 +1081,7 @@ export function FileManager({ isTablet }: { isTablet?: boolean }) {
 
         {result && !visibleEntries.length && (
           <div className="flex items-center justify-center h-24 text-text-muted text-xl">
-            {search ? 'No matches' : 'Empty directory'}
+            {search ? "No matches" : "Empty directory"}
           </div>
         )}
       </div>
@@ -868,8 +1097,11 @@ export function FileManager({ isTablet }: { isTablet?: boolean }) {
             <div className="w-full h-1 bg-elevated rounded-full overflow-hidden">
               <div
                 className={`h-full rounded-full transition-all ${
-                  result.occupation > 90 ? 'bg-danger' :
-                  result.occupation > 70 ? 'bg-warn'   : 'bg-ok'
+                  result.occupation > 90
+                    ? "bg-danger"
+                    : result.occupation > 70
+                      ? "bg-warn"
+                      : "bg-ok"
                 }`}
                 style={{ width: `${result.occupation}%` }}
               />
@@ -883,15 +1115,23 @@ export function FileManager({ isTablet }: { isTablet?: boolean }) {
         type="file"
         className="hidden"
         multiple
-        onChange={e => handleUpload(e.target.files)}
+        onChange={(e) => handleUpload(e.target.files)}
       />
 
       {editLoading && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-[1px]">
           <div className="flex min-w-64 flex-col items-center rounded-lg border border-border bg-surface px-8 py-7 text-center shadow-2xl">
-            <Loader2 size={30} className="animate-spin text-accent" aria-hidden="true" />
-            <div className="mt-3 text-base font-semibold text-text-primary">Loading file…</div>
-            <div className="mt-1 max-w-64 truncate font-mono text-sm text-text-muted">{editLoading}</div>
+            <Loader2
+              size={30}
+              className="animate-spin text-accent"
+              aria-hidden="true"
+            />
+            <div className="mt-3 text-base font-semibold text-text-primary">
+              Loading file…
+            </div>
+            <div className="mt-1 max-w-64 truncate font-mono text-sm text-text-muted">
+              {editLoading}
+            </div>
           </div>
         </div>
       )}
@@ -902,8 +1142,9 @@ export function FileManager({ isTablet }: { isTablet?: boolean }) {
           content={editing.content}
           onSave={handleSaveFile}
           onClose={() => setEditing(null)}
+          initialView={editing.openStudio ? "studio" : "code"}
         />
       )}
     </div>
-  )
+  );
 }

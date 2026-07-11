@@ -212,6 +212,7 @@ interface CodeEditorProps {
   content: string;
   onSave: (content: string) => Promise<void>;
   onClose: () => void;
+  initialView?: "studio" | "code";
 }
 
 export function CodeEditor({
@@ -219,6 +220,7 @@ export function CodeEditor({
   content,
   onSave,
   onClose,
+  initialView = "code",
 }: CodeEditorProps) {
   const editorRef = useRef<HTMLDivElement>(null);
   const gutterRef = useRef<HTMLDivElement>(null);
@@ -243,7 +245,7 @@ export function CodeEditor({
   const [matchIndex, setMatchIndex] = useState(0);
   const [matchCount, setMatchCount] = useState(0);
   const [view, setView] = useState<"studio" | "code">(
-    isConfig ? "studio" : "code",
+    isConfig ? initialView : "code",
   );
   const [studioSource, setStudioSource] = useState(content);
   const [studioKey, setStudioKey] = useState(0);
@@ -569,7 +571,7 @@ export function CodeEditor({
                 </button>
               </div>
             )}
-            {isConfig && (
+            {isConfig && view === "studio" && (
               <button
                 className="btn btn-ghost text-sm py-1 px-2"
                 onClick={refreshStudio}

@@ -164,6 +164,86 @@ body {
   -webkit-font-smoothing: antialiased;
 }
 
+.config-studio {
+  --studio-canvas: #11151d;
+  --studio-panel: #171c26;
+  --studio-node: #1b212c;
+  --studio-input: #10141c;
+  --studio-elevated: #202735;
+  --studio-button: #111722;
+  --studio-border: rgb(255 255 255 / 0.1);
+  --studio-text: #d8dee9;
+  --studio-muted: #778498;
+  background: var(--studio-canvas) !important;
+  color: var(--studio-text) !important;
+}
+
+html:not(.dark):not(.anthracite-dark):not(.midnight-dark) .config-studio {
+  --studio-canvas: #eef1f6;
+  --studio-panel: #ffffff;
+  --studio-node: #f8f9fc;
+  --studio-input: #f1f3f8;
+  --studio-elevated: #e8ebf3;
+  --studio-button: #e5e9f2;
+  --studio-border: rgb(71 85 105 / 0.2);
+  --studio-text: #172033;
+  --studio-muted: #64748b;
+}
+html:not(.dark):not(.anthracite-dark):not(.midnight-dark)
+  .config-studio
+  [class*="cursor-grab"] {
+  cursor: move;
+}
+
+.config-studio [class*="bg-[#171c26]"] {
+  background-color: var(--studio-panel) !important;
+}
+.config-studio [class*="bg-[#1b212c]"] {
+  background-color: var(--studio-node) !important;
+}
+.config-studio [class*="bg-[#10141c]"] {
+  background-color: var(--studio-input) !important;
+}
+.config-studio [class*="bg-[#202735]"] {
+  background-color: var(--studio-elevated) !important;
+}
+.config-studio [class*="bg-[#111722]"] {
+  background-color: var(--studio-button) !important;
+}
+.config-studio [class*="border-white/10"] {
+  border-color: var(--studio-border) !important;
+}
+.config-studio [class*="text-[#d8dee9]"] {
+  color: var(--studio-text) !important;
+}
+.config-studio [class*="text-[#dce2eb]"],
+.config-studio [class*="text-[#cbd2df]"],
+.config-studio [class*="text-[#bec7d5]"],
+.config-studio [class*="text-[#b9c2d0]"] {
+  color: var(--studio-text) !important;
+}
+.config-studio [class*="text-[#778498]"],
+.config-studio [class*="text-[#687589]"],
+.config-studio [class*="text-[#6f7b8e]"] {
+  color: var(--studio-muted) !important;
+}
+
+html:not(.dark):not(.anthracite-dark):not(.midnight-dark) .config-studio {
+  cursor:
+    url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='24' height='24' viewBox='0 0 24 24'%3E%3Cpath d='M5 3l13 9-6 1.5L9 20z' fill='%23172033' stroke='%23fff' stroke-width='1.5' stroke-linejoin='round'/%3E%3C/svg%3E")
+      5 3,
+    default;
+}
+
+html:not(.dark):not(.anthracite-dark):not(.midnight-dark)
+  .config-studio
+  :where(button, select) {
+  cursor: pointer;
+}
+html:not(.dark):not(.anthracite-dark):not(.midnight-dark) .config-studio input {
+  cursor: text;
+}
+
 .release-notes-section + .release-notes-section {
   border-top: 1px solid var(--border);
   margin-top: 14px;

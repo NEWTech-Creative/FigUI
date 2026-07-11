@@ -5,10 +5,8 @@ import {
   Cpu,
   Crosshair,
   Gauge,
-  GitBranch,
   Grid3X3,
   Minus,
-  MousePointer2,
   Plus,
   Search,
   Settings2,
@@ -1386,9 +1384,40 @@ export function ConfigStudio({
   };
   const remove = () => {
     if (!active || active.kind === "machine") return;
-    setNodes((ns) => ns.filter((n) => n.id !== selected));
+    setNodes((ns) => {
+      const removed = new Set([selected]);
+      let changed = true;
+      while (changed) {
+        changed = false;
+        for (const node of ns)
+          if (
+            node.parentId &&
+            removed.has(node.parentId) &&
+            !removed.has(node.id)
+          ) {
+            removed.add(node.id);
+            changed = true;
+          }
+      }
+      const next = ns.filter((node) => !removed.has(node.id));
+      onChange(contentFromNodes(next, content));
+      return next;
+    });
     setSelected("machine");
   };
+  useEffect(() => {
+    const deleteSelected = (event: KeyboardEvent) => {
+      if (event.key !== "Delete" && event.key !== "Backspace") return;
+      const target = event.target as HTMLElement | null;
+      if (target?.matches("input, textarea, select, [contenteditable='true']"))
+        return;
+      if (!active || active.kind === "machine") return;
+      event.preventDefault();
+      remove();
+    };
+    window.addEventListener("keydown", deleteSelected);
+    return () => window.removeEventListener("keydown", deleteSelected);
+  }, [selected, active, nodes, content]);
   const screenToWorld = (e: React.PointerEvent) => ({
     x:
       (e.clientX - e.currentTarget.getBoundingClientRect().left - pan.x) / zoom,
@@ -1492,7 +1521,7 @@ export function ConfigStudio({
     panning.current = null;
   };
   return (
-    <div className="relative flex min-h-0 flex-1 overflow-hidden bg-[#11151d] text-[#d8dee9]">
+    <div className="config-studio relative flex min-h-0 flex-1 overflow-hidden bg-[#11151d] text-[#d8dee9]">
       <section
         className="relative min-w-0 flex-1 overflow-hidden"
         onWheel={handleWheel}
@@ -1585,13 +1614,6 @@ export function ConfigStudio({
           )}
         </div>
         <div className="absolute left-1/2 top-3 z-20 flex -translate-x-1/2 items-center gap-1 rounded-md border border-white/10 bg-[#171c26]/95 p-1 shadow-xl">
-          <button className="rounded bg-white/10 p-1.5 text-white">
-            <MousePointer2 size={14} />
-          </button>
-          <button className="rounded p-1.5 text-[#8995a7] hover:bg-white/5">
-            <GitBranch size={14} />
-          </button>
-          <span className="mx-1 h-5 w-px bg-white/10" />
           <button
             onClick={() => setZoom((z) => Math.max(0.35, z - 0.1))}
             className="p-1.5 text-[#8995a7]"
