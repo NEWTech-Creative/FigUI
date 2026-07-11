@@ -1,10 +1,10 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { ChevronDown, ChevronRight } from 'lucide-react'
 import { GCodeViewer } from './GCodeViewer'
 import { FileManager } from './FileManager'
 import { Macros } from './Macros'
 import { Terminal } from './Terminal'
-import { ProbeOrProgramPanel } from './ProgramExecutionPanel'
+import { ProgramExecutionPanel } from './ProgramExecutionPanel'
 import { OverridesPanel, SpindlePanel } from './JogPad'
 import { PluginLauncher } from './PluginLauncher'
 import type { Plugin } from '../types'
@@ -17,10 +17,18 @@ interface TabletAccordionProps {
 }
 
 export function TabletAccordion({ tabletTab, setTabletTab, onLaunchPanel }: TabletAccordionProps) {
-  const [expanded, setExpanded] = useState<'visualizer' | 'controls'>('visualizer')
+  const [expanded, setExpanded] = useState<'visualizer' | 'program' | 'controls'>('visualizer')
   const [portraitTab, setPortraitTab] = useState<string>('viewer')
   const spindleMax = useMachineStore(s => s.controllerSettings.spindleMax)
   const hasSpindle = Boolean(spindleMax)
+  const status = useMachineStore(s => s.status)
+  const isProgramRunning = (status.state === 'Run' || status.state === 'Hold')
+    && (!!status.sdFilename || status.plannerLineNumber != null)
+
+  useEffect(() => {
+    if (isProgramRunning) return
+    if (expanded === 'program') setExpanded('visualizer')
+  }, [isProgramRunning, expanded])
 
   const TABS = [
     { id: 'viewer',  label: 'Viewer'  },
@@ -46,6 +54,8 @@ export function TabletAccordion({ tabletTab, setTabletTab, onLaunchPanel }: Tabl
       {/* ═══ PORTRAIT LAYOUT: tabbed panel → Viewer at bottom ═══ */}
       <div className="portrait:flex landscape:hidden flex-col gap-3">
 
+        {isProgramRunning && <ProgramExecutionPanel isTablet />}
+
         {/* All-in-one tab panel */}
         <div className="panel flex flex-col">
           <div className="flex border-b border-border shrink-0 overflow-x-auto" style={{ scrollbarWidth: 'none' }}>
@@ -67,7 +77,6 @@ export function TabletAccordion({ tabletTab, setTabletTab, onLaunchPanel }: Tabl
             {portraitTab === 'viewer'    && (
               <div className="flex flex-col gap-3 p-3">
                 <GCodeViewer className="min-h-[55vh]" isTablet />
-                <ProbeOrProgramPanel isTablet />
               </div>
             )}
             {portraitTab === 'files'     && <FileManager isTablet />}
@@ -126,8 +135,7 @@ export function TabletAccordion({ tabletTab, setTabletTab, onLaunchPanel }: Tabl
               </div>
               <div className="flex-1 min-h-0 overflow-hidden">
                 <div className={`h-full flex flex-col gap-3 p-3 overflow-y-auto ${tabletTab !== 'viewer' ? 'hidden' : ''}`}>
-                  <GCodeViewer className="flex-1 min-h-[300px]" isTablet />
-                  <ProbeOrProgramPanel isTablet />
+                  <GCodeViewer className="flex-1 min-h-[300px]" isTablet fitToViewSignal={expanded === 'visualizer'} />
                 </div>
                 {tabletTab === 'files'    && <FileManager isTablet />}
                 {tabletTab === 'macros'   && <Macros isTablet />}
@@ -137,6 +145,31 @@ export function TabletAccordion({ tabletTab, setTabletTab, onLaunchPanel }: Tabl
             </div>
           )}
         </div>
+
+        {isProgramRunning && (
+          <div className={`panel flex flex-col transition-all duration-300 ${expanded === 'program' ? 'flex-1 min-h-0' : 'shrink-0'}`}>
+            {expanded !== 'program' ? (
+              <button
+                className="panel-header text-left font-bold cursor-pointer flex justify-between items-center text-xl py-4"
+                onClick={() => setExpanded('program')}
+              >
+                <span className="uppercase tracking-wide">Program execution</span>
+                <ChevronRight size={22} />
+              </button>
+            ) : (
+              <div className="flex flex-col flex-1 min-h-0 overflow-hidden">
+                <button
+                  className="panel-header flex justify-between items-center border-b border-border cursor-pointer hover:text-text-primary shrink-0 text-xl py-3"
+                  onClick={() => setExpanded('visualizer')}
+                >
+                  <span className="uppercase tracking-wide">Program execution</span>
+                  <ChevronDown size={22} />
+                </button>
+                <ProgramExecutionPanel isTablet accordionManaged />
+              </div>
+            )}
+          </div>
+        )}
 
         {/* Controls (Spindle & Overrides) panel */}
         <div className={`panel flex flex-col transition-all duration-300 ${expanded === 'controls' ? 'flex-1 min-h-0 overflow-y-auto' : 'shrink-0'}`}>

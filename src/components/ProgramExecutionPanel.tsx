@@ -68,7 +68,7 @@ function buildProgram(text: string) {
   }
 }
 
-export function ProgramExecutionPanel({ isTablet }: { isTablet?: boolean }) {
+export function ProgramExecutionPanel({ isTablet, initiallyOpen = false, accordionManaged = false }: { isTablet?: boolean; initiallyOpen?: boolean; accordionManaged?: boolean }) {
   const status = useMachineStore(s => s.status)
   const sourceText = useGCodeStore(s => s.sourceText)
   const fileName = useGCodeStore(s => s.fileName)
@@ -77,7 +77,8 @@ export function ProgramExecutionPanel({ isTablet }: { isTablet?: boolean }) {
   const programRef = useRef<HTMLTextAreaElement>(null)
   const gutterRef = useRef<HTMLDivElement>(null)
   const highlightRef = useRef<HTMLDivElement>(null)
-  const [open, setOpen] = useState(false)
+  const [open, setOpen] = useState(initiallyOpen)
+  const contentOpen = accordionManaged || open
   const [follow, setFollow] = useState(true)
   const [showTrackingInfo, setShowTrackingInfo] = useState(false)
 
@@ -136,19 +137,19 @@ export function ProgramExecutionPanel({ isTablet }: { isTablet?: boolean }) {
           : null
 
   return (
-    <div className={`panel flex flex-col shrink-0 overflow-hidden ${open ? (isTablet ? 'h-[360px]' : 'h-[280px]') : ''}`}>
-      <div className="panel-header justify-between shrink-0">
+    <div className={`${accordionManaged ? 'flex-1 min-h-0' : 'panel shrink-0'} flex flex-col overflow-hidden ${contentOpen && !accordionManaged ? (isTablet ? 'h-[360px]' : 'h-[280px]') : ''}`}>
+      {!accordionManaged && <div className="panel-header justify-between shrink-0">
         <button
           type="button"
           className="flex min-w-0 flex-1 items-center gap-2 text-left"
           onClick={() => setOpen(value => !value)}
-          aria-expanded={open}
+          aria-expanded={contentOpen}
         >
           <FileCode2 size={isTablet ? 20 : 15} className="text-accent shrink-0" />
           <span className={`${isTablet ? 'text-xl' : 'text-lg'} font-semibold shrink-0`}>Program Execution</span>
-          <ChevronDown size={isTablet ? 20 : 15} className={`ml-auto shrink-0 transition-transform duration-200 ${open ? 'rotate-180' : ''}`} />
+          <ChevronDown size={isTablet ? 20 : 15} className={`ml-auto shrink-0 transition-transform duration-200 ${contentOpen ? 'rotate-180' : ''}`} />
         </button>
-        {open && <div className="ml-2 flex items-center gap-2 shrink-0">
+        {contentOpen && <div className="ml-2 flex items-center gap-2 shrink-0">
           <div className="relative">
             <button
               type="button"
@@ -194,9 +195,9 @@ export function ProgramExecutionPanel({ isTablet }: { isTablet?: boolean }) {
             <Navigation size={12} /> Follow
           </button>
         </div>}
-      </div>
+      </div>}
 
-      {open && (sourceMatchesJob ? (
+      {contentOpen && (sourceMatchesJob ? (
         <div className="relative flex-1 min-h-0 overflow-hidden bg-surface font-mono text-[13px]">
           <div
             ref={highlightRef}

@@ -939,6 +939,7 @@ interface Props {
   className?: string
   isTablet?: boolean
   showOverrides?: boolean
+  fitToViewSignal?: unknown
 }
 
 function ViewerOverrideControl({
@@ -986,7 +987,7 @@ function ViewerOverrideControl({
   )
 }
 
-export function GCodeViewer({ className, isTablet, showOverrides }: Props) {
+export function GCodeViewer({ className, isTablet, showOverrides, fitToViewSignal }: Props) {
   const canvasRef = useRef<HTMLCanvasElement>(null)
   const webglCanvasRef = useRef<HTMLCanvasElement>(null)
   const containerRef = useRef<HTMLDivElement>(null)
@@ -1027,6 +1028,17 @@ export function GCodeViewer({ className, isTablet, showOverrides }: Props) {
   const progressRef = useRef<ToolpathProgress | null>(null)
   const prevIsRunningRef = useRef(false)
   const prevModelRef = useRef<GCodeModel | null>(null)
+
+  useEffect(() => {
+    if (!fitToViewSignal) return
+    // The tablet accordion animates its height; fit after that transition has
+    // settled so the camera uses the final canvas dimensions.
+    const timeout = window.setTimeout(() => {
+      needsFitRef.current = true
+      scheduleRender()
+    }, 320)
+    return () => window.clearTimeout(timeout)
+  }, [fitToViewSignal])
 
   const [is3D, setIs3D] = useState(false)
   const [projectionMode, setProjectionMode] = useState<ProjectionMode>('orthographic')
