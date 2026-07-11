@@ -28,7 +28,7 @@ function applyThemeClass(theme: Theme) {
 }
 
 const _savedTheme = localStorage.getItem('theme')
-const _initialTheme: Theme = isValidTheme(_savedTheme) ? _savedTheme : 'dark'
+const _initialTheme: Theme = isValidTheme(_savedTheme) ? _savedTheme : 'midnight-dark'
 applyThemeClass(_initialTheme)
 
 
@@ -395,7 +395,7 @@ export const useMachineStore = create<Store>((set) => ({
       let theme: Theme
       if (state.theme === 'light') {
         const saved = localStorage.getItem('darkTheme')
-        theme = isValidTheme(saved) && saved !== 'light' ? saved : 'dark'
+        theme = isValidTheme(saved) && saved !== 'light' ? saved : 'midnight-dark'
       } else {
         localStorage.setItem('darkTheme', state.theme)
         theme = 'light'
