@@ -148,7 +148,9 @@ export async function uploadFile(
   file: File,
   fs: 'sd' | 'local',
   onProgress?: (pct: number) => void,
+  onPhase?: (phase: 'preparing' | 'uploading' | 'finishing') => void,
 ): Promise<void> {
+  onPhase?.('preparing')
   await checkFreeSpace(fs, file.size, path, file.name)
   return new Promise((resolve, reject) => {
     const xhr = new XMLHttpRequest()
@@ -166,6 +168,8 @@ export async function uploadFile(
         if (e.lengthComputable) onProgress(Math.round((e.loaded / e.total) * 100))
       }
     }
+    xhr.upload.onloadstart = () => onPhase?.('uploading')
+    xhr.upload.onload = () => onPhase?.('finishing')
 
     xhr.onload = () => (xhr.status < 300 ? resolve() : reject(new Error(`Upload ${xhr.status}`)))
     xhr.onerror = () => reject(new Error('Upload failed'))

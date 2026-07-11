@@ -3,6 +3,7 @@ import {
   Folder, File, Upload, Trash2, RefreshCw,
   ChevronRight, HardDrive, FolderPlus, X, Pencil,
   Check, Download, Server, FileCode, FilePlus, Search,
+  Loader2,
 } from 'lucide-react'
 import { listFiles, deleteFile, deleteDir, uploadFile, createDir, renameFile, getBase, fetchFileContent, saveFileContent } from '../lib/http'
 import { CodeEditor, isEditable } from './CodeEditor'
@@ -366,6 +367,7 @@ export function FileManager({ isTablet }: { isTablet?: boolean }) {
   const [error, setError]       = useState('')
   const [uploading, setUploading]       = useState(false)
   const [uploadPct, setUploadPct]       = useState(0)
+  const [uploadPhase, setUploadPhase]   = useState<'preparing' | 'uploading' | 'finishing'>('preparing')
   const [uploadIdx, setUploadIdx]       = useState(0)
   const [uploadTotal, setUploadTotal]   = useState(0)
   const [newDirName, setNewDirName] = useState('')
@@ -373,7 +375,7 @@ export function FileManager({ isTablet }: { isTablet?: boolean }) {
   const [newFileName, setNewFileName] = useState('')
   const [showNewFile, setShowNewFile] = useState(false)
   const [editing, setEditing]       = useState<{ path: string; filename: string; content: string } | null>(null)
-  const [editLoading, setEditLoading] = useState(false)
+  const [editLoading, setEditLoading] = useState<string | null>(null)
   const [dragOver, setDragOver] = useState(false)
   const [search, setSearch] = useState('')
   const [selectionMode, setSelectionMode] = useState(false)
@@ -477,7 +479,8 @@ export function FileManager({ isTablet }: { isTablet?: boolean }) {
       for (let i = 0; i < files.length; i++) {
         setUploadIdx(i + 1)
         setUploadPct(0)
-        await uploadFile(path, files[i], fs, p => setUploadPct(p))
+        setUploadPhase('preparing')
+        await uploadFile(path, files[i], fs, p => setUploadPct(p), setUploadPhase)
       }
       load(path, fs)
     } catch (e) {
@@ -510,7 +513,7 @@ export function FileManager({ isTablet }: { isTablet?: boolean }) {
   }
 
   async function openEditor(filePath: string, filename: string) {
-    setEditLoading(true)
+    setEditLoading(filename)
     try {
       const fullFilePath = `${filePath}${filename}`
       const content = await fetchFileContent(fullFilePath, fs)
@@ -518,7 +521,7 @@ export function FileManager({ isTablet }: { isTablet?: boolean }) {
     } catch (e) {
       alert(`Failed to load file: ${e instanceof Error ? e.message : 'Unknown error'}`)
     } finally {
-      setEditLoading(false)
+      setEditLoading(null)
     }
   }
 
@@ -781,11 +784,11 @@ export function FileManager({ isTablet }: { isTablet?: boolean }) {
       {uploading && (
         <div className="px-3 py-2 bg-info/5 border-b border-info/20">
           <div className="flex justify-between text-base text-info mb-1">
-            <span>Uploading{uploadTotal > 1 ? ` (${uploadIdx} of ${uploadTotal})` : ''}…</span>
-            <span>{uploadPct}%</span>
+            <span>{uploadPhase === 'preparing' ? 'Checking storage' : uploadPhase === 'finishing' ? 'Finishing upload' : 'Uploading'}{uploadTotal > 1 ? ` (${uploadIdx} of ${uploadTotal})` : ''}…</span>
+            <span>{uploadPhase === 'uploading' ? `${uploadPct}%` : <Loader2 size={14} className="animate-spin" />}</span>
           </div>
           <div className="w-full h-1 bg-elevated rounded-full overflow-hidden">
-            <div className="h-full bg-info transition-all" style={{ width: `${uploadPct}%` }} />
+            <div className={`h-full bg-info transition-all ${uploadPhase !== 'uploading' ? 'animate-pulse' : ''}`} style={{ width: uploadPhase === 'preparing' ? '0%' : uploadPhase === 'finishing' ? '100%' : `${uploadPct}%` }} />
           </div>
         </div>
       )}
@@ -884,9 +887,11 @@ export function FileManager({ isTablet }: { isTablet?: boolean }) {
       />
 
       {editLoading && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50">
-          <div className="bg-surface border border-border rounded-sm p-6 text-base text-text-muted">
-            Loading file…
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-[1px]">
+          <div className="flex min-w-64 flex-col items-center rounded-lg border border-border bg-surface px-8 py-7 text-center shadow-2xl">
+            <Loader2 size={30} className="animate-spin text-accent" aria-hidden="true" />
+            <div className="mt-3 text-base font-semibold text-text-primary">Loading file…</div>
+            <div className="mt-1 max-w-64 truncate font-mono text-sm text-text-muted">{editLoading}</div>
           </div>
         </div>
       )}

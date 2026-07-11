@@ -223,13 +223,13 @@ export function RestartFromLineDialog({
               <span className="text-sm font-semibold text-text-primary">Program</span>
               <span className="text-xs text-text-muted">Click any line to select it</span>
             </div>
-            <div className="relative h-[42vh] min-h-[260px] overflow-hidden rounded border border-border bg-[#15171a] font-mono text-[13px]">
+            <div className="relative h-[42vh] min-h-[260px] overflow-hidden rounded border border-border bg-surface font-mono text-[13px]">
               <div
                 ref={lineHighlightRef}
                 className="absolute left-0 right-0 h-5 bg-accent/10 border-l-2 border-accent pointer-events-none z-0"
                 style={{ display: selectedLine == null ? 'none' : 'block' }}
               />
-              <div ref={gutterRef} className="absolute inset-y-0 left-0 w-16 overflow-hidden border-r border-border bg-black/15 z-10 select-none" aria-hidden="true">
+              <div ref={gutterRef} className="absolute inset-y-0 left-0 w-16 overflow-hidden border-r border-border bg-elevated z-10 select-none" aria-hidden="true">
                 <pre className="m-0 py-3 pr-3 text-right text-text-dim" style={{ lineHeight: `${PROGRAM_LINE_HEIGHT}px` }}>{program.lineNumbers}</pre>
               </div>
               <textarea
