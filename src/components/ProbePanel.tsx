@@ -553,16 +553,16 @@ export function ProbePanel({ isTablet }: { isTablet?: boolean }) {
         </div>
         <div>
           <div className="text-[13px] font-bold uppercase tracking-[.12em] text-text-dim mb-2">Center finding</div>
-          <div className="grid grid-cols-4 gap-2">
+          <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
             {CYCLES.filter(c => c.group === 'center').map(c => <button key={c.id} onClick={() => selectCycle(c.id)} disabled={!!running}
-              className={`btn justify-center ${isTablet ? 'h-14 text-xl' : 'h-10 text-base'} ${selected === c.id ? 'btn-primary' : 'btn-ghost'}`}>
+              className={`btn min-w-0 justify-center whitespace-normal text-center leading-tight ${isTablet ? 'h-14 text-xl' : 'min-h-10 h-auto py-2 text-sm sm:h-10 sm:py-0 sm:text-base'} ${selected === c.id ? 'btn-primary' : 'btn-ghost'}`}>
               {c.label}
             </button>)}
           </div>
         </div>
 
-        <div className={`grid gap-4 ${isTablet ? 'grid-cols-[220px_1fr]' : 'grid-cols-[150px_1fr]'}`}>
-          <div className={`${isTablet ? 'h-[220px]' : 'h-[150px]'}`}>
+        <div className={`grid grid-cols-1 gap-4 ${isTablet ? 'sm:grid-cols-[220px_1fr]' : 'sm:grid-cols-[150px_1fr]'}`}>
+          <div className={`mx-auto w-full ${isTablet ? 'h-[220px] max-w-[220px]' : 'h-[220px] max-w-[220px] sm:h-[150px] sm:max-w-[150px]'}`}>
             <ProbeGraphic
               cycle={selected}
               running={running}

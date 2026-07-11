@@ -223,7 +223,7 @@ export function ProgramExecutionPanel({ isTablet, initiallyOpen = false, accordi
             }}
           />
           {trackingMessage && (
-            <div className="absolute left-20 right-4 bottom-3 z-30 flex items-center gap-2 rounded border border-warn/35 bg-surface/95 px-3 py-2 text-xs text-warn shadow-lg pointer-events-none">
+            <div className="absolute left-20 right-4 bottom-3 z-30 flex items-center gap-2 rounded border border-warn bg-surface px-3 py-2 text-xs text-warn shadow-lg pointer-events-none">
               <AlertTriangle size={13} className="shrink-0" />
               <span>{trackingMessage}</span>
             </div>
