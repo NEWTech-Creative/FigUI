@@ -644,7 +644,20 @@ export function FileManager({ isTablet }: { isTablet?: boolean }) {
 
   async function handleSaveFile(content: string) {
     if (!editing) return;
+    if (
+      editing.filename === "config.yaml" &&
+      content.includes("# Edited using Config Studio") &&
+      !editing.content.includes("# Edited using Config Studio")
+    ) {
+      await saveFileContent(
+        editing.path,
+        "config_backup.yaml",
+        editing.content,
+        fs,
+      );
+    }
     await saveFileContent(editing.path, editing.filename, content, fs);
+    setEditing((current) => (current ? { ...current, content } : current));
     load(path, fs);
   }
 

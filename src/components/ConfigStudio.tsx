@@ -13,6 +13,8 @@ import {
   ShieldCheck,
   SlidersHorizontal,
   Trash2,
+  Undo2,
+  Redo2,
   Zap,
 } from "lucide-react";
 
@@ -200,7 +202,12 @@ const FIELDS: Record<NodeKind, FieldDef[]> = {
         "tmc_2208",
         "tmc_2209",
         "tmc_5160",
-        "servo",
+        "tmc_5160Pro",
+        "tmc_2160Pro",
+        "tmc_2160",
+        "rc_servo",
+        "solenoid",
+        "dynamixel2",
         "null_motor",
       ],
     },
@@ -208,6 +215,10 @@ const FIELDS: Record<NodeKind, FieldDef[]> = {
     { key: "step_pin", label: "Step pin", type: "pin" },
     { key: "direction_pin", label: "Direction pin", type: "pin" },
     { key: "disable_pin", label: "Disable pin", type: "pin" },
+    { key: "ms1_pin", label: "Microstep 1 pin", type: "pin" },
+    { key: "ms2_pin", label: "Microstep 2 pin", type: "pin" },
+    { key: "ms3_pin", label: "Microstep 3 pin", type: "pin" },
+    { key: "reset_pin", label: "Reset pin", type: "pin" },
     { key: "spi_index", label: "SPI index", type: "number" },
     { key: "uart_num", label: "UART bus", type: "number" },
     { key: "addr", label: "Driver address", type: "number" },
@@ -219,6 +230,12 @@ const FIELDS: Record<NodeKind, FieldDef[]> = {
     },
     { key: "run_amps", label: "Run current", type: "number", unit: "A" },
     { key: "hold_amps", label: "Hold current", type: "number", unit: "A" },
+    {
+      key: "homing_amps",
+      label: "Homing current",
+      type: "number",
+      unit: "A",
+    },
     { key: "microsteps", label: "Microsteps", type: "number" },
     { key: "stallguard", label: "StallGuard", type: "number" },
     { key: "stallguard_debug", label: "StallGuard debug", type: "boolean" },
@@ -238,6 +255,48 @@ const FIELDS: Record<NodeKind, FieldDef[]> = {
       options: ["StealthChop", "CoolStep", "StallGuard"],
     },
     { key: "use_enable", label: "Use enable", type: "boolean" },
+    { key: "diag0_error", label: "DIAG0 error", type: "boolean" },
+    { key: "diag0_otpw", label: "DIAG0 overtemperature", type: "boolean" },
+    {
+      key: "diag0_int_pushpull",
+      label: "DIAG0 push-pull",
+      type: "boolean",
+    },
+    { key: "tpfd", label: "Passive fast decay time", type: "number" },
+    { key: "CHOPCONF", label: "CHOPCONF register", type: "number" },
+    { key: "COOLCONF", label: "COOLCONF register", type: "number" },
+    { key: "THIGH", label: "THIGH register", type: "number" },
+    { key: "TCOOLTHRS", label: "TCOOLTHRS register", type: "number" },
+    { key: "GCONF", label: "GCONF register", type: "number" },
+    { key: "PWMCONF", label: "PWMCONF register", type: "number" },
+    { key: "IHOLD_IRUN", label: "IHOLD_IRUN register", type: "number" },
+    { key: "output_pin", label: "Output pin", type: "pin" },
+    { key: "pwm_hz", label: "PWM frequency", type: "number", unit: "Hz" },
+    {
+      key: "min_pulse_us",
+      label: "Minimum pulse",
+      type: "number",
+      unit: "µs",
+    },
+    {
+      key: "max_pulse_us",
+      label: "Maximum pulse",
+      type: "number",
+      unit: "µs",
+    },
+    { key: "timer_ms", label: "Timer period", type: "number", unit: "ms" },
+    { key: "off_percent", label: "Off power", type: "number", unit: "%" },
+    { key: "pull_percent", label: "Pull power", type: "number", unit: "%" },
+    { key: "hold_percent", label: "Hold power", type: "number", unit: "%" },
+    { key: "pull_ms", label: "Pull duration", type: "number", unit: "ms" },
+    {
+      key: "direction_invert",
+      label: "Invert direction",
+      type: "boolean",
+    },
+    { key: "id", label: "Servo ID", type: "number" },
+    { key: "count_min", label: "Minimum count", type: "number" },
+    { key: "count_max", label: "Maximum count", type: "number" },
   ],
   kinematics: [
     {
@@ -415,6 +474,179 @@ const FIELDS: Record<NodeKind, FieldDef[]> = {
   ],
 };
 
+const DRIVER_FIELDS_BY_TYPE: Partial<Record<string, readonly string[]>> = {
+  stepstick: [
+    "type",
+    "step_pin",
+    "direction_pin",
+    "disable_pin",
+    "ms1_pin",
+    "ms2_pin",
+    "ms3_pin",
+    "reset_pin",
+  ],
+  standard_stepper: ["type", "step_pin", "direction_pin", "disable_pin"],
+  tmc_2130: [
+    "type",
+    "step_pin",
+    "direction_pin",
+    "disable_pin",
+    "cs_pin",
+    "spi_index",
+    "r_sense_ohms",
+    "run_amps",
+    "hold_amps",
+    "microsteps",
+    "stallguard",
+    "stallguard_debug",
+    "toff_disable",
+    "toff_stealthchop",
+    "toff_coolstep",
+    "run_mode",
+    "homing_mode",
+    "use_enable",
+    "diag0_error",
+    "diag0_otpw",
+    "diag0_int_pushpull",
+  ],
+  tmc_5160: [
+    "type",
+    "step_pin",
+    "direction_pin",
+    "disable_pin",
+    "cs_pin",
+    "spi_index",
+    "r_sense_ohms",
+    "run_amps",
+    "hold_amps",
+    "microsteps",
+    "stallguard",
+    "stallguard_debug",
+    "toff_disable",
+    "toff_stealthchop",
+    "toff_coolstep",
+    "run_mode",
+    "homing_mode",
+    "use_enable",
+    "diag0_error",
+    "diag0_otpw",
+    "diag0_int_pushpull",
+    "tpfd",
+  ],
+  tmc_2208: [
+    "type",
+    "step_pin",
+    "direction_pin",
+    "disable_pin",
+    "uart_num",
+    "addr",
+    "cs_pin",
+    "r_sense_ohms",
+    "run_amps",
+    "hold_amps",
+    "microsteps",
+    "toff_disable",
+    "toff_stealthchop",
+    "run_mode",
+    "homing_mode",
+    "stallguard_debug",
+    "toff_coolstep",
+    "use_enable",
+    "stallguard",
+  ],
+  tmc_2209: [
+    "type",
+    "step_pin",
+    "direction_pin",
+    "disable_pin",
+    "uart_num",
+    "addr",
+    "cs_pin",
+    "r_sense_ohms",
+    "run_amps",
+    "hold_amps",
+    "homing_amps",
+    "microsteps",
+    "toff_disable",
+    "toff_stealthchop",
+    "run_mode",
+    "homing_mode",
+    "stallguard_debug",
+    "toff_coolstep",
+    "use_enable",
+    "stallguard",
+  ],
+  tmc_5160pro: [
+    "type",
+    "step_pin",
+    "direction_pin",
+    "disable_pin",
+    "cs_pin",
+    "spi_index",
+    "use_enable",
+    "CHOPCONF",
+    "COOLCONF",
+    "THIGH",
+    "TCOOLTHRS",
+    "GCONF",
+    "PWMCONF",
+    "IHOLD_IRUN",
+  ],
+  tmc_2160pro: [
+    "type",
+    "step_pin",
+    "direction_pin",
+    "disable_pin",
+    "cs_pin",
+    "spi_index",
+    "use_enable",
+    "CHOPCONF",
+    "COOLCONF",
+    "THIGH",
+    "TCOOLTHRS",
+    "GCONF",
+    "PWMCONF",
+    "IHOLD_IRUN",
+  ],
+  tmc_2160: [
+    "type",
+    "step_pin",
+    "direction_pin",
+    "disable_pin",
+    "cs_pin",
+    "spi_index",
+    "use_enable",
+    "CHOPCONF",
+    "COOLCONF",
+    "THIGH",
+    "TCOOLTHRS",
+    "GCONF",
+    "PWMCONF",
+    "IHOLD_IRUN",
+  ],
+  rc_servo: [
+    "type",
+    "output_pin",
+    "pwm_hz",
+    "min_pulse_us",
+    "max_pulse_us",
+    "timer_ms",
+  ],
+  solenoid: [
+    "type",
+    "output_pin",
+    "pwm_hz",
+    "off_percent",
+    "pull_percent",
+    "hold_percent",
+    "pull_ms",
+    "direction_invert",
+    "timer_ms",
+  ],
+  dynamixel2: ["type", "uart_num", "id", "count_min", "count_max", "timer_ms"],
+  null_motor: ["type"],
+};
+
 const COLORS: Record<NodeKind, string> = {
   machine: "#7c8ba1",
   stepping: "#d6943b",
@@ -439,6 +671,7 @@ const HUB_PARTITIONS = [
   {
     id: "tooling",
     label: "Tooling",
+    capabilities: ["Spindle / laser", "Probes", "Coolant", "Tool changer"],
     color: "#dc7659",
     direction: "left" as const,
     kinds: ["spindle", "probe", "coolant", "atc"] as NodeKind[],
@@ -447,6 +680,7 @@ const HUB_PARTITIONS = [
   {
     id: "motion",
     label: "Motion",
+    capabilities: ["Stepping", "Axes", "Kinematics"],
     color: "#4f8edc",
     direction: "right" as const,
     kinds: ["stepping", "axes", "kinematics"] as NodeKind[],
@@ -455,6 +689,7 @@ const HUB_PARTITIONS = [
   {
     id: "hardware",
     label: "Hardware",
+    capabilities: ["Buses", "Storage", "User I/O", "Displays"],
     color: "#9c72c2",
     direction: "bottom" as const,
     kinds: ["bus", "storage", "io", "display"] as NodeKind[],
@@ -463,6 +698,7 @@ const HUB_PARTITIONS = [
   {
     id: "safety",
     label: "Safety & automation",
+    capabilities: ["Controls", "Parking", "Macros"],
     color: "#47a986",
     direction: "right" as const,
     kinds: ["control", "parking", "macro"] as NodeKind[],
@@ -512,9 +748,9 @@ const ROOT_OPTIONS: Record<
 };
 const PARTITION_ORIGINS = {
   tooling: { x: 80, y: 290, dx: 0, dy: 125 },
-  motion: { x: 830, y: 230, dx: 0, dy: 135 },
+  motion: { x: 900, y: 230, dx: 0, dy: 135 },
   hardware: { x: 360, y: 760, dx: 245, dy: 0 },
-  safety: { x: 830, y: 650, dx: 0, dy: 125 },
+  safety: { x: 900, y: 650, dx: 0, dy: 125 },
 } as const;
 const defaults = (kind: NodeKind): Record<string, string> =>
   Object.fromEntries(
@@ -626,16 +862,46 @@ function layoutChildren(
   direction: "right" | "left" | "top" | "bottom",
 ) {
   const children = nodes.filter((node) => node.parentId === parent.id);
+  if (!children.length) return;
+
+  // Reserve perpendicular space for the complete descendant subtree. A
+  // simple sibling index causes, for example, a two-motor Y axis to overlap
+  // the X/Z motor rows because the axis level cannot see those grandchildren.
+  const spans = children.map((child) => subtreeLeafCount(nodes, child));
+  const totalSpan = spans.reduce((sum, span) => sum + span, 0);
+  const horizontal = direction === "right" || direction === "left";
+  const gap = horizontal ? 115 : 245;
+  let cursor = (horizontal ? parent.y : parent.x) - ((totalSpan - 1) * gap) / 2;
+
   children.forEach((node, index) => {
-    if (direction === "right" || direction === "left") {
+    const span = spans[index];
+    const center = cursor + ((span - 1) * gap) / 2;
+    if (horizontal) {
       node.x = parent.x + (direction === "right" ? 290 : -290);
-      node.y = parent.y + (index - (children.length - 1) / 2) * 115;
+      node.y = center;
     } else {
-      node.x = parent.x + (index - (children.length - 1) / 2) * 245;
+      node.x = center;
       node.y = parent.y + (direction === "bottom" ? 125 : -125);
     }
     layoutChildren(nodes, node, direction);
+    cursor += span * gap;
   });
+}
+
+function subtreeLeafCount(
+  nodes: NodeData[],
+  parent: NodeData,
+  visiting = new Set<string>(),
+): number {
+  if (visiting.has(parent.id)) return 1;
+  const nextVisiting = new Set(visiting).add(parent.id);
+  const children = nodes.filter((node) => node.parentId === parent.id);
+  return children.length
+    ? children.reduce(
+        (total, child) => total + subtreeLeafCount(nodes, child, nextVisiting),
+        0,
+      )
+    : 1;
 }
 
 function branchDirection(nodes: NodeData[], node: NodeData) {
@@ -777,10 +1043,15 @@ function nodesFromYaml(content: string): NodeData[] {
                 "tmc_2208",
                 "tmc_2209",
                 "tmc_5160",
-                "servo",
+                "tmc_5160Pro",
+                "tmc_2160Pro",
+                "tmc_2160",
+                "rc_servo",
+                "solenoid",
+                "dynamixel2",
                 "standard_stepper",
                 "null_motor",
-              ].includes(k),
+              ].some((type) => type.toLowerCase() === k.toLowerCase()),
             ) ?? "stepstick";
           const driverFields =
             motor[driver] && typeof motor[driver] === "object"
@@ -884,17 +1155,18 @@ function PinEditor({
   uartChannels: string[];
 }) {
   const parts = value.split(":");
-  const base = parts[0];
+  const base = parts[0].trim();
+  const normalizedBase = base.toLowerCase();
   const dot = base.lastIndexOf(".");
   const family =
-    base === "NO_PIN"
+    normalizedBase === "no_pin"
       ? "NO_PIN"
-      : base === "void"
+      : normalizedBase === "void"
         ? "void"
         : dot > 0
-          ? base.slice(0, dot)
+          ? base.slice(0, dot).toLowerCase()
           : "gpio";
-  const index = dot > 0 ? base.slice(dot + 1) : "0";
+  const index = dot > 0 ? base.slice(dot + 1) : /^\d+$/.test(base) ? base : "0";
   const set = (nextFamily: string, nextIndex = index, attrs = parts.slice(1)) =>
     onChange(
       nextFamily === "NO_PIN" || nextFamily === "void"
@@ -902,13 +1174,18 @@ function PinEditor({
         : [nextFamily, nextIndex].join(".") +
             (attrs.length ? `:${attrs.join(":")}` : ""),
     );
-  const families = [
-    "NO_PIN",
-    "gpio",
-    ...(hasI2so ? ["i2so"] : []),
-    ...uartChannels,
-    "void",
-  ];
+  const families = Array.from(
+    new Set([
+      "NO_PIN",
+      "gpio",
+      ...(hasI2so || family === "i2so" ? ["i2so"] : []),
+      ...uartChannels.map((channel) => channel.toLowerCase()),
+      ...(family !== "NO_PIN" && family !== "gpio" && family !== "void"
+        ? [family]
+        : []),
+      "void",
+    ]),
+  );
   return (
     <div className="grid grid-cols-[1fr_72px] gap-1.5">
       <select
@@ -1013,7 +1290,7 @@ function MachineHub({
           dy: (e.clientY - e.currentTarget.getBoundingClientRect().top) / zoom,
         });
       }}
-      className={`absolute w-[270px] cursor-grab select-none rounded-xl border bg-[#1b212c] shadow-[0_14px_40px_rgba(0,0,0,.38)] ${selected ? "border-white/35 ring-1 ring-white/10" : "border-white/10"}`}
+      className={`absolute w-[360px] cursor-grab select-none rounded-xl border bg-[#1b212c] shadow-[0_14px_40px_rgba(0,0,0,.38)] ${selected ? "border-white/35 ring-1 ring-white/10" : "border-white/10"}`}
       style={{ left: node.x, top: node.y }}
     >
       <div className="flex items-center gap-3 border-b border-white/10 px-4 py-3">
@@ -1029,26 +1306,18 @@ function MachineHub({
       </div>
       <div className="grid grid-cols-2">
         {HUB_PARTITIONS.map((p, i) => {
-          const count = nodes.filter(
-            (child) => p.kinds.includes(child.kind) && !child.parentId,
-          ).length;
           return (
             <div
               key={p.id}
-              className={`relative p-3 ${i % 2 === 0 ? "border-r" : ""} ${i < 2 ? "border-b" : ""} border-white/10`}
+              className={`relative h-[88px] p-3 ${i % 2 === 0 ? "border-r" : ""} ${i < 2 ? "border-b" : ""} border-white/10`}
             >
-              <div className="mb-2 flex items-center gap-2">
+              <div className="flex items-center gap-2">
                 <span
-                  className="h-2 w-2 rounded-sm"
+                  className="h-2 w-2 shrink-0 rounded-sm"
                   style={{ background: p.color }}
                 />
-                <span className="text-[10px] font-bold uppercase tracking-wider text-[#aab4c3]">
+                <span className="text-[11px] font-bold uppercase leading-tight tracking-wider text-[#aab4c3]">
                   {p.label}
-                </span>
-              </div>
-              <div className="flex items-center justify-between">
-                <span className="text-[10px] text-[#647185]">
-                  {count} configured
                 </span>
                 <button
                   onPointerDown={(e) => e.stopPropagation()}
@@ -1058,11 +1327,26 @@ function MachineHub({
                       current === p.id ? null : p.id,
                     );
                   }}
-                  className="flex h-6 w-6 items-center justify-center rounded border border-white/10 bg-[#111722] text-[#8794a8] hover:border-white/25 hover:text-white"
+                  className="flex h-6 w-6 shrink-0 items-center justify-center rounded border border-white/10 bg-[#111722] text-[#8794a8] hover:border-white/25 hover:text-white"
                   title={`Add ${p.label.toLowerCase()} component`}
                 >
                   <Plus size={12} />
                 </button>
+              </div>
+              <div className="mt-1.5 grid grid-cols-2 gap-1">
+                {p.capabilities.map((capability) => (
+                  <span
+                    key={capability}
+                    className="whitespace-nowrap rounded border px-1.5 py-0.5 text-center text-[9px] font-medium leading-3 text-[#8e9aab]"
+                    style={{
+                      borderColor: `${p.color}35`,
+                      backgroundColor: `${p.color}10`,
+                    }}
+                    title={capability}
+                  >
+                    {capability}
+                  </span>
+                ))}
               </div>
               {openPartition === p.id && (
                 <div
@@ -1113,8 +1397,8 @@ function MachineHub({
       </div>
       <span className="absolute -left-1.5 top-[100px] h-2.5 w-2.5 rounded-full border-2 border-[#1b212c] bg-[#dc7659]" />
       <span className="absolute -right-1.5 top-[100px] h-2.5 w-2.5 rounded-full border-2 border-[#1b212c] bg-[#4f8edc]" />
-      <span className="absolute left-[63px] -bottom-1.5 h-2.5 w-2.5 rounded-full border-2 border-[#1b212c] bg-[#9c72c2]" />
-      <span className="absolute -right-1.5 top-[184px] h-2.5 w-2.5 rounded-full border-2 border-[#1b212c] bg-[#47a986]" />
+      <span className="absolute left-[85px] -bottom-1.5 h-2.5 w-2.5 rounded-full border-2 border-[#1b212c] bg-[#9c72c2]" />
+      <span className="absolute -right-1.5 top-[187px] h-2.5 w-2.5 rounded-full border-2 border-[#1b212c] bg-[#47a986]" />
     </div>
   );
 }
@@ -1159,7 +1443,7 @@ function GraphNode({
           dy: (e.clientY - e.currentTarget.getBoundingClientRect().top) / zoom,
         });
       }}
-      className={`absolute w-[210px] cursor-grab select-none rounded-lg border bg-[#1b212c] text-left shadow-[0_8px_25px_rgba(0,0,0,.3)] active:cursor-grabbing ${selected ? "border-white/35 ring-1 ring-white/10" : "border-white/10 hover:border-white/20"}`}
+      className={`absolute h-[76px] w-[210px] cursor-grab select-none rounded-lg border bg-[#1b212c] text-left shadow-[0_8px_25px_rgba(0,0,0,.3)] active:cursor-grabbing ${selected ? "border-white/35 ring-1 ring-white/10" : "border-white/10 hover:border-white/20"}`}
       style={{ left: node.x, top: node.y }}
     >
       <Port side={inputSide} />
@@ -1167,9 +1451,9 @@ function GraphNode({
         className="block h-1 rounded-t-lg"
         style={{ background: node.color }}
       />
-      <span className="flex items-center gap-3 p-3">
+      <span className="flex h-[72px] items-center gap-3 p-3">
         <span
-          className="flex h-8 w-8 items-center justify-center rounded-md bg-black/20"
+          className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md bg-black/20"
           style={{ color: node.color }}
         >
           {node.kind === "axis" ? (
@@ -1186,11 +1470,11 @@ function GraphNode({
             <Settings2 size={16} />
           )}
         </span>
-        <span className="min-w-0">
-          <span className="block truncate text-xs font-semibold text-[#dce2eb]">
+        <span className="min-w-0 flex-1">
+          <span className="block truncate text-[13px] font-semibold text-[#dce2eb]">
             {node.title}
           </span>
-          <span className="block truncate text-[10px] text-[#778498]">
+          <span className="line-clamp-2 text-[11px] leading-[14px] text-[#778498]">
             {node.subtitle}
           </span>
         </span>
@@ -1201,7 +1485,7 @@ function GraphNode({
               e.stopPropagation();
               setShowChildren((v) => !v);
             }}
-            className="ml-auto flex h-6 w-6 items-center justify-center rounded border border-white/10 bg-[#111722] text-[#8794a8] hover:text-white"
+            className="flex h-6 w-6 shrink-0 items-center justify-center rounded border border-white/10 bg-[#111722] text-[#8794a8] hover:text-white"
             title="Add child"
           >
             <Plus size={12} />
@@ -1263,7 +1547,37 @@ export function ConfigStudio({
     py: number;
   } | null>(null);
   const sourceRef = useRef(content);
+  const undoRef = useRef<{ nodes: NodeData[]; source: string }[]>([]);
+  const redoRef = useRef<{ nodes: NodeData[]; source: string }[]>([]);
+  const [propertyQuery, setPropertyQuery] = useState("");
+
+  useEffect(() => {
+    setPropertyQuery("");
+  }, [selected]);
   const active = nodes.find((n) => n.id === selected);
+  const snapshotNodes = (value: NodeData[]) =>
+    value.map((node) => ({ ...node, fields: { ...node.fields } }));
+  const recordHistory = () => {
+    undoRef.current.push({
+      nodes: snapshotNodes(nodes),
+      source: sourceRef.current,
+    });
+    if (undoRef.current.length > 100) undoRef.current.shift();
+    redoRef.current = [];
+  };
+  const restoreHistory = (direction: "undo" | "redo") => {
+    const from = direction === "undo" ? undoRef : redoRef,
+      to = direction === "undo" ? redoRef : undoRef,
+      entry = from.current.pop();
+    if (!entry) return;
+    to.current.push({ nodes: snapshotNodes(nodes), source: sourceRef.current });
+    setNodes(snapshotNodes(entry.nodes));
+    sourceRef.current = entry.source;
+    onChange(entry.source);
+    setSelected(
+      entry.nodes.some((node) => node.id === selected) ? selected : "machine",
+    );
+  };
   useEffect(() => {
     if (!content.trim()) onChange(contentFromNodes(nodes, content));
   }, []);
@@ -1312,6 +1626,7 @@ export function ConfigStudio({
     });
   };
   const addChild = (parent: NodeData, kind: NodeKind, title: string) => {
+    recordHistory();
     const id = `${kind}-${Date.now()}`;
     setNodes((ns) => {
       const siblingCount = ns.filter((n) => n.parentId === parent.id).length;
@@ -1368,6 +1683,7 @@ export function ConfigStudio({
     setSelected(id);
   };
   const update = (key: string, value: string) => {
+    recordHistory();
     const changedNode = nodes.find((node) => node.id === selected);
     const path = changedNode ? yamlPathForField(changedNode, key, nodes) : null;
     setNodes((ns) =>
@@ -1389,6 +1705,7 @@ export function ConfigStudio({
   };
   const remove = () => {
     if (!active || active.kind === "machine") return;
+    recordHistory();
     setNodes((ns) => {
       const removed = new Set([selected]);
       let changed = true;
@@ -1414,6 +1731,15 @@ export function ConfigStudio({
   };
   useEffect(() => {
     const deleteSelected = (event: KeyboardEvent) => {
+      if (
+        isActive &&
+        (event.metaKey || event.ctrlKey) &&
+        event.key.toLowerCase() === "z"
+      ) {
+        event.preventDefault();
+        restoreHistory(event.shiftKey ? "redo" : "undo");
+        return;
+      }
       if (!isActive) return;
       if (event.key !== "Delete" && event.key !== "Backspace") return;
       const target = event.target as HTMLElement | null;
@@ -1439,6 +1765,7 @@ export function ConfigStudio({
   }, []);
   const commitPlacement = (position: { x: number; y: number }) => {
     if (!pendingPlacement) return;
+    recordHistory();
     const placement = pendingPlacement;
     const id = `${placement.kind}-${Date.now()}`;
     setNodes((ns) => {
@@ -1453,7 +1780,7 @@ export function ConfigStudio({
               ? "Select spindle type"
               : "New component",
           x: position.x - 105,
-          y: position.y - 30,
+          y: position.y - 38,
           color: COLORS[placement.kind],
           fields: defaults(placement.kind),
         },
@@ -1505,7 +1832,7 @@ export function ConfigStudio({
         current
           ? {
               ...current,
-              position: { x: position.x - 105, y: position.y - 30 },
+              position: { x: position.x - 105, y: position.y - 38 },
             }
           : null,
       );
@@ -1625,8 +1952,29 @@ export function ConfigStudio({
         </div>
         <div className="absolute left-1/2 top-3 z-20 flex -translate-x-1/2 items-center gap-1 rounded-md border border-white/10 bg-[#171c26]/95 p-1 shadow-xl">
           <button
+            onClick={() => restoreHistory("undo")}
+            disabled={!undoRef.current.length}
+            title="Undo (⌘Z)"
+            aria-label="Undo"
+            className="p-1.5 text-[#8995a7] hover:text-white disabled:cursor-not-allowed disabled:opacity-30"
+          >
+            <Undo2 size={14} />
+          </button>
+          <button
+            onClick={() => restoreHistory("redo")}
+            disabled={!redoRef.current.length}
+            title="Redo (⌘⇧Z)"
+            aria-label="Redo"
+            className="p-1.5 text-[#8995a7] hover:text-white disabled:cursor-not-allowed disabled:opacity-30"
+          >
+            <Redo2 size={14} />
+          </button>
+          <span className="mx-1 h-5 w-px bg-white/10" />
+          <button
             onClick={() => setZoom((z) => Math.max(0.35, z - 0.1))}
-            className="p-1.5 text-[#8995a7]"
+            title="Zoom out"
+            aria-label="Zoom out"
+            className="p-1.5 text-[#8995a7] hover:text-white"
           >
             <Minus size={14} />
           </button>
@@ -1635,7 +1983,9 @@ export function ConfigStudio({
           </span>
           <button
             onClick={() => setZoom((z) => Math.min(1.7, z + 0.1))}
-            className="p-1.5 text-[#8995a7]"
+            title="Zoom in"
+            aria-label="Zoom in"
+            className="p-1.5 text-[#8995a7] hover:text-white"
           >
             <Plus size={14} />
           </button>
@@ -1644,7 +1994,9 @@ export function ConfigStudio({
               setZoom(1);
               setPan({ x: 0, y: 0 });
             }}
-            className="p-1.5 text-[#8995a7]"
+            title="Reset view"
+            aria-label="Reset view"
+            className="p-1.5 text-[#8995a7] hover:text-white"
           >
             <Grid3X3 size={14} />
           </button>
@@ -1665,9 +2017,9 @@ export function ConfigStudio({
                 : branchDirection(nodes, e.from);
               const hubAnchors = {
                 tooling: { x: 0, y: 105 },
-                motion: { x: 270, y: 105 },
-                hardware: { x: 68, y: 220 },
-                safety: { x: 270, y: 189 },
+                motion: { x: 360, y: 105 },
+                hardware: { x: 90, y: 236 },
+                safety: { x: 360, y: 192 },
               };
               const source = isHub
                 ? {
@@ -1679,15 +2031,15 @@ export function ConfigStudio({
                       hubAnchors[partition.id as keyof typeof hubAnchors].y,
                   }
                 : direction === "right"
-                  ? { x: e.from.x + 210, y: e.from.y + 30 }
+                  ? { x: e.from.x + 210, y: e.from.y + 38 }
                   : direction === "left"
-                    ? { x: e.from.x, y: e.from.y + 30 }
-                    : { x: e.from.x + 105, y: e.from.y + 60 };
+                    ? { x: e.from.x, y: e.from.y + 38 }
+                    : { x: e.from.x + 105, y: e.from.y + 76 };
               const target =
                 direction === "right"
-                  ? { x: e.to.x - 1, y: e.to.y + 30 }
+                  ? { x: e.to.x - 1, y: e.to.y + 38 }
                   : direction === "left"
-                    ? { x: e.to.x + 211, y: e.to.y + 30 }
+                    ? { x: e.to.x + 211, y: e.to.y + 38 }
                     : { x: e.to.x + 105, y: e.to.y - 1 };
               const vector =
                 direction === "right"
@@ -1716,9 +2068,9 @@ export function ConfigStudio({
                   ];
                 const anchors = {
                   tooling: { x: 0, y: 105 },
-                  motion: { x: 270, y: 105 },
-                  hardware: { x: 68, y: 220 },
-                  safety: { x: 270, y: 189 },
+                  motion: { x: 360, y: 105 },
+                  hardware: { x: 90, y: 236 },
+                  safety: { x: 360, y: 192 },
                 };
                 const anchor = anchors[partition.id as keyof typeof anchors];
                 const source = {
@@ -1730,12 +2082,12 @@ export function ConfigStudio({
                   direction === "right"
                     ? {
                         x: pendingPlacement.position.x,
-                        y: pendingPlacement.position.y + 30,
+                        y: pendingPlacement.position.y + 38,
                       }
                     : direction === "left"
                       ? {
                           x: pendingPlacement.position.x + 210,
-                          y: pendingPlacement.position.y + 30,
+                          y: pendingPlacement.position.y + 38,
                         }
                       : {
                           x: pendingPlacement.position.x + 105,
@@ -1769,6 +2121,7 @@ export function ConfigStudio({
                 zoom={zoom}
                 onSelect={() => setSelected(n.id)}
                 onDrag={(value) => {
+                  recordHistory();
                   drag.current = value;
                 }}
                 onAdd={add}
@@ -1781,6 +2134,7 @@ export function ConfigStudio({
                 zoom={zoom}
                 onSelect={() => setSelected(n.id)}
                 onDrag={(value) => {
+                  recordHistory();
                   drag.current = value;
                 }}
                 onAdd={addChild}
@@ -1799,7 +2153,7 @@ export function ConfigStudio({
           )}
           {pendingPlacement && (
             <div
-              className="pointer-events-none absolute w-[210px] rounded-lg border border-dashed bg-[#1b212c]/80 shadow-2xl"
+              className="pointer-events-none absolute h-[76px] w-[210px] rounded-lg border border-dashed bg-[#1b212c]/80 shadow-2xl"
               style={{
                 left: pendingPlacement.position.x,
                 top: pendingPlacement.position.y,
@@ -1810,7 +2164,7 @@ export function ConfigStudio({
                 className="block h-1 rounded-t-lg"
                 style={{ background: COLORS[pendingPlacement.kind] }}
               />
-              <span className="flex items-center gap-3 p-3">
+              <span className="flex h-[72px] items-center gap-3 p-3">
                 <span
                   className="flex h-8 w-8 items-center justify-center rounded-md bg-black/20"
                   style={{ color: COLORS[pendingPlacement.kind] }}
@@ -1880,87 +2234,101 @@ export function ConfigStudio({
                 </button>
               )}
             </div>
-            <div className="h-[calc(100%-68px)] overflow-auto p-4">
-              <label className="mb-5 block">
-                <span className="mb-1.5 block text-[10px] font-bold uppercase tracking-wider text-[#707d90]">
-                  Node label
-                </span>
+            <div className="border-b border-white/10 p-3">
+              <label className="flex items-center gap-2 rounded-md border border-white/10 bg-[#10141c] px-3 py-2.5 focus-within:border-blue-500/50">
+                <Search size={15} className="shrink-0 text-[#707d90]" />
                 <input
-                  value={active.title}
-                  onChange={(e) =>
-                    setNodes((ns) =>
-                      ns.map((n) =>
-                        n.id === active.id
-                          ? { ...n, title: e.target.value }
-                          : n,
-                      ),
-                    )
-                  }
-                  className="w-full rounded-md border border-white/10 bg-[#10141c] px-2.5 py-2 text-xs outline-none"
+                  value={propertyQuery}
+                  onChange={(e) => setPropertyQuery(e.target.value)}
+                  placeholder="Search properties…"
+                  aria-label="Search properties"
+                  className="min-w-0 flex-1 bg-transparent text-sm outline-none placeholder:text-[#657185]"
                 />
               </label>
+            </div>
+            <div className="h-[calc(100%-129px)] overflow-auto p-4">
               <div className="mb-2 text-[10px] font-bold uppercase tracking-wider text-[#707d90]">
                 Properties
               </div>
               <div className="space-y-3">
-                {FIELDS[active.kind].map((f) => (
-                  <label key={f.key} className="block">
-                    <span className="mb-1.5 flex text-[11px] text-[#a9b3c2]">
-                      <span>{f.label}</span>
-                      {f.unit && (
-                        <span className="ml-auto text-[#5e6a7c]">{f.unit}</span>
-                      )}
-                    </span>
-                    {f.type === "pin" ? (
-                      <PinEditor
-                        value={active.fields[f.key] ?? "NO_PIN"}
-                        onChange={(v) => update(f.key, v)}
-                        hasI2so={hasI2so}
-                        uartChannels={uartChannels}
-                      />
-                    ) : f.type === "boolean" ? (
-                      <button
-                        onClick={() =>
-                          update(
-                            f.key,
-                            active.fields[f.key] === "true" ? "false" : "true",
-                          )
-                        }
-                        className={`flex w-full items-center justify-between rounded-md border px-2.5 py-2 text-xs ${active.fields[f.key] === "true" ? "border-[#548f78]/50 bg-[#29483d]/40 text-[#83c5aa]" : "border-white/10 bg-[#10141c] text-[#748094]"}`}
-                      >
-                        <span>
-                          {active.fields[f.key] === "true"
-                            ? "Enabled"
-                            : "Disabled"}
-                        </span>
-                        <span
-                          className={`h-4 w-7 rounded-full p-0.5 ${active.fields[f.key] === "true" ? "bg-[#559c7e]" : "bg-[#384252]"}`}
+                {(active.kind === "driver" &&
+                DRIVER_FIELDS_BY_TYPE[active.fields.type.toLowerCase()]
+                  ? FIELDS.driver.filter((field) =>
+                      DRIVER_FIELDS_BY_TYPE[
+                        active.fields.type.toLowerCase()
+                      ]?.includes(field.key),
+                    )
+                  : FIELDS[active.kind]
+                )
+                  .filter(
+                    (f) =>
+                      !propertyQuery ||
+                      `${f.label} ${f.key}`
+                        .toLowerCase()
+                        .includes(propertyQuery.toLowerCase()),
+                  )
+                  .map((f) => (
+                    <label key={f.key} className="block">
+                      <span className="mb-1.5 flex text-[13px] font-medium text-[#a9b3c2]">
+                        <span>{f.label}</span>
+                        {f.unit && (
+                          <span className="ml-auto text-[#5e6a7c]">
+                            {f.unit}
+                          </span>
+                        )}
+                      </span>
+                      {f.type === "pin" ? (
+                        <PinEditor
+                          value={active.fields[f.key] ?? "NO_PIN"}
+                          onChange={(v) => update(f.key, v)}
+                          hasI2so={hasI2so}
+                          uartChannels={uartChannels}
+                        />
+                      ) : f.type === "boolean" ? (
+                        <button
+                          onClick={() =>
+                            update(
+                              f.key,
+                              active.fields[f.key] === "true"
+                                ? "false"
+                                : "true",
+                            )
+                          }
+                          className={`flex w-full items-center justify-between rounded-md border px-2.5 py-2 text-xs ${active.fields[f.key] === "true" ? "border-[#548f78]/50 bg-[#29483d]/40 text-[#83c5aa]" : "border-white/10 bg-[#10141c] text-[#748094]"}`}
                         >
+                          <span>
+                            {active.fields[f.key] === "true"
+                              ? "Enabled"
+                              : "Disabled"}
+                          </span>
                           <span
-                            className={`block h-3 w-3 rounded-full bg-white transition-transform ${active.fields[f.key] === "true" ? "translate-x-3" : ""}`}
-                          />
-                        </span>
-                      </button>
-                    ) : f.options ? (
-                      <select
-                        value={active.fields[f.key]}
-                        onChange={(e) => update(f.key, e.target.value)}
-                        className="w-full rounded-md border border-white/10 bg-[#10141c] px-2.5 py-2 text-xs outline-none"
-                      >
-                        {f.options.map((o) => (
-                          <option key={o}>{o}</option>
-                        ))}
-                      </select>
-                    ) : (
-                      <input
-                        type={f.type === "number" ? "number" : "text"}
-                        value={active.fields[f.key] ?? ""}
-                        onChange={(e) => update(f.key, e.target.value)}
-                        className="w-full rounded-md border border-white/10 bg-[#10141c] px-2.5 py-2 font-mono text-xs outline-none"
-                      />
-                    )}
-                  </label>
-                ))}
+                            className={`h-4 w-7 rounded-full p-0.5 ${active.fields[f.key] === "true" ? "bg-[#559c7e]" : "bg-[#384252]"}`}
+                          >
+                            <span
+                              className={`block h-3 w-3 rounded-full bg-white transition-transform ${active.fields[f.key] === "true" ? "translate-x-3" : ""}`}
+                            />
+                          </span>
+                        </button>
+                      ) : f.options ? (
+                        <select
+                          value={active.fields[f.key]}
+                          onChange={(e) => update(f.key, e.target.value)}
+                          className="w-full rounded-md border border-white/10 bg-[#10141c] px-2.5 py-2 text-xs outline-none"
+                        >
+                          {f.options.map((o) => (
+                            <option key={o}>{o}</option>
+                          ))}
+                        </select>
+                      ) : (
+                        <input
+                          type={f.type === "number" ? "number" : "text"}
+                          value={active.fields[f.key] ?? ""}
+                          onChange={(e) => update(f.key, e.target.value)}
+                          className="w-full rounded-md border border-white/10 bg-[#10141c] px-2.5 py-2 font-mono text-xs outline-none"
+                        />
+                      )}
+                    </label>
+                  ))}
               </div>
             </div>
           </>

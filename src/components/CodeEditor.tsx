@@ -410,6 +410,8 @@ export function CodeEditor({
 
   const handleStudioChange = useCallback(
     (code: string) => {
+      if (!code.includes("# Edited using Config Studio"))
+        code = `# Edited using Config Studio\n${code}`;
       currentContent.current = code;
       setDirty(code !== content);
       updateLineCount(code);
