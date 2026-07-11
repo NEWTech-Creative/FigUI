@@ -245,9 +245,10 @@ export function ProgramExecutionPanel({ isTablet, initiallyOpen = false, accordi
 /** Occupies the normal probing slot with live program tracking during a job. */
 export function ProbeOrProgramPanel({ isTablet }: { isTablet?: boolean }) {
   const status = useMachineStore(s => s.status)
+  const reportedHasProbe = useMachineStore(s => s.controllerSettings.hasProbe)
   const isProgramRunning = (status.state === 'Run' || status.state === 'Hold')
     && (!!status.sdFilename || status.plannerLineNumber != null)
   return isProgramRunning
     ? <ProgramExecutionPanel isTablet={isTablet} />
-    : <ProbePanel isTablet={isTablet} />
+    : reportedHasProbe ? <ProbePanel isTablet={isTablet} /> : null
 }

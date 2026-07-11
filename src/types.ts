@@ -105,6 +105,7 @@ export interface ControllerSettings {
   machineMaxZ?: number
   hasMist?: boolean
   hasFlood?: boolean
+  hasProbe?: boolean
 }
 
 export interface FluidNCSetting {

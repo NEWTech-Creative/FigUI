@@ -426,6 +426,12 @@ function handleLine(line: string) {
     return
   }
 
+  const probeMatch = line.match(/^\[MSG:INFO:\s*Probe(?:\s+Pin:)?\s+(.+?)\]$/i)
+  if (probeMatch) {
+    const pin = probeMatch[1].trim().replace(/[\s_-]+/g, '').toUpperCase()
+    useMachineStore.getState().updateControllerSettings({ hasProbe: pin !== '' && pin !== 'NOPIN' })
+  }
+
   if (line === 'ok' || line === 'error') {
     for (const [ackKey, ackData] of pendingAcknowledgments.entries()) {
       clearTimeout(ackData.timeoutId)
@@ -533,6 +539,11 @@ export async function sendStartupQueries() {
     const hasMist  = /\[MSG:INFO:\s*Mist coolant/i.test(ssText)
     const hasFlood = /\[MSG:INFO:\s*Flood coolant/i.test(ssText)
     if (hasMist || hasFlood) useMachineStore.getState().updateControllerSettings({ hasMist, hasFlood })
+    const probeMatch = ssText.match(/\[MSG:INFO:\s*Probe(?:\s+Pin:)?\s+(.+?)\]/i)
+    if (probeMatch) {
+      const pin = probeMatch[1].trim().replace(/[\s_-]+/g, '').toUpperCase()
+      useMachineStore.getState().updateControllerSettings({ hasProbe: pin !== '' && pin !== 'NOPIN' })
+    }
     ssText.split('\n').forEach(raw => {
       const line = raw.trim()
       if (line) lineHandlers.forEach(fn => fn(line))

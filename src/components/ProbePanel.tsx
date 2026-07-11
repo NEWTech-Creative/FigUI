@@ -305,6 +305,7 @@ function toDisplayInput(value: number, units: 'mm' | 'in', decimals: number) {
 }
 
 export function ProbePanel({ isTablet, embedded = false }: { isTablet?: boolean; embedded?: boolean }) {
+  const reportedHasProbe = useMachineStore(s => s.controllerSettings.hasProbe)
   const [open, setOpen] = useState(embedded)
   const [selected, setSelected] = usePersisted<CycleId>('probe.cycle', 'z-surface')
   const [running, setRunning] = useState<RunningCycle | null>(null)
@@ -528,6 +529,8 @@ export function ProbePanel({ isTablet, embedded = false }: { isTablet?: boolean;
 
   const selectedCycle = CYCLES.find(c => c.id === selected)!
   const usesDiameter = selected !== 'z-surface'
+
+  if (!reportedHasProbe) return null
 
   return (
     <div className={embedded ? '' : 'panel'}>
