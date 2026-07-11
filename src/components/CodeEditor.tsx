@@ -8,7 +8,6 @@ import {
   ChevronUp,
   ChevronDown,
   RotateCcw,
-  RefreshCw,
   Code2,
   SlidersHorizontal,
 } from "lucide-react";
@@ -419,10 +418,15 @@ export function CodeEditor({
     [content],
   );
 
-  const refreshStudio = useCallback(() => {
+  const switchToStudio = useCallback(() => {
     setStudioSource(currentContent.current);
     setStudioKey((key) => key + 1);
     setView("studio");
+  }, []);
+
+  const switchToCode = useCallback(() => {
+    jarRef.current?.updateCode(currentContent.current);
+    setView("code");
   }, []);
 
   const handleRestart = useCallback(async () => {
@@ -559,27 +563,17 @@ export function CodeEditor({
               <div className="mr-1 flex rounded-md border border-border bg-elevated p-0.5">
                 <button
                   className={`flex items-center gap-1 rounded px-2 py-1 text-xs ${view === "studio" ? "bg-surface text-accent shadow-sm" : "text-text-muted"}`}
-                  onClick={() => setView("studio")}
+                  onClick={switchToStudio}
                 >
                   <SlidersHorizontal size={12} /> Studio
                 </button>
                 <button
                   className={`flex items-center gap-1 rounded px-2 py-1 text-xs ${view === "code" ? "bg-surface text-accent shadow-sm" : "text-text-muted"}`}
-                  onClick={() => setView("code")}
+                  onClick={switchToCode}
                 >
                   <Code2 size={12} /> YAML
                 </button>
               </div>
-            )}
-            {isConfig && view === "studio" && (
-              <button
-                className="btn btn-ghost text-sm py-1 px-2"
-                onClick={refreshStudio}
-                title="Rebuild the graphical editor from the current YAML"
-              >
-                <RefreshCw size={12} />
-                <span className="hidden lg:inline"> Refresh Studio</span>
-              </button>
             )}
             <button
               className="btn btn-ghost text-sm py-1 px-2"
@@ -684,6 +678,7 @@ export function CodeEditor({
               key={studioKey}
               content={studioSource}
               onChange={handleStudioChange}
+              isActive={view === "studio"}
             />
           </div>
         )}

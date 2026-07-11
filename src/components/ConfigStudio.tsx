@@ -1237,9 +1237,11 @@ function GraphNode({
 export function ConfigStudio({
   content,
   onChange,
+  isActive = true,
 }: {
   content: string;
   onChange: (yaml: string) => void;
+  isActive?: boolean;
 }) {
   const [nodes, setNodes] = useState<NodeData[]>(() => nodesFromYaml(content));
   const [selected, setSelected] = useState("machine");
@@ -1260,6 +1262,7 @@ export function ConfigStudio({
     px: number;
     py: number;
   } | null>(null);
+  const sourceRef = useRef(content);
   const active = nodes.find((n) => n.id === selected);
   useEffect(() => {
     if (!content.trim()) onChange(contentFromNodes(nodes, content));
@@ -1336,7 +1339,7 @@ export function ConfigStudio({
             : direction === "bottom"
               ? { x: parent.x + siblingCount * 245, y: parent.y + 125 }
               : { x: parent.x + siblingCount * 245, y: parent.y - 125 };
-      return [
+      const next = [
         ...ns,
         {
           id,
@@ -1356,10 +1359,17 @@ export function ConfigStudio({
           parentId: parent.id,
         },
       ];
+      const added = next[next.length - 1];
+      const nextSource = insertNodeYaml(sourceRef.current, added, next);
+      sourceRef.current = nextSource;
+      onChange(nextSource);
+      return next;
     });
     setSelected(id);
   };
   const update = (key: string, value: string) => {
+    const changedNode = nodes.find((node) => node.id === selected);
+    const path = changedNode ? yamlPathForField(changedNode, key, nodes) : null;
     setNodes((ns) =>
       ns.map((n) =>
         n.id === selected
@@ -1371,16 +1381,11 @@ export function ConfigStudio({
           : n,
       ),
     );
-    onChange(
-      contentFromNodes(
-        nodes.map((n) =>
-          n.id === selected
-            ? { ...n, fields: { ...n.fields, [key]: value } }
-            : n,
-        ),
-        content,
-      ),
-    );
+    if (path) {
+      const nextSource = patchYamlValue(sourceRef.current, path, value);
+      sourceRef.current = nextSource;
+      onChange(nextSource);
+    }
   };
   const remove = () => {
     if (!active || active.kind === "machine") return;
@@ -1400,24 +1405,26 @@ export function ConfigStudio({
           }
       }
       const next = ns.filter((node) => !removed.has(node.id));
-      onChange(contentFromNodes(next, content));
+      const nextSource = removeNodeYaml(sourceRef.current, active, ns);
+      sourceRef.current = nextSource;
+      onChange(nextSource);
       return next;
     });
     setSelected("machine");
   };
   useEffect(() => {
     const deleteSelected = (event: KeyboardEvent) => {
+      if (!isActive) return;
       if (event.key !== "Delete" && event.key !== "Backspace") return;
       const target = event.target as HTMLElement | null;
-      if (target?.matches("input, textarea, select, [contenteditable='true']"))
-        return;
+      if (target?.closest("input, textarea, select, [contenteditable]")) return;
       if (!active || active.kind === "machine") return;
       event.preventDefault();
       remove();
     };
     window.addEventListener("keydown", deleteSelected);
     return () => window.removeEventListener("keydown", deleteSelected);
-  }, [selected, active, nodes, content]);
+  }, [selected, active, nodes, content, isActive]);
   const screenToWorld = (e: React.PointerEvent) => ({
     x:
       (e.clientX - e.currentTarget.getBoundingClientRect().left - pan.x) / zoom,
@@ -1451,7 +1458,10 @@ export function ConfigStudio({
           fields: defaults(placement.kind),
         },
       ];
-      onChange(contentFromNodes(next, content));
+      const added = next[next.length - 1];
+      const nextSource = insertNodeYaml(sourceRef.current, added, next);
+      sourceRef.current = nextSource;
+      onChange(nextSource);
       return next;
     });
     setSelected(id);
@@ -1962,6 +1972,204 @@ export function ConfigStudio({
       </aside>
     </div>
   );
+}
+
+function yamlPathForNode(node: NodeData, nodes: NodeData[]): string | null {
+  if (node.kind === "stepping" || node.kind === "axes") return node.kind;
+  if (node.kind === "axis") return `axes.${node.fields.axis}`;
+  if (node.kind === "motor" || node.kind === "driver") {
+    const motor =
+      node.kind === "motor"
+        ? node
+        : nodes.find((candidate) => candidate.id === node.parentId);
+    if (!motor) return null;
+    const axis = nodes.find((candidate) => candidate.id === motor.parentId);
+    if (!axis) return null;
+    const motors = nodes.filter(
+      (candidate) =>
+        candidate.kind === "motor" && candidate.parentId === axis.id,
+    );
+    const index = Math.max(
+      0,
+      motors.findIndex((candidate) => candidate.id === motor.id),
+    );
+    const base = `axes.${axis.fields.axis}.motor${index}`;
+    return node.kind === "driver" ? `${base}.${node.fields.type}` : base;
+  }
+  const roots: Partial<Record<NodeKind, string>> = {
+    kinematics: "kinematics",
+    control: "control",
+    probe: "probe",
+    coolant: "coolant",
+    macro: "macros",
+    parking: "parking",
+    display: "oled",
+    atc: "atc_manual",
+    storage: "sdcard",
+  };
+  if (roots[node.kind]) return roots[node.kind]!;
+  if (node.kind === "bus") return node.fields.type || "uart1";
+  if (node.kind === "spindle") return node.fields.type || "PWM";
+  if (node.kind === "io")
+    return node.title.toLowerCase().includes("input")
+      ? "user_inputs"
+      : "user_outputs";
+  return null;
+}
+
+function insertNodeYaml(source: string, node: NodeData, nodes: NodeData[]) {
+  const path = yamlPathForNode(node, nodes);
+  if (!path) return source;
+  if (yamlEntries(source).some((entry) => entry.path === path)) return source;
+  const generated = contentFromNodes(nodes, "");
+  const generatedLines = generated.split("\n"),
+    generatedIndex = yamlEntries(generated),
+    target = generatedIndex.find((entry) => entry.path === path);
+  let block: string[];
+  if (target) {
+    let end = target.line + 1;
+    while (end < generatedLines.length) {
+      const indent = generatedLines[end].match(/^\s*/)?.[0].length ?? 0;
+      if (generatedLines[end].trim() && indent <= target.indent) break;
+      end++;
+    }
+    block = generatedLines
+      .slice(target.line, end)
+      .filter((line, index) => index === 0 || line.trim());
+  } else {
+    const key = path.slice(path.lastIndexOf(".") + 1);
+    block = [`${key}:`];
+  }
+  const parentPath = path.includes(".")
+      ? path.slice(0, path.lastIndexOf("."))
+      : "",
+    baseLines = source.split("\n"),
+    baseIndex = yamlEntries(source),
+    parent = baseIndex.find((entry) => entry.path === parentPath);
+  if (!parent) {
+    return `${source.replace(/\s*$/, "")}\n\n${block.map((line) => line.slice(target?.indent ?? 0)).join("\n")}\n`;
+  }
+  let insertAt = parent.line + 1;
+  while (insertAt < baseLines.length) {
+    const indent = baseLines[insertAt].match(/^\s*/)?.[0].length ?? 0;
+    if (baseLines[insertAt].trim() && indent <= parent.indent) break;
+    insertAt++;
+  }
+  const sourceIndent = target?.indent ?? 0,
+    targetIndent = parent.indent + 2;
+  block = block.map(
+    (line) => `${" ".repeat(targetIndent)}${line.slice(sourceIndent)}`,
+  );
+  baseLines.splice(insertAt, 0, ...block);
+  return baseLines.join("\n");
+}
+
+function removeNodeYaml(source: string, node: NodeData, nodes: NodeData[]) {
+  const path = yamlPathForNode(node, nodes);
+  if (!path) return source;
+  const lines = source.split("\n"),
+    target = yamlEntries(source).find((entry) => entry.path === path);
+  if (!target) return source;
+  let end = target.line + 1;
+  while (end < lines.length) {
+    const indent = lines[end].match(/^\s*/)?.[0].length ?? 0;
+    if (lines[end].trim() && indent <= target.indent) break;
+    end++;
+  }
+  let start = target.line;
+  if (target.indent === 0 && start > 0 && !lines[start - 1].trim()) start--;
+  lines.splice(start, end - start);
+  return lines.join("\n");
+}
+
+function yamlPathForField(
+  node: NodeData,
+  key: string,
+  nodes: NodeData[],
+): string | null {
+  if (node.kind === "machine") return key;
+  if (node.kind === "stepping") return `stepping.${key}`;
+  if (node.kind === "axes") return `axes.${key}`;
+  if (node.kind === "axis") {
+    const axis = node.fields.axis;
+    const homing: Record<string, string> = {
+      homing_cycle: "cycle",
+      homing_positive: "positive_direction",
+      homing_mpos_mm: "mpos_mm",
+    };
+    return homing[key]
+      ? `axes.${axis}.homing.${homing[key]}`
+      : key === "axis"
+        ? null
+        : `axes.${axis}.${key}`;
+  }
+  if (node.kind === "motor" || node.kind === "driver") {
+    const motor =
+      node.kind === "motor"
+        ? node
+        : nodes.find((candidate) => candidate.id === node.parentId);
+    if (!motor) return null;
+    const axis = nodes.find((candidate) => candidate.id === motor.parentId);
+    if (!axis) return null;
+    const motors = nodes.filter(
+      (candidate) =>
+        candidate.kind === "motor" && candidate.parentId === axis.id,
+    );
+    const motorIndex = motors.findIndex(
+      (candidate) => candidate.id === motor.id,
+    );
+    const base = `axes.${axis.fields.axis}.motor${Math.max(0, motorIndex)}`;
+    if (node.kind === "motor") return `${base}.${key}`;
+    if (key === "type") return null;
+    return `${base}.${node.fields.type}.${key}`;
+  }
+  const sections: Partial<Record<NodeKind, string>> = {
+    control: "control",
+    probe: "probe",
+    coolant: "coolant",
+    macro: "macros",
+    parking: "parking",
+    display: "oled",
+    atc: "atc_manual",
+    storage: "sdcard",
+  };
+  if (sections[node.kind]) return `${sections[node.kind]}.${key}`;
+  if (node.kind === "bus")
+    return key === "type" ? null : `${node.fields.type}.${key}`;
+  if (node.kind === "spindle")
+    return key === "type" ? null : `${node.fields.type}.${key}`;
+  if (node.kind === "io")
+    return `${node.title.toLowerCase().includes("input") ? "user_inputs" : "user_outputs"}.${key}`;
+  return null;
+}
+
+function patchYamlValue(source: string, path: string, value: string) {
+  const lines = source.split("\n"),
+    entries = yamlEntries(source),
+    existing = entries.find((entry) => entry.path === path);
+  if (existing) {
+    const old = existing.value;
+    let formatted = value;
+    if (/^".*"$/.test(old)) formatted = `"${value.replace(/"/g, '\\"')}"`;
+    else if (/^'.*'$/.test(old)) formatted = `'${value.replace(/'/g, "''")}'`;
+    lines[existing.line] =
+      `${" ".repeat(existing.indent)}${existing.key}: ${formatted}`;
+    return lines.join("\n");
+  }
+  const parentPath = path.includes(".")
+      ? path.slice(0, path.lastIndexOf("."))
+      : "",
+    key = path.slice(path.lastIndexOf(".") + 1),
+    parent = entries.find((entry) => entry.path === parentPath);
+  if (!parent) return source;
+  let insertAt = parent.line + 1;
+  while (insertAt < lines.length) {
+    const indent = lines[insertAt].match(/^\s*/)?.[0].length ?? 0;
+    if (lines[insertAt].trim() && indent <= parent.indent) break;
+    insertAt++;
+  }
+  lines.splice(insertAt, 0, `${" ".repeat(parent.indent + 2)}${key}: ${value}`);
+  return lines.join("\n");
 }
 
 function contentFromNodes(nodes: NodeData[], baseSource = "") {
