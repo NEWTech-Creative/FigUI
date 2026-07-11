@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
-import { ChevronDown, ChevronRight } from 'lucide-react'
+import { ChevronDown, ChevronRight, Eye, FolderOpen, Puzzle, Sliders, Target, TerminalSquare, Zap } from '../icons'
+import { Power } from '../icons'
 import { GCodeViewer } from './GCodeViewer'
 import { FileManager } from './FileManager'
 import { Macros } from './Macros'
@@ -32,23 +33,23 @@ export function TabletAccordion({ tabletTab, setTabletTab, onLaunchPanel }: Tabl
   }, [isProgramRunning, expanded])
 
   const TABS = [
-    { id: 'viewer',  label: 'Viewer'  },
-    { id: 'files',   label: 'Files'   },
-    { id: 'macros',  label: 'Macros'  },
-    { id: 'probing', label: 'Probing' },
-    { id: 'terminal', label: 'Terminal' },
-    { id: 'plugins', label: 'Plugins' },
+    { id: 'viewer',   label: 'Viewer',   Icon: Eye },
+    { id: 'files',    label: 'Files',    Icon: FolderOpen },
+    { id: 'macros',   label: 'Macros',   Icon: Zap },
+    { id: 'probing',  label: 'Probing',  Icon: Target },
+    { id: 'terminal', label: 'Terminal', Icon: TerminalSquare },
+    { id: 'plugins',  label: 'Plugins',  Icon: Puzzle },
   ]
 
   const PORTRAIT_TABS = [
-    { id: 'viewer',    label: 'Viewer'    },
-    { id: 'files',     label: 'Files'     },
-    { id: 'macros',    label: 'Macros'    },
-    { id: 'probing',   label: 'Probing'   },
-    { id: 'terminal',  label: 'Terminal'  },
-    ...(hasSpindle ? [{ id: 'spindle', label: 'Spindle' }] : []),
-    { id: 'overrides', label: 'Overrides' },
-    { id: 'plugins',   label: 'Plugins'   },
+    { id: 'viewer',    label: 'Viewer',    Icon: Eye },
+    { id: 'files',     label: 'Files',     Icon: FolderOpen },
+    { id: 'macros',    label: 'Macros',    Icon: Zap },
+    { id: 'probing',   label: 'Probing',   Icon: Target },
+    { id: 'terminal',  label: 'Terminal',  Icon: TerminalSquare },
+    ...(hasSpindle ? [{ id: 'spindle', label: 'Spindle', Icon: Power }] : []),
+    { id: 'overrides', label: 'Overrides', Icon: Sliders },
+    { id: 'plugins',   label: 'Plugins',   Icon: Puzzle },
   ]
 
   return (
@@ -62,17 +63,18 @@ export function TabletAccordion({ tabletTab, setTabletTab, onLaunchPanel }: Tabl
         {/* All-in-one tab panel */}
         <div className="panel flex flex-col">
           <div className="flex w-full border-b border-border shrink-0">
-            {PORTRAIT_TABS.map(tab => (
+            {PORTRAIT_TABS.map(({ id, label, Icon }) => (
               <button
-                key={tab.id}
-                onClick={() => setPortraitTab(tab.id)}
-                className={`min-w-0 flex-1 px-1 py-3 text-[clamp(10px,2.2vw,20px)] font-medium uppercase tracking-wide whitespace-nowrap transition-colors border-b-2 -mb-px ${
-                  portraitTab === tab.id
+                key={id}
+                onClick={() => setPortraitTab(id)}
+                className={`min-w-0 flex-1 px-1 py-2 text-[clamp(10px,2.2vw,20px)] font-medium uppercase tracking-wide whitespace-nowrap transition-colors border-b-2 -mb-px flex flex-col items-center justify-center gap-0.5 ${
+                  portraitTab === id
                     ? 'border-accent text-accent'
                     : 'border-transparent text-text-muted hover:text-text-primary'
                 }`}
               >
-                {tab.label}
+                <Icon size={15} className="shrink-0" />
+                <span>{label}</span>
               </button>
             ))}
           </div>
@@ -119,17 +121,18 @@ export function TabletAccordion({ tabletTab, setTabletTab, onLaunchPanel }: Tabl
           {expanded === 'visualizer' && (
             <div className="flex flex-col flex-1 min-h-0 overflow-hidden">
               <div className="flex w-full border-b border-border shrink-0">
-                {TABS.map(tab => (
+                {TABS.map(({ id, label, Icon }) => (
                   <button
-                    key={tab.id}
-                    onClick={() => setTabletTab(tab.id)}
-                    className={`min-w-0 flex-1 px-1 py-3 text-[clamp(10px,1.35vw,20px)] font-medium uppercase tracking-wide whitespace-nowrap transition-colors border-b-2 -mb-px ${
-                      tabletTab === tab.id
+                    key={id}
+                    onClick={() => setTabletTab(id)}
+                    className={`min-w-0 flex-1 px-1 py-2 text-[clamp(10px,1.35vw,20px)] font-medium uppercase tracking-wide whitespace-nowrap transition-colors border-b-2 -mb-px flex flex-col items-center justify-center gap-0.5 ${
+                      tabletTab === id
                         ? 'border-accent text-accent'
                         : 'border-transparent text-text-muted hover:text-text-primary'
                     }`}
                   >
-                    {tab.label}
+                    <Icon size={15} className="shrink-0" />
+                    <span>{label}</span>
                   </button>
                 ))}
                 <button onClick={() => setExpanded('controls')} className="w-11 shrink-0 hover:text-text-primary text-text-muted flex items-center justify-center">
