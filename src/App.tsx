@@ -11,7 +11,7 @@ import { startWatchdog, stopWatchdog } from './lib/jogWatchdog'
 import { Header } from './components/Header'
 import { DRO } from './components/DRO'
 import { TabletJogPad } from './components/JogPad'
-import { ProbePanel } from './components/ProbePanel'
+import { ProbeOrProgramPanel } from './components/ProgramExecutionPanel'
 import { TabletAccordion } from './components/TabletAccordion'
 
 import { GCodeViewer } from './components/GCodeViewer'
@@ -474,7 +474,7 @@ export function App() {
             ) : (
               <TabletJogPad />
             )}
-            <ProbePanel />
+            <ProbeOrProgramPanel />
           </div>
         )}
 

@@ -17,6 +17,7 @@ export function parseStatusReport(raw: string): Partial<MachineStatus> | null {
   status.spindle = 0
 
   let hasSd = false
+  let hasPlannerLine = false
   for (let i = 1; i < parts.length; i++) {
     const p = parts[i]
     if (p.startsWith('WPos:')) {
@@ -42,12 +43,17 @@ export function parseStatusReport(raw: string): Partial<MachineStatus> | null {
       // FluidNC format: SD:percent,filename
       status.sdPercent = parseFloat(sdParts[0]) || 0
       if (sdParts.length > 1) status.sdFilename = sdParts.slice(1).join(',')
+    } else if (p.startsWith('Ln:')) {
+      hasPlannerLine = true
+      const lineNumber = Number.parseInt(p.slice(3), 10)
+      status.plannerLineNumber = Number.isFinite(lineNumber) && lineNumber > 0 ? lineNumber : undefined
     }
   }
   if (!hasSd) {
     status.sdPercent = undefined
     status.sdFilename = undefined
   }
+  if (!hasPlannerLine) status.plannerLineNumber = undefined
 
   return status
 }

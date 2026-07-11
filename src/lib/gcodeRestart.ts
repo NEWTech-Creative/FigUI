@@ -393,7 +393,7 @@ export function buildRestartProgram(text: string, analysis: RestartAnalysis, opt
   const p = state.positionMm
   if (analysis.resumeLine === 1) {
     return [
-      '(FLUIDUI PROGRAM RESTART - REVIEW BEFORE RUNNING)',
+      '(FLUIDNC PROGRAM RESTART - REVIEW BEFORE RUNNING)',
       `(SOURCE: ${options.sourceName.replace(/[()]/g, '')})`,
       `(SOURCE PATH: ${options.sourcePath.replace(/[()]/g, '')})`,
       '(RESUME FILE LINE: 1 - COMPLETE ORIGINAL PROGRAM)',
@@ -413,7 +413,7 @@ export function buildRestartProgram(text: string, analysis: RestartAnalysis, opt
     : state.units === 'G20' ? state.feedMmPerMin / 25.4 : state.feedMmPerMin
 
   const output: string[] = [
-    '(FLUIDUI PROGRAM RESTART - REVIEW BEFORE RUNNING)',
+    '(FLUIDNC PROGRAM RESTART - REVIEW BEFORE RUNNING)',
     `(SOURCE: ${options.sourceName.replace(/[()]/g, '')})`,
     `(SOURCE PATH: ${options.sourcePath.replace(/[()]/g, '')})`,
     `(REQUESTED FILE LINE: ${analysis.requestedLine})`,

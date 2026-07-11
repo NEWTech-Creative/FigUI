@@ -45,6 +45,8 @@ export interface MachineStatus {
   pinState: string
   sdFilename?: string
   sdPercent?: number
+  /** FluidNC planner block number reported as Ln:<N> when use_line_numbers is enabled. */
+  plannerLineNumber?: number
   gcodeModes?: GCodeModes
 }
 

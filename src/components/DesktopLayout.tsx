@@ -3,7 +3,7 @@ import { ResizeHandle } from './ResizeHandle'
 import { DRO } from './DRO'
 import { JogPad } from './JogPad'
 import { GCodeViewer } from './GCodeViewer'
-import { ProbePanel } from './ProbePanel'
+import { ProbeOrProgramPanel } from './ProgramExecutionPanel'
 import { Terminal } from './Terminal'
 import { FileManager } from './FileManager'
 import { Macros } from './Macros'
@@ -341,7 +341,7 @@ export function DesktopLayout({
     const centerContent = (
       <>
         <GCodeViewer className="flex-1 min-h-[300px]" />
-        <ProbePanel />
+        <ProbeOrProgramPanel />
       </>
     )
 
@@ -432,7 +432,7 @@ export function DesktopLayout({
   const centerContent = (
     <>
       <GCodeViewer className="flex-1 min-h-[300px]" />
-      <ProbePanel />
+      <ProbeOrProgramPanel />
     </>
   )
 

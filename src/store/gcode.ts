@@ -26,6 +26,7 @@ interface GCodeStore {
     requestedLine: number
     resumeLine: number
   } | null
+  activeSourceLine: number | null
 
   // Built data (shared across all GCodeViewer instances — one parse, one build)
   model: GCodeModel | null
@@ -55,6 +56,7 @@ interface GCodeStore {
   ) => Promise<void>
   cancelAndStartJob: (path: string) => void
   setShowRapids: (v: boolean) => void
+  setActiveSourceLine: (line: number | null) => void
   clear: () => void
 }
 
@@ -87,6 +89,7 @@ export const useGCodeStore = create<GCodeStore>((set, get) => ({
   fileName: null,
   sourceText: null,
   restartSource: null,
+  activeSourceLine: null,
   model: null,
   paths2D: null,
   geometry3D: null,
@@ -119,6 +122,7 @@ export const useGCodeStore = create<GCodeStore>((set, get) => ({
       is3DReady: false,
       geometry3D: null,
       paths2D: null,
+      activeSourceLine: null,
     })
 
     try {
@@ -255,6 +259,7 @@ export const useGCodeStore = create<GCodeStore>((set, get) => ({
       is3DReady: false,
       geometry3D: null,
       paths2D: null,
+      activeSourceLine: null,
     })
 
     try {
@@ -336,6 +341,7 @@ export const useGCodeStore = create<GCodeStore>((set, get) => ({
       fileName: path.split('/').pop() ?? path,
       sourceText: null,
       restartSource: null,
+      activeSourceLine: null,
       // Drop any partial built data — they're stale now.
       model: null,
       paths2D: null,
@@ -378,6 +384,11 @@ export const useGCodeStore = create<GCodeStore>((set, get) => ({
     })
   },
 
+  setActiveSourceLine: (line: number | null) => {
+    if (get().activeSourceLine === line) return
+    set({ activeSourceLine: line })
+  },
+
   clear: () => {
     abortInFlight()
     set({
@@ -385,6 +396,7 @@ export const useGCodeStore = create<GCodeStore>((set, get) => ({
       fileName: null,
       sourceText: null,
       restartSource: null,
+      activeSourceLine: null,
       model: null,
       paths2D: null,
       geometry3D: null,

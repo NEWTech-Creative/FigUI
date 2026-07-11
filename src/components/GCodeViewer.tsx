@@ -1008,6 +1008,7 @@ export function GCodeViewer({ className, isTablet, showOverrides }: Props) {
   const storePaths2D = useGCodeStore(s => s.paths2D)
   const storeGeometry3D = useGCodeStore(s => s.geometry3D)
   const loadFile = useGCodeStore(s => s.loadFile)
+  const setActiveSourceLine = useGCodeStore(s => s.setActiveSourceLine)
   const modelRef = useRef<GCodeModel | null>(null)
   const staticPathGeometryRef = useRef<StaticPathGeometry | null>(null)
   const static2DPathsRef = useRef<Static2DPaths | null>(null)
@@ -1876,6 +1877,13 @@ export function GCodeViewer({ className, isTablet, showOverrides }: Props) {
     } else {
       progressRef.current = null
     }
+    const trackedProgress = progressRef.current
+    const trackedModel = modelRef.current
+    setActiveSourceLine(
+      trackedProgress && trackedModel
+        ? trackedModel.segments[trackedProgress.segmentIndex]?.sourceLine ?? null
+        : null,
+    )
     prevIsRunningRef.current = isRunning
     prevModelRef.current = model
 
@@ -1894,6 +1902,7 @@ export function GCodeViewer({ className, isTablet, showOverrides }: Props) {
     status.wpos.z,
     status.wco.x,
     status.wco.y,
+    status.feed,
     controllerSettings.maxTravelX,
     controllerSettings.maxTravelY,
     controllerSettings.homingDirInvert,
@@ -1903,7 +1912,10 @@ export function GCodeViewer({ className, isTablet, showOverrides }: Props) {
     controllerSettings.machineMaxY,
     units,
     is3D,
+    setActiveSourceLine,
   ])
+
+  useEffect(() => () => setActiveSourceLine(null), [setActiveSourceLine])
 
   useLayoutEffect(() => {
     if (is3D) {

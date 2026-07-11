@@ -4,7 +4,7 @@ import { GCodeViewer } from './GCodeViewer'
 import { FileManager } from './FileManager'
 import { Macros } from './Macros'
 import { Terminal } from './Terminal'
-import { ProbePanel } from './ProbePanel'
+import { ProbeOrProgramPanel } from './ProgramExecutionPanel'
 import { OverridesPanel, SpindlePanel } from './JogPad'
 import { PluginLauncher } from './PluginLauncher'
 import type { Plugin } from '../types'
@@ -67,7 +67,7 @@ export function TabletAccordion({ tabletTab, setTabletTab, onLaunchPanel }: Tabl
             {portraitTab === 'viewer'    && (
               <div className="flex flex-col gap-3 p-3">
                 <GCodeViewer className="min-h-[55vh]" isTablet />
-                <ProbePanel isTablet />
+                <ProbeOrProgramPanel isTablet />
               </div>
             )}
             {portraitTab === 'files'     && <FileManager isTablet />}
@@ -127,7 +127,7 @@ export function TabletAccordion({ tabletTab, setTabletTab, onLaunchPanel }: Tabl
               <div className="flex-1 min-h-0 overflow-hidden">
                 <div className={`h-full flex flex-col gap-3 p-3 overflow-y-auto ${tabletTab !== 'viewer' ? 'hidden' : ''}`}>
                   <GCodeViewer className="flex-1 min-h-[300px]" isTablet />
-                  <ProbePanel isTablet />
+                  <ProbeOrProgramPanel isTablet />
                 </div>
                 {tabletTab === 'files'    && <FileManager isTablet />}
                 {tabletTab === 'macros'   && <Macros isTablet />}

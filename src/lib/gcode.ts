@@ -3,6 +3,8 @@
 export interface Segment {
   x0: number; y0: number; z0: number
   x1: number; y1: number; z1: number
+  /** One-based physical row in the source G-code file. */
+  sourceLine: number
   /**
    * G0 move = 'rapid'
    * G1/G2/G3 while spindle is on (or no spindle machine) = 'feed'
@@ -57,7 +59,9 @@ export function parseGCode(text: string): GCodeModel {
   }
 
   const lines = text.split('\n')
-  for (const raw of lines) {
+  for (let sourceIndex = 0; sourceIndex < lines.length; sourceIndex++) {
+    const raw = lines[sourceIndex]
+    const sourceLine = sourceIndex + 1
     const line = raw.split(';')[0].split('(')[0].trim().toUpperCase()
     if (!line) continue
 
@@ -125,13 +129,13 @@ export function parseGCode(text: string): GCodeModel {
         z = (words.Z ?? z) + offZ
         expandBounds(x0, y0, z0)
         expandBounds(x, y, z)
-        segments.push({ x0, y0, z0, x1: x, y1: y, z1: z, moveType: 'rapid' })
+        segments.push({ x0, y0, z0, x1: x, y1: y, z1: z, moveType: 'rapid', sourceLine })
       }
       const xi = x, yi = y, zi = z
       x = 0; y = 0; z = 0
       expandBounds(xi, yi, zi)
       expandBounds(x, y, z)
-      segments.push({ x0: xi, y0: yi, z0: zi, x1: x, y1: y, z1: z, moveType: 'rapid' })
+      segments.push({ x0: xi, y0: yi, z0: zi, x1: x, y1: y, z1: z, moveType: 'rapid', sourceLine })
       continue
     }
 
@@ -209,13 +213,13 @@ export function parseGCode(text: string): GCodeModel {
               }
             }
           }
-          segments.push({ x0, y0, z0, x1: x, y1: y, z1: z, moveType, i, j, k, cw, ...feedData })
+          segments.push({ x0, y0, z0, x1: x, y1: y, z1: z, moveType, i, j, k, cw, sourceLine, ...feedData })
         } else {
           // Treat degenerate arc as a line
-          segments.push({ x0, y0, z0, x1: x, y1: y, z1: z, moveType, ...feedData })
+          segments.push({ x0, y0, z0, x1: x, y1: y, z1: z, moveType, sourceLine, ...feedData })
         }
       } else {
-        segments.push({ x0, y0, z0, x1: x, y1: y, z1: z, moveType, ...feedData })
+        segments.push({ x0, y0, z0, x1: x, y1: y, z1: z, moveType, sourceLine, ...feedData })
       }
     }
   }
@@ -226,5 +230,5 @@ export function parseGCode(text: string): GCodeModel {
     bounds.maxX = bounds.maxY = bounds.maxZ = 1
   }
 
-  return { segments, bounds, totalLines: segments.length }
+  return { segments, bounds, totalLines: lines.length }
 }
