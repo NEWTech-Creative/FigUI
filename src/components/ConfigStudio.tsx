@@ -17,6 +17,11 @@ import {
   Redo2,
   Zap,
 } from "lucide-react";
+import {
+  loadFluidSchema,
+  type FluidSchema,
+  type SchemaNode,
+} from "../lib/fluidSchema";
 
 type NodeKind =
   | "machine"
@@ -54,6 +59,9 @@ type FieldDef = {
   type?: "number" | "boolean" | "select" | "pin" | "text";
   options?: string[];
   unit?: string;
+  min?: number;
+  max?: number;
+  description?: string;
 };
 
 const PALETTE: {
@@ -647,6 +655,62 @@ const DRIVER_FIELDS_BY_TYPE: Partial<Record<string, readonly string[]>> = {
   null_motor: ["type"],
 };
 
+function schemaRef(node: SchemaNode): string {
+  return node.$ref ?? node.allOf?.find((entry) => entry.$ref)?.$ref ?? "";
+}
+
+function driverFieldsFromSchema(
+  schema: FluidSchema | null,
+  driverType: string,
+): FieldDef[] | null {
+  const defs = schema?.$defs;
+  const motorProperties = defs?.motorBlock?.properties;
+  if (!defs || !motorProperties) return null;
+  const driverKey = Object.keys(motorProperties).find(
+    (key) => key.toLowerCase() === driverType.toLowerCase(),
+  );
+  if (!driverKey) return null;
+  const definitionName = schemaRef(motorProperties[driverKey]).split("/").pop();
+  const properties = definitionName ? defs[definitionName]?.properties : null;
+  if (!properties) return null;
+
+  const driverOptions = Object.entries(motorProperties)
+    .filter(([, node]) => schemaRef(node).includes("/$defs/motor_"))
+    .map(([key]) => key);
+  const typeField = FIELDS.driver.find((field) => field.key === "type")!;
+  return [
+    { ...typeField, options: driverOptions },
+    ...Object.entries(properties).map(([key, property]) => {
+      const known = FIELDS.driver.find((field) => field.key === key);
+      const ref = schemaRef(property);
+      const type: FieldDef["type"] = ref.endsWith("/pinAny")
+        ? "pin"
+        : ref.endsWith("/boolean")
+          ? "boolean"
+          : property.enum
+            ? "select"
+            : property.type === "number" || property.type === "integer"
+              ? "number"
+              : "text";
+      return {
+        ...known,
+        key,
+        label:
+          known?.label ??
+          key
+            .toLowerCase()
+            .replace(/_/g, " ")
+            .replace(/^./, (letter) => letter.toUpperCase()),
+        type,
+        options: property.enum?.map(String) ?? known?.options,
+        min: property.minimum,
+        max: property.maximum,
+        description: property.description,
+      };
+    }),
+  ];
+}
+
 const COLORS: Record<NodeKind, string> = {
   machine: "#7c8ba1",
   stepping: "#d6943b",
@@ -1080,6 +1144,16 @@ function nodesFromYaml(content: string): NodeData[] {
             parentId: motorId,
             fields: {
               ...scalarFields(driverFields, FIELDS.driver),
+              ...Object.fromEntries(
+                Object.entries(driverFields)
+                  .filter(
+                    ([, value]) => value == null || typeof value !== "object",
+                  )
+                  .map(([key, value]) => [
+                    key,
+                    value == null ? "" : String(value),
+                  ]),
+              ),
               type: driver,
             },
           });
@@ -1550,11 +1624,24 @@ export function ConfigStudio({
   const undoRef = useRef<{ nodes: NodeData[]; source: string }[]>([]);
   const redoRef = useRef<{ nodes: NodeData[]; source: string }[]>([]);
   const [propertyQuery, setPropertyQuery] = useState("");
+  const [fluidSchema, setFluidSchema] = useState<FluidSchema | null>(null);
 
   useEffect(() => {
     setPropertyQuery("");
   }, [selected]);
   const active = nodes.find((n) => n.id === selected);
+  const propertyFields = active
+    ? active.kind === "driver"
+      ? (driverFieldsFromSchema(fluidSchema, active.fields.type) ??
+        (DRIVER_FIELDS_BY_TYPE[active.fields.type.toLowerCase()]
+          ? FIELDS.driver.filter((field) =>
+              DRIVER_FIELDS_BY_TYPE[active.fields.type.toLowerCase()]?.includes(
+                field.key,
+              ),
+            )
+          : FIELDS.driver))
+      : FIELDS[active.kind]
+    : [];
   const snapshotNodes = (value: NodeData[]) =>
     value.map((node) => ({ ...node, fields: { ...node.fields } }));
   const recordHistory = () => {
@@ -1581,6 +1668,16 @@ export function ConfigStudio({
   useEffect(() => {
     if (!content.trim()) onChange(contentFromNodes(nodes, content));
   }, []);
+  useEffect(() => {
+    if (!isActive || fluidSchema) return;
+    let cancelled = false;
+    loadFluidSchema().then((schema) => {
+      if (!cancelled && schema) setFluidSchema(schema);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [isActive, fluidSchema]);
   useEffect(() => {
     if (!palette) return;
     const close = (e: PointerEvent) => {
@@ -2251,15 +2348,7 @@ export function ConfigStudio({
                 Properties
               </div>
               <div className="space-y-3">
-                {(active.kind === "driver" &&
-                DRIVER_FIELDS_BY_TYPE[active.fields.type.toLowerCase()]
-                  ? FIELDS.driver.filter((field) =>
-                      DRIVER_FIELDS_BY_TYPE[
-                        active.fields.type.toLowerCase()
-                      ]?.includes(field.key),
-                    )
-                  : FIELDS[active.kind]
-                )
+                {propertyFields
                   .filter(
                     (f) =>
                       !propertyQuery ||
@@ -2268,7 +2357,7 @@ export function ConfigStudio({
                         .includes(propertyQuery.toLowerCase()),
                   )
                   .map((f) => (
-                    <label key={f.key} className="block">
+                    <label key={f.key} className="block" title={f.description}>
                       <span className="mb-1.5 flex text-[13px] font-medium text-[#a9b3c2]">
                         <span>{f.label}</span>
                         {f.unit && (
@@ -2322,6 +2411,8 @@ export function ConfigStudio({
                       ) : (
                         <input
                           type={f.type === "number" ? "number" : "text"}
+                          min={f.min}
+                          max={f.max}
                           value={active.fields[f.key] ?? ""}
                           onChange={(e) => update(f.key, e.target.value)}
                           className="w-full rounded-md border border-white/10 bg-[#10141c] px-2.5 py-2 font-mono text-xs outline-none"
