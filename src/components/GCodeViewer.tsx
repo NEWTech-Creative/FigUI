@@ -92,10 +92,9 @@ const INITIAL_LOCK_TOLERANCE_MM = 0.25
 const FOLLOW_TOLERANCE_MM = 0.2
 const ENDPOINT_TOLERANCE_MM = 0.2
 const SEGMENT_LOOKAHEAD = 12
-const LOOKAHEAD_DISTANCE_FLOOR_MM = 30
+const LOOKAHEAD_DISTANCE_FLOOR_MM = 1
 const LOOKAHEAD_FEED_MARGIN = 3
 const LOOKAHEAD_MAX_SEGMENTS = 4000
-const REACQUIRE_MISS_THRESHOLD = 2
 const LARGE_PROGRESS_OVERLAY_SEGMENT_LIMIT = 100_000
 const EMPTY_FLOAT32 = new Float32Array(0)
 const WHEEL_ZOOM_SENSITIVITY = 0.0012
@@ -394,26 +393,27 @@ function strokeModelPath(
   ctx.restore()
 }
 
-function measureProgressAlongSegment(seg: Segment, px: number, py: number) {
+function measureProgressAlongSegment(seg: Segment, px: number, py: number, pz: number) {
   if (seg.i === undefined) {
     const dx = seg.x1 - seg.x0
     const dy = seg.y1 - seg.y0
     const lenSq = dx * dx + dy * dy
     if (lenSq < 1e-9) {
-      const distSq = (px - seg.x0) ** 2 + (py - seg.y0) ** 2
+      const distSq = (px - seg.x0) ** 2 + (py - seg.y0) ** 2 + (pz - seg.z0) ** 2
       return { fraction: 0, distanceSq: distSq }
     }
     const rawFraction = ((px - seg.x0) * dx + (py - seg.y0) * dy) / lenSq
     const fraction = clamp01(rawFraction)
     const projX = seg.x0 + dx * fraction
     const projY = seg.y0 + dy * fraction
-    const distanceSq = (px - projX) ** 2 + (py - projY) ** 2
+    const projZ = seg.z0 + (seg.z1 - seg.z0) * fraction
+    const distanceSq = (px - projX) ** 2 + (py - projY) ** 2 + (pz - projZ) ** 2
     return { fraction, distanceSq }
   }
 
   const arc = getArcGeometry(seg)
   if (arc.r < 1e-9) {
-    const distSq = (px - seg.x0) ** 2 + (py - seg.y0) ** 2
+    const distSq = (px - seg.x0) ** 2 + (py - seg.y0) ** 2 + (pz - seg.z0) ** 2
     return { fraction: 0, distanceSq: distSq }
   }
 
@@ -426,12 +426,13 @@ function measureProgressAlongSegment(seg: Segment, px: number, py: number) {
     const fraction = arc.fullCircle ? clamp01(delta / arc.sweep) : clamp01(delta / arc.sweep)
     const projX = arc.cx + Math.cos(pointAngle) * arc.r
     const projY = arc.cy + Math.sin(pointAngle) * arc.r
-    const distanceSq = (px - projX) ** 2 + (py - projY) ** 2
+    const projZ = seg.z0 + (seg.z1 - seg.z0) * fraction
+    const distanceSq = (px - projX) ** 2 + (py - projY) ** 2 + (pz - projZ) ** 2
     return { fraction, distanceSq }
   }
 
-  const startDistSq = (px - seg.x0) ** 2 + (py - seg.y0) ** 2
-  const endDistSq = (px - seg.x1) ** 2 + (py - seg.y1) ** 2
+  const startDistSq = (px - seg.x0) ** 2 + (py - seg.y0) ** 2 + (pz - seg.z0) ** 2
+  const endDistSq = (px - seg.x1) ** 2 + (py - seg.y1) ** 2 + (pz - seg.z1) ** 2
   return startDistSq <= endDistSq
     ? { fraction: 0, distanceSq: startDistSq }
     : { fraction: 1, distanceSq: endDistSq }
@@ -442,8 +443,8 @@ function compareProgress(a: ToolpathProgress, b: ToolpathProgress) {
   return a.fraction - b.fraction
 }
 
-function pointDistanceSq(ax: number, ay: number, bx: number, by: number) {
-  return (ax - bx) ** 2 + (ay - by) ** 2
+function pointDistanceSq(ax: number, ay: number, az: number, bx: number, by: number, bz: number) {
+  return (ax - bx) ** 2 + (ay - by) ** 2 + (az - bz) ** 2
 }
 
 function normalizeVector(x: number, y: number, z: number) {
@@ -678,6 +679,7 @@ function findNearbyProgress(
   segments: Segment[],
   px: number,
   py: number,
+  pz: number,
   startIndex: number,
   endIndex: number,
   toleranceSq: number,
@@ -687,7 +689,7 @@ function findNearbyProgress(
   let best: (ToolpathProgress & { distanceSq: number }) | null = null
 
   for (let i = startIndex; i <= endIndex && i < segments.length; i++) {
-    const measurement = measureProgressAlongSegment(segments[i], px, py)
+    const measurement = measureProgressAlongSegment(segments[i], px, py, pz)
     const candidate: ToolpathProgress & { distanceSq: number } = {
       segmentIndex: i,
       fraction: measurement.fraction,
@@ -722,9 +724,9 @@ function findNearbyProgress(
 function segmentXYLength(seg: Segment) {
   if (seg.i !== undefined) {
     const arc = getArcGeometry(seg)
-    return arc.sweep * arc.r
+    return Math.hypot(arc.sweep * arc.r, seg.z1 - seg.z0)
   }
-  return Math.hypot(seg.x1 - seg.x0, seg.y1 - seg.y0)
+  return Math.hypot(seg.x1 - seg.x0, seg.y1 - seg.y0, seg.z1 - seg.z0)
 }
 
 function buildCumulativeXYLengths(segments: Segment[]) {
@@ -745,6 +747,7 @@ function findToolpathProgress(
   cumulativeXYLengths: Float64Array,
   px: number,
   py: number,
+  pz: number,
   previous: ToolpathProgress | null,
   lookaheadDistanceMm: number,
 ): ToolpathProgress | null {
@@ -755,6 +758,7 @@ function findToolpathProgress(
       segments,
       px,
       py,
+      pz,
       0,
       segments.length - 1,
       INITIAL_LOCK_TOLERANCE_MM ** 2,
@@ -771,15 +775,17 @@ function findToolpathProgress(
     segments,
     px,
     py,
+    pz,
     startIndex,
     nearEndIndex,
     FOLLOW_TOLERANCE_MM ** 2,
     previous,
-    true,
+    false,
   )
   if (near) return { ...near, misses: 0 }
 
-  const distanceLimit = cumulativeXYLengths[startIndex] + lookaheadDistanceMm
+  const priorMisses = previous.misses ?? 0
+  const distanceLimit = cumulativeXYLengths[startIndex] + lookaheadDistanceMm * (priorMisses + 1)
   let farEndIndex = nearEndIndex
   while (farEndIndex < maxEndIndex && cumulativeXYLengths[farEndIndex + 1] < distanceLimit) farEndIndex++
 
@@ -788,6 +794,7 @@ function findToolpathProgress(
       segments,
       px,
       py,
+      pz,
       nearEndIndex + 1,
       farEndIndex,
       FOLLOW_TOLERANCE_MM ** 2,
@@ -798,30 +805,11 @@ function findToolpathProgress(
   }
 
   const current = segments[startIndex]
-  if (pointDistanceSq(px, py, current.x1, current.y1) <= ENDPOINT_TOLERANCE_MM ** 2) {
+  if (pointDistanceSq(px, py, pz, current.x1, current.y1, current.z1) <= ENDPOINT_TOLERANCE_MM ** 2) {
     return { segmentIndex: startIndex, fraction: 1, misses: 0 }
   }
 
-  const misses = (previous.misses ?? 0) + 1
-  if (misses >= REACQUIRE_MISS_THRESHOLD) {
-    const reacquireLimit = cumulativeXYLengths[startIndex] + lookaheadDistanceMm * (misses + 1)
-    let reacquireEndIndex = farEndIndex
-    while (reacquireEndIndex < maxEndIndex && cumulativeXYLengths[reacquireEndIndex + 1] < reacquireLimit) reacquireEndIndex++
-
-    const reacquired = findNearbyProgress(
-      segments,
-      px,
-      py,
-      startIndex,
-      reacquireEndIndex,
-      INITIAL_LOCK_TOLERANCE_MM ** 2,
-      previous,
-      false,
-    )
-    if (reacquired) return { ...reacquired, misses: 0 }
-  }
-
-  return { ...previous, misses }
+  return { ...previous, misses: priorMisses + 1 }
 }
 
 function drawGrid(ctx: CanvasRenderingContext2D, w: number, h: number, t: Transform, units: Units) {
@@ -1880,6 +1868,7 @@ export function GCodeViewer({ className, isTablet, showOverrides }: Props) {
           ensureCumulativeXYLengths(modelRef.current),
           status.wpos.x,
           status.wpos.y,
+          status.wpos.z,
           progressRef.current,
           getLookaheadDistanceMm(status.feed),
         )
