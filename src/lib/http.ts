@@ -121,17 +121,11 @@ function fmtBytes(n: number): string {
 async function checkFreeSpace(fs: 'sd' | 'local', bytes: number, dir: string, filename: string): Promise<void> {
   if (fs !== 'local') return
   try {
-    const info = await listFiles('/', fs)
+    const info = await listFiles(dir, fs)
     if (!info.total) return
-    const available = info.total - info.used
-   
-    let existingSize = 0
-    try {
-      const dirInfo = await listFiles(dir, fs)
-      const existing = dirInfo.files.find(f => f.name === filename)
-      if (existing) existingSize = existing.size
-    } catch { /* directory may not exist yet */ }
-    const netBytes = bytes - existingSize
+    const available = Math.max(0, info.total - info.used)
+    const existing = info.files.find(entry => !entry.isDir && entry.name === filename)
+    const netBytes = Math.max(0, bytes - (existing?.size ?? 0))
     if (netBytes > available) {
       throw new Error(
         `Not enough space on Internal storage: ` +
