@@ -24,6 +24,7 @@ type NodeKind =
   | "axes"
   | "axis"
   | "motor"
+  | "driver"
   | "kinematics"
   | "spindle"
   | "bus"
@@ -183,34 +184,62 @@ const FIELDS: Record<NodeKind, FieldDef[]> = {
     },
   ],
   motor: [
-    {
-      key: "driver",
-      label: "Driver",
-      type: "select",
-      options: [
-        "stepstick",
-        "tmc_2130",
-        "tmc_2208",
-        "tmc_2209",
-        "tmc_5160",
-        "servo",
-        "standard_stepper",
-        "null_motor",
-      ],
-    },
-    { key: "step_pin", label: "Step pin", type: "pin" },
-    { key: "direction_pin", label: "Direction pin", type: "pin" },
-    { key: "disable_pin", label: "Disable pin", type: "pin" },
     { key: "limit_neg_pin", label: "Negative limit", type: "pin" },
     { key: "limit_pos_pin", label: "Positive limit", type: "pin" },
     { key: "limit_all_pin", label: "Combined limit", type: "pin" },
     { key: "hard_limits", label: "Hard limits", type: "boolean" },
     { key: "pulloff_mm", label: "Pull-off", type: "number", unit: "mm" },
+  ],
+  driver: [
+    {
+      key: "type",
+      label: "Driver type",
+      type: "select",
+      options: [
+        "stepstick",
+        "standard_stepper",
+        "tmc_2130",
+        "tmc_2208",
+        "tmc_2209",
+        "tmc_5160",
+        "servo",
+        "null_motor",
+      ],
+    },
+    { key: "cs_pin", label: "Chip select pin", type: "pin" },
+    { key: "step_pin", label: "Step pin", type: "pin" },
+    { key: "direction_pin", label: "Direction pin", type: "pin" },
+    { key: "disable_pin", label: "Disable pin", type: "pin" },
+    { key: "spi_index", label: "SPI index", type: "number" },
+    { key: "uart_num", label: "UART bus", type: "number" },
+    { key: "addr", label: "Driver address", type: "number" },
+    {
+      key: "r_sense_ohms",
+      label: "Sense resistance",
+      type: "number",
+      unit: "Ω",
+    },
     { key: "run_amps", label: "Run current", type: "number", unit: "A" },
     { key: "hold_amps", label: "Hold current", type: "number", unit: "A" },
     { key: "microsteps", label: "Microsteps", type: "number" },
-    { key: "uart_num", label: "UART bus", type: "number" },
-    { key: "addr", label: "Driver address", type: "number" },
+    { key: "stallguard", label: "StallGuard", type: "number" },
+    { key: "stallguard_debug", label: "StallGuard debug", type: "boolean" },
+    { key: "toff_disable", label: "Disable TOFF", type: "number" },
+    { key: "toff_stealthchop", label: "StealthChop TOFF", type: "number" },
+    { key: "toff_coolstep", label: "CoolStep TOFF", type: "number" },
+    {
+      key: "run_mode",
+      label: "Run mode",
+      type: "select",
+      options: ["StealthChop", "CoolStep", "StallGuard"],
+    },
+    {
+      key: "homing_mode",
+      label: "Homing mode",
+      type: "select",
+      options: ["StealthChop", "CoolStep", "StallGuard"],
+    },
+    { key: "use_enable", label: "Use enable", type: "boolean" },
   ],
   kinematics: [
     {
@@ -394,6 +423,7 @@ const COLORS: Record<NodeKind, string> = {
   axes: "#438bc8",
   axis: "#4f8edc",
   motor: "#6f7fd5",
+  driver: "#8b78e6",
   kinematics: "#5ba5a4",
   spindle: "#dc7659",
   bus: "#9c72c2",
@@ -447,6 +477,7 @@ const CHILDREN: Partial<Record<NodeKind, { kind: NodeKind; title: string }[]>> =
   {
     axes: [{ kind: "axis", title: "Axis" }],
     axis: [{ kind: "motor", title: "Motor" }],
+    motor: [{ kind: "driver", title: "Motor driver" }],
     bus: [
       { kind: "storage", title: "SD card" },
       { kind: "display", title: "OLED display" },
@@ -639,10 +670,10 @@ function scalarFields(source: unknown, defs: FieldDef[]) {
 }
 
 function parseConfig(content: string): Record<string, any> {
-  const root: Record<string, any> = {};
-  const stack: { indent: number; value: Record<string, any> }[] = [
-    { indent: -1, value: root },
-  ];
+  const root: Record<string, any> = {},
+    stack: { indent: number; value: Record<string, any> }[] = [
+      { indent: -1, value: root },
+    ];
   for (const raw of content.split("\n")) {
     if (!raw.trim() || raw.trimStart().startsWith("#")) continue;
     const match = raw.match(/^(\s*)([^:#]+):(?:\s*(.*))?$/);
@@ -757,8 +788,9 @@ function nodesFromYaml(content: string): NodeData[] {
             motor[driver] && typeof motor[driver] === "object"
               ? motor[driver]
               : {};
+          const motorId = `${axisId}-${motorKey}`;
           nodes.push({
-            id: `${axisId}-${motorKey}`,
+            id: motorId,
             kind: "motor",
             title: `${letter.toUpperCase()} Motor ${motorIndex}`,
             subtitle: `${driver} · configured`,
@@ -766,9 +798,20 @@ function nodesFromYaml(content: string): NodeData[] {
             y: 90 + i * 190 + motorIndex * 80,
             color: COLORS.motor,
             parentId: axisId,
+            fields: scalarFields(motor, FIELDS.motor),
+          });
+          nodes.push({
+            id: `${motorId}-${driver}`,
+            kind: "driver",
+            title: driver,
+            subtitle: "Motor driver",
+            x: 1200 + motorIndex * 250,
+            y: 90 + i * 190 + motorIndex * 80,
+            color: COLORS.driver,
+            parentId: motorId,
             fields: {
-              ...scalarFields({ ...motor, ...driverFields }, FIELDS.motor),
-              driver,
+              ...scalarFields(driverFields, FIELDS.driver),
+              type: driver,
             },
           });
         });
@@ -1221,7 +1264,7 @@ export function ConfigStudio({
   } | null>(null);
   const active = nodes.find((n) => n.id === selected);
   useEffect(() => {
-    if (!content.trim()) onChange(contentFromNodes(nodes));
+    if (!content.trim()) onChange(contentFromNodes(nodes, content));
   }, []);
   useEffect(() => {
     if (!palette) return;
@@ -1337,6 +1380,7 @@ export function ConfigStudio({
             ? { ...n, fields: { ...n.fields, [key]: value } }
             : n,
         ),
+        content,
       ),
     );
   };
@@ -1378,7 +1422,7 @@ export function ConfigStudio({
           fields: defaults(placement.kind),
         },
       ];
-      onChange(contentFromNodes(next));
+      onChange(contentFromNodes(next, content));
       return next;
     });
     setSelected(id);
@@ -1898,7 +1942,7 @@ export function ConfigStudio({
   );
 }
 
-function contentFromNodes(nodes: NodeData[]) {
+function contentFromNodes(nodes: NodeData[], baseSource = "") {
   const out: string[] = ["# Generated by FluidUI Config Studio"];
   const machine = nodes.find((n) => n.kind === "machine");
   if (machine) {
@@ -1959,25 +2003,23 @@ function contentFromNodes(nodes: NodeData[]) {
           if (value && value !== "NO_PIN" && value !== "false")
             out.push(`      ${key}: ${value}`);
         }
-        const driver = motor.fields.driver || "stepstick";
+        const driverNode = nodes.find(
+          (n) => n.kind === "driver" && n.parentId === motor.id,
+        );
+        const driver =
+          driverNode?.fields.type || motor.fields.driver || "stepstick";
         out.push(`      ${driver}:`);
-        for (const f of FIELDS.motor.filter(
-          (f) =>
-            ![
-              "driver",
-              "limit_neg_pin",
-              "limit_pos_pin",
-              "limit_all_pin",
-              "hard_limits",
-              "pulloff_mm",
-            ].includes(f.key),
+        const driverFields = driverNode?.fields ?? motor.fields;
+        const definitions = driverNode ? FIELDS.driver : FIELDS.motor;
+        for (const f of definitions.filter(
+          (f) => f.key !== "type" && f.key !== "driver",
         )) {
-          const value = motor.fields[f.key];
+          const value = driverFields[f.key];
           if (value && value !== "NO_PIN" && value !== "false")
             out.push(`        ${f.key}: ${value}`);
         }
         for (const key of ["step_pin", "direction_pin"])
-          if (!motor.fields[key] || motor.fields[key] === "NO_PIN")
+          if (!driverFields[key] || driverFields[key] === "NO_PIN")
             out.push(`        ${key}: NO_PIN`);
       });
     }
@@ -2054,5 +2096,67 @@ function contentFromNodes(nodes: NodeData[]) {
       "axes:\n",
       `axes:\n  shared_stepper_disable_pin: ${sharedDisable}\n`,
     );
-  return yaml;
+  return mergeGraphYaml(baseSource, yaml);
+}
+
+function mergeGraphYaml(baseSource: string, generatedSource: string) {
+  if (!baseSource.trim()) return generatedSource;
+  let lines = baseSource.split("\n");
+  for (const entry of yamlEntries(generatedSource)) {
+    let index = yamlEntries(lines.join("\n"));
+    const existing = index.find((item) => item.path === entry.path);
+    if (existing && entry.hasValue) {
+      lines[existing.line] =
+        `${" ".repeat(existing.indent)}${entry.key}: ${entry.value}`;
+      continue;
+    }
+    if (existing) continue;
+    const parentPath = entry.path.includes(".")
+      ? entry.path.slice(0, entry.path.lastIndexOf("."))
+      : "";
+    index = yamlEntries(lines.join("\n"));
+    const parent = index.find((item) => item.path === parentPath);
+    const indent = parent ? parent.indent + 2 : 0;
+    let insertAt = lines.length;
+    if (parent) {
+      insertAt = parent.line + 1;
+      while (insertAt < lines.length) {
+        const currentIndent = lines[insertAt].match(/^\s*/)?.[0].length ?? 0;
+        if (lines[insertAt].trim() && currentIndent <= parent.indent) break;
+        insertAt++;
+      }
+    }
+    lines.splice(
+      insertAt,
+      0,
+      `${" ".repeat(indent)}${entry.key}:${entry.hasValue ? ` ${entry.value}` : ""}`,
+    );
+  }
+  return lines.join("\n");
+}
+
+function yamlEntries(source: string) {
+  const result: {
+      path: string;
+      key: string;
+      value: string;
+      hasValue: boolean;
+      indent: number;
+      line: number;
+    }[] = [],
+    stack: { indent: number; key: string }[] = [];
+  source.split("\n").forEach((raw, line) => {
+    if (!raw.trim() || raw.trimStart().startsWith("#")) return;
+    const match = raw.match(/^(\s*)([^:#]+):(?:\s*(.*))?$/);
+    if (!match) return;
+    const indent = match[1].length,
+      key = match[2].trim(),
+      value = (match[3] ?? "").trim();
+    while (stack.length && stack[stack.length - 1].indent >= indent)
+      stack.pop();
+    const path = [...stack.map((item) => item.key), key].join(".");
+    result.push({ path, key, value, hasValue: value.length > 0, indent, line });
+    if (!value) stack.push({ indent, key });
+  });
+  return result;
 }
