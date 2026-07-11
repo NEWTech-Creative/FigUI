@@ -52,6 +52,7 @@ export function PluginFrame({ plugin, onClose, inline }: { plugin: Plugin; onClo
   const lineUnsubRef = useRef<(() => void) | null>(null)
   const [srcDoc, setSrcDoc] = useState<string | null>(null)
   const [loadError, setLoadError] = useState<string | null>(null)
+  const [frameLoaded, setFrameLoaded] = useState(false)
 
   const isMobile = window.innerWidth < 768
 
@@ -68,6 +69,7 @@ export function PluginFrame({ plugin, onClose, inline }: { plugin: Plugin; onClo
   useEffect(() => {
     setSrcDoc(null)
     setLoadError(null)
+    setFrameLoaded(false)
     const baseUrl = plugin.entryUrl.substring(0, plugin.entryUrl.lastIndexOf('/') + 1)
     fetch(plugin.entryUrl)
       .then(r => { if (!r.ok) throw new Error(`HTTP ${r.status}`); return r.text() })
@@ -215,24 +217,36 @@ export function PluginFrame({ plugin, onClose, inline }: { plugin: Plugin; onClo
     return () => window.removeEventListener('keydown', onKey)
   }, [onClose])
 
+  const loadingIndicator = (
+    <div className="flex h-full w-full flex-col items-center justify-center gap-3 bg-[var(--bg)] px-6 text-center">
+      <RefreshCw size={28} className="animate-spin text-accent" />
+      <div>
+        <div className="text-base font-semibold text-text-primary">Loading plugin…</div>
+        <div className="mt-1 text-sm text-text-muted">{plugin.manifest.name}</div>
+      </div>
+    </div>
+  )
+
   const frameContent = loadError ? (
     <div className="flex-1 flex flex-col items-center justify-center gap-3 text-center px-6">
       <span className="text-danger text-sm">Failed to load plugin: {loadError}</span>
       <button className="btn btn-ghost text-sm" onClick={onClose}>Close</button>
     </div>
   ) : srcDoc === null ? (
-    <div className="flex-1 flex items-center justify-center">
-      <RefreshCw size={22} className="text-text-muted animate-spin" />
-    </div>
+    <div className="flex-1">{loadingIndicator}</div>
   ) : (
-    <iframe
-      ref={iframeRef}
-      srcDoc={srcDoc}
-      sandbox="allow-scripts allow-forms allow-popups"
-      className="flex-1 w-full border-0"
-      style={interacting ? { pointerEvents: 'none' } : undefined}
-      title={plugin.manifest.name}
-    />
+    <div className="relative flex-1 min-h-0">
+      <iframe
+        ref={iframeRef}
+        srcDoc={srcDoc}
+        sandbox="allow-scripts allow-forms allow-popups"
+        className={`absolute inset-0 h-full w-full border-0 transition-opacity duration-200 ${frameLoaded ? 'opacity-100' : 'opacity-0'}`}
+        style={interacting ? { pointerEvents: 'none' } : undefined}
+        title={plugin.manifest.name}
+        onLoad={() => setFrameLoaded(true)}
+      />
+      {!frameLoaded && <div className="absolute inset-0">{loadingIndicator}</div>}
+    </div>
   )
 
   if (inline) {
