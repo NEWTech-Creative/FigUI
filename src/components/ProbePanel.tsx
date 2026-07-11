@@ -536,7 +536,6 @@ export function ProbePanel({ isTablet, embedded = false }: { isTablet?: boolean;
         <div className="flex items-center gap-2">
           <Target size={isTablet ? 20 : 15} />
           <span className="text-lg font-semibold">Probing</span>
-          <span className="tag border-info/30 bg-info/10 text-info normal-case tracking-normal">{selectedCycle.label}</span>
         </div>
         <ChevronDown size={isTablet ? 20 : 15} className={`transition-transform duration-200 ${open ? 'rotate-180' : ''}`} />
       </button>}
@@ -586,7 +585,7 @@ export function ProbePanel({ isTablet, embedded = false }: { isTablet?: boolean;
 
         <div className={`flex items-center gap-3 rounded-md border px-3 py-2 ${running ? 'border-warn/40 bg-warn/5 text-warn' : 'border-border bg-elevated/20 text-text-muted'}`}>
           {running ? <CircleDot className="shrink-0" size={18} /> : <Crosshair className="shrink-0" size={18} />}
-          <span className={`${isTablet ? 'text-lg' : 'text-sm'} flex-1`}>{message}</span>
+          <span className={`${isTablet ? 'text-xl' : 'text-base'} flex-1`}>{message}</span>
         </div>
 
         <div className="flex gap-2">

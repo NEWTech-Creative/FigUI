@@ -2,7 +2,8 @@ import { Play, Pause, Square, RotateCcw, DoorOpen } from 'lucide-react'
 import { useMachineStore } from '../store'
 import { useGCodeStore } from '../store/gcode'
 import { formatRuntime, useJobRuntimeEstimate } from '../lib/jobRuntime'
-import { sendRealtime, sendRaw } from '../lib/ws'
+import { sendRealtime } from '../lib/ws'
+import { clearMachineAlarm } from '../lib/alarm'
 
 export function JobControl() {
   const status = useMachineStore(s => s.status)
@@ -23,7 +24,7 @@ export function JobControl() {
   function resume()     { sendRealtime(0x7E) }
   function pause()      { sendRealtime(0x21) }
   function softReset()  { if (confirm('Abort job and reset?')) sendRealtime(0x18) }
-  function clearAlarm() { sendRaw('$X') }
+  function clearAlarm() { clearMachineAlarm(status.alarmCode) }
 
   if (!hasSd && !isAlarm && !isHold && !isDoor) return null
 

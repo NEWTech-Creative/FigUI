@@ -3,6 +3,7 @@ import { ArrowRightToLine, Home, Power, Square, TriangleAlert } from 'lucide-rea
 import { useMachineStore, activePosition } from '../store'
 import { sendRaw, sendRealtime, sendSilentAlarmQuery } from '../lib/ws'
 import { jogFeedKeyForAxis, loadPersistedJogFeed } from '../lib/jog'
+import { clearMachineAlarm } from '../lib/alarm'
 import { droFeedUnitLabel, formatAxisCoord, formatFeedRate } from '../lib/units'
 import type { MachineState } from '../types'
 
@@ -452,7 +453,7 @@ export function DRO({ isTablet = false }: { isTablet?: boolean }) {
           </div>
           <button
             className="btn btn-danger w-full h-8 text-2xl font-bold"
-            onClick={() => sendRaw('$X')}
+            onClick={() => clearMachineAlarm(status.alarmCode)}
           >
             Clear Alarm
           </button>
