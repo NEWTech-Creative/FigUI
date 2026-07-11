@@ -304,8 +304,8 @@ function toDisplayInput(value: number, units: 'mm' | 'in', decimals: number) {
   return Number(mmToDisplay(value, units).toFixed(decimals))
 }
 
-export function ProbePanel({ isTablet }: { isTablet?: boolean }) {
-  const [open, setOpen] = useState(false)
+export function ProbePanel({ isTablet, embedded = false }: { isTablet?: boolean; embedded?: boolean }) {
+  const [open, setOpen] = useState(embedded)
   const [selected, setSelected] = usePersisted<CycleId>('probe.cycle', 'z-surface')
   const [running, setRunning] = useState<RunningCycle | null>(null)
   const [probeHeld, setProbeHeld] = useState(false)
@@ -530,8 +530,8 @@ export function ProbePanel({ isTablet }: { isTablet?: boolean }) {
   const usesDiameter = selected !== 'z-surface'
 
   return (
-    <div className="panel">
-      <button className="panel-header w-full justify-between cursor-pointer hover:bg-elevated/50 transition-colors"
+    <div className={embedded ? '' : 'panel'}>
+      {!embedded && <button className="panel-header w-full justify-between cursor-pointer hover:bg-elevated/50 transition-colors"
         onClick={() => setOpen(v => !v)} aria-expanded={open}>
         <div className="flex items-center gap-2">
           <Target size={isTablet ? 20 : 15} />
@@ -539,7 +539,7 @@ export function ProbePanel({ isTablet }: { isTablet?: boolean }) {
           <span className="tag border-info/30 bg-info/10 text-info normal-case tracking-normal">{selectedCycle.label}</span>
         </div>
         <ChevronDown size={isTablet ? 20 : 15} className={`transition-transform duration-200 ${open ? 'rotate-180' : ''}`} />
-      </button>
+      </button>}
 
       {open && <div className={`p-4 ${isTablet ? 'space-y-5' : 'space-y-4'}`}>
         <div>

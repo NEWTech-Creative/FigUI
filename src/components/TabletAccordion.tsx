@@ -3,6 +3,7 @@ import { ChevronDown, ChevronRight } from 'lucide-react'
 import { GCodeViewer } from './GCodeViewer'
 import { FileManager } from './FileManager'
 import { Macros } from './Macros'
+import { ProbePanel } from './ProbePanel'
 import { Terminal } from './Terminal'
 import { ProgramExecutionPanel } from './ProgramExecutionPanel'
 import { OverridesPanel, SpindlePanel } from './JogPad'
@@ -34,6 +35,7 @@ export function TabletAccordion({ tabletTab, setTabletTab, onLaunchPanel }: Tabl
     { id: 'viewer',  label: 'Viewer'  },
     { id: 'files',   label: 'Files'   },
     { id: 'macros',  label: 'Macros'  },
+    { id: 'probing', label: 'Probing' },
     { id: 'terminal', label: 'Terminal' },
     { id: 'plugins', label: 'Plugins' },
   ]
@@ -42,6 +44,7 @@ export function TabletAccordion({ tabletTab, setTabletTab, onLaunchPanel }: Tabl
     { id: 'viewer',    label: 'Viewer'    },
     { id: 'files',     label: 'Files'     },
     { id: 'macros',    label: 'Macros'    },
+    { id: 'probing',   label: 'Probing'   },
     { id: 'terminal',  label: 'Terminal'  },
     ...(hasSpindle ? [{ id: 'spindle', label: 'Spindle' }] : []),
     { id: 'overrides', label: 'Overrides' },
@@ -58,12 +61,12 @@ export function TabletAccordion({ tabletTab, setTabletTab, onLaunchPanel }: Tabl
 
         {/* All-in-one tab panel */}
         <div className="panel flex flex-col">
-          <div className="flex border-b border-border shrink-0 overflow-x-auto" style={{ scrollbarWidth: 'none' }}>
+          <div className="flex w-full border-b border-border shrink-0">
             {PORTRAIT_TABS.map(tab => (
               <button
                 key={tab.id}
                 onClick={() => setPortraitTab(tab.id)}
-                className={`px-5 py-3 text-xl font-medium uppercase tracking-wide whitespace-nowrap transition-colors border-b-2 -mb-px ${
+                className={`min-w-0 flex-1 px-1 py-3 text-[clamp(10px,2.2vw,20px)] font-medium uppercase tracking-wide whitespace-nowrap transition-colors border-b-2 -mb-px ${
                   portraitTab === tab.id
                     ? 'border-accent text-accent'
                     : 'border-transparent text-text-muted hover:text-text-primary'
@@ -81,6 +84,7 @@ export function TabletAccordion({ tabletTab, setTabletTab, onLaunchPanel }: Tabl
             )}
             {portraitTab === 'files'     && <FileManager isTablet />}
             {portraitTab === 'macros'    && <Macros isTablet />}
+            {portraitTab === 'probing'   && <div className="p-3"><ProbePanel isTablet embedded /></div>}
             {portraitTab === 'terminal'  && <Terminal />}
             {portraitTab === 'spindle' && hasSpindle && (
               <div className="p-5">
@@ -114,12 +118,12 @@ export function TabletAccordion({ tabletTab, setTabletTab, onLaunchPanel }: Tabl
           )}
           {expanded === 'visualizer' && (
             <div className="flex flex-col flex-1 min-h-0 overflow-hidden">
-              <div className="flex border-b border-border shrink-0 overflow-x-auto" style={{ scrollbarWidth: 'none' }}>
+              <div className="flex w-full border-b border-border shrink-0">
                 {TABS.map(tab => (
                   <button
                     key={tab.id}
                     onClick={() => setTabletTab(tab.id)}
-                    className={`px-5 py-3 text-xl font-medium uppercase tracking-wide whitespace-nowrap transition-colors border-b-2 -mb-px ${
+                    className={`min-w-0 flex-1 px-1 py-3 text-[clamp(10px,1.35vw,20px)] font-medium uppercase tracking-wide whitespace-nowrap transition-colors border-b-2 -mb-px ${
                       tabletTab === tab.id
                         ? 'border-accent text-accent'
                         : 'border-transparent text-text-muted hover:text-text-primary'
@@ -128,8 +132,7 @@ export function TabletAccordion({ tabletTab, setTabletTab, onLaunchPanel }: Tabl
                     {tab.label}
                   </button>
                 ))}
-                <div className="flex-1" />
-                <button onClick={() => setExpanded('controls')} className="px-4 hover:text-text-primary text-text-muted">
+                <button onClick={() => setExpanded('controls')} className="w-11 shrink-0 hover:text-text-primary text-text-muted flex items-center justify-center">
                   <ChevronDown size={22} />
                 </button>
               </div>
@@ -139,6 +142,7 @@ export function TabletAccordion({ tabletTab, setTabletTab, onLaunchPanel }: Tabl
                 </div>
                 {tabletTab === 'files'    && <FileManager isTablet />}
                 {tabletTab === 'macros'   && <Macros isTablet />}
+                {tabletTab === 'probing'  && <div className="h-full overflow-y-auto p-3"><ProbePanel isTablet embedded /></div>}
                 {tabletTab === 'terminal' && <Terminal />}
                 {tabletTab === 'plugins'  && <PluginLauncher isTablet onLaunchPanel={onLaunchPanel} activeLayout="tablet" />}
               </div>
