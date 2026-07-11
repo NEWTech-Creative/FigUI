@@ -15,6 +15,7 @@ import {
 import { sendCommand } from "../lib/http";
 import { useMachineStore } from "../store";
 import { ConfigStudio } from "./ConfigStudio";
+import { validateFluidConfig, type ConfigIssue } from "../lib/configValidation";
 
 function escapeHtml(s: string) {
   return s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
@@ -167,6 +168,18 @@ function countMatches(text: string, term: string): number {
   return count;
 }
 
+function applyDiagnosticLine(
+  editor: HTMLElement,
+  line: number,
+  severity: "error" | "warning",
+) {
+  const lines = editor.innerHTML.split("\n");
+  if (line < 1 || line > lines.length) return;
+  lines[line - 1] =
+    `<span class="hl-diagnostic-line hl-diagnostic-${severity}" data-diagnostic-line="${line}">${lines[line - 1]}</span>`;
+  editor.innerHTML = lines.join("\n");
+}
+
 const CLOSE_CHARS = new Set([")", "]", "}", '"', "'"]);
 
 /** If the char being typed is already the next char (auto-inserted), skip over it instead of doubling */
@@ -217,6 +230,13 @@ export function CodeEditor({
   const [savedOnce, setSavedOnce] = useState(false);
   const isConfig = filename === "config.yaml";
   const [confirmClose, setConfirmClose] = useState(false);
+  const [validationIssues, setValidationIssues] = useState<
+    ConfigIssue[] | null
+  >(null);
+  const [diagnosticHighlight, setDiagnosticHighlight] = useState<{
+    line: number;
+    severity: "error" | "warning";
+  } | null>(null);
   const [lineCount, setLineCount] = useState(1);
   const [showSearch, setShowSearch] = useState(false);
   const [searchTerm, setSearchTerm] = useState("");
@@ -232,6 +252,11 @@ export function CodeEditor({
   const currentContent = useRef(content);
   const searchTermRef = useRef("");
   const matchIndexRef = useRef(0);
+  const diagnosticRef = useRef<{
+    line: number;
+    severity: "error" | "warning";
+    original: string;
+  } | null>(null);
 
   function updateLineCount(code: string) {
     // contentEditable often appends a trailing newline — don't count it as an extra line
@@ -248,6 +273,12 @@ export function CodeEditor({
       if (searchTermRef.current) {
         applySearchMarks(editor, searchTermRef.current, matchIndexRef.current);
       }
+      if (diagnosticRef.current)
+        applyDiagnosticLine(
+          editor,
+          diagnosticRef.current.line,
+          diagnosticRef.current.severity,
+        );
     };
   }, []);
 
@@ -258,6 +289,14 @@ export function CodeEditor({
     jar.updateCode(currentContent.current);
     updateLineCount(currentContent.current);
     jar.onUpdate((code) => {
+      if (
+        diagnosticRef.current &&
+        code.split("\n")[diagnosticRef.current.line - 1] !==
+          diagnosticRef.current.original
+      ) {
+        diagnosticRef.current = null;
+        setDiagnosticHighlight(null);
+      }
       currentContent.current = code;
       setDirty(code !== content);
       updateLineCount(code);
@@ -313,18 +352,60 @@ export function CodeEditor({
         }
       }
     });
-  }, [searchTerm, matchIndex, kind, makeHighlighter]);
+  }, [searchTerm, matchIndex, diagnosticHighlight, kind, makeHighlighter]);
 
-  const handleSave = useCallback(async () => {
-    setSaving(true);
-    try {
-      await onSave(currentContent.current);
-      setDirty(false);
-      if (isConfig) setSavedOnce(true);
-    } finally {
-      setSaving(false);
-    }
-  }, [onSave, isConfig]);
+  const jumpToDiagnostic = useCallback((issue: ConfigIssue) => {
+    diagnosticRef.current = {
+      line: issue.line,
+      severity: issue.severity,
+      original: currentContent.current.split("\n")[issue.line - 1] ?? "",
+    };
+    setDiagnosticHighlight({ line: issue.line, severity: issue.severity });
+    setValidationIssues(null);
+    setView("code");
+    requestAnimationFrame(() =>
+      requestAnimationFrame(() => {
+        const marker = editorRef.current?.querySelector(
+          `[data-diagnostic-line="${issue.line}"]`,
+        );
+        marker?.scrollIntoView({ block: "center" });
+        const node =
+          marker &&
+          document.createTreeWalker(marker, NodeFilter.SHOW_TEXT).nextNode();
+        if (node) {
+          const selection = window.getSelection();
+          const range = document.createRange();
+          range.setStart(node, 0);
+          range.collapse(true);
+          selection?.removeAllRanges();
+          selection?.addRange(range);
+        }
+        editorRef.current?.focus();
+      }),
+    );
+  }, []);
+
+  const handleSave = useCallback(
+    async (force = false) => {
+      if (isConfig && !force) {
+        const issues = validateFluidConfig(currentContent.current);
+        if (issues.length) {
+          setValidationIssues(issues);
+          return false;
+        }
+      }
+      setSaving(true);
+      try {
+        await onSave(currentContent.current);
+        setDirty(false);
+        if (isConfig) setSavedOnce(true);
+        return true;
+      } finally {
+        setSaving(false);
+      }
+    },
+    [onSave, isConfig],
+  );
 
   const handleStudioChange = useCallback(
     (code: string) => {
@@ -364,7 +445,8 @@ export function CodeEditor({
   }
 
   async function confirmSaveAndClose() {
-    await handleSave();
+    const saved = await handleSave();
+    if (!saved) return;
     setConfirmClose(false);
     onClose();
   }
@@ -515,7 +597,7 @@ export function CodeEditor({
             </button>
             <button
               className="btn btn-primary text-sm py-1 px-2"
-              onClick={handleSave}
+              onClick={() => handleSave()}
               disabled={saving || !dirty}
               title="Save (Ctrl+S)"
             >
@@ -663,6 +745,85 @@ export function CodeEditor({
                 onClick={confirmSaveAndClose}
               >
                 Save
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+      {validationIssues && (
+        <div
+          className="fixed inset-0 z-[70] flex items-center justify-center bg-black/55 p-4"
+          onClick={() => setValidationIssues(null)}
+        >
+          <div
+            className="flex max-h-[75vh] w-full max-w-xl flex-col rounded-lg border border-border bg-surface shadow-2xl"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="border-b border-border px-5 py-4">
+              <div className="text-base font-semibold text-text-primary">
+                Configuration diagnostics
+              </div>
+              <div className="mt-1 text-sm text-text-muted">
+                {validationIssues.filter((i) => i.severity === "error").length}{" "}
+                errors ·{" "}
+                {
+                  validationIssues.filter((i) => i.severity === "warning")
+                    .length
+                }{" "}
+                warnings
+              </div>
+            </div>
+            <div className="min-h-0 flex-1 space-y-2 overflow-auto p-4">
+              {validationIssues.map((issue, index) => (
+                <button
+                  key={index}
+                  onClick={() => jumpToDiagnostic(issue)}
+                  className={`flex w-full gap-3 rounded-md border p-3 text-left ${issue.severity === "error" ? "border-danger/30 bg-danger/10" : "border-warn/30 bg-warn/10"}`}
+                >
+                  <span
+                    className={`rounded px-1.5 py-0.5 font-mono text-xs ${issue.severity === "error" ? "text-danger" : "text-warn"}`}
+                  >
+                    L{issue.line}
+                  </span>
+                  <span>
+                    <span className="block text-sm text-text-primary">
+                      {issue.message}
+                    </span>
+                    {issue.path && (
+                      <span className="mt-0.5 block font-mono text-xs text-text-muted">
+                        {issue.path}
+                      </span>
+                    )}
+                  </span>
+                </button>
+              ))}
+            </div>
+            <div className="flex justify-end gap-2 border-t border-border p-4">
+              <button
+                className="btn btn-ghost"
+                onClick={() => setValidationIssues(null)}
+              >
+                Cancel
+              </button>
+              {validationIssues.every((i) => i.severity === "warning") && (
+                <button
+                  className="btn btn-warn"
+                  onClick={() => {
+                    setValidationIssues(null);
+                    handleSave(true);
+                  }}
+                >
+                  Save anyway
+                </button>
+              )}
+              <button
+                className="btn btn-primary"
+                onClick={() => {
+                  setValidationIssues(null);
+                  setView("code");
+                }}
+              >
+                Review YAML
               </button>
             </div>
           </div>

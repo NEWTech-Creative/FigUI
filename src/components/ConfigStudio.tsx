@@ -622,16 +622,19 @@ function scalarFields(source: unknown, defs: FieldDef[]) {
     unknown
   >;
   return Object.fromEntries(
-    defs.map((f) => [
-      f.key,
-      obj[f.key] == null
-        ? f.type === "boolean"
+    defs.map((f) => {
+      const raw = obj[f.key];
+      const fallback =
+        f.type === "boolean"
           ? "false"
           : f.type === "pin"
             ? "NO_PIN"
-            : (f.options?.[0] ?? "")
-        : String(obj[f.key]),
-    ]),
+            : (f.options?.[0] ?? "");
+      if (raw == null) return [f.key, fallback];
+      if (typeof raw === "object")
+        return [f.key, Object.keys(raw as object).length === 0 ? "" : fallback];
+      return [f.key, String(raw)];
+    }),
   );
 }
 
@@ -1992,13 +1995,16 @@ function contentFromNodes(nodes: NodeData[]) {
   for (const n of nodes) {
     const section = simple[n.kind];
     if (section) {
-      out.push(
-        "",
-        `${section}:`,
-        ...FIELDS[n.kind]
-          .filter((f) => n.fields[f.key] && n.fields[f.key] !== "false")
-          .map((f) => `  ${f.key}: ${n.fields[f.key]}`),
-      );
+      const sectionLines =
+        n.kind === "macro"
+          ? FIELDS.macro.map(
+              (f) =>
+                `  ${f.key}:${n.fields[f.key] ? ` ${n.fields[f.key]}` : ""}`,
+            )
+          : FIELDS[n.kind]
+              .filter((f) => n.fields[f.key] && n.fields[f.key] !== "false")
+              .map((f) => `  ${f.key}: ${n.fields[f.key]}`);
+      out.push("", `${section}:`, ...sectionLines);
     }
     if (n.kind === "bus") {
       const type = n.fields.type || "uart1";
