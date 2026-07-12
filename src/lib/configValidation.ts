@@ -1,3 +1,5 @@
+import { loadFluidSchemaStatus, type FluidSchema } from "./fluidSchema";
+
 export type ConfigIssue = {
   severity: "error" | "warning";
   line: number;
@@ -136,4 +138,227 @@ export function validateFluidConfig(source: string): ConfigIssue[] {
   return issues.sort(
     (a, b) => a.line - b.line || (a.severity === "error" ? -1 : 1),
   );
+}
+
+type SchemaRule = Record<string, any>;
+type SchemaViolation = { path: string; message: string };
+
+function schemaErrorLine(source: string, target: string): number {
+  if (!target) return 1;
+  const lines = source.split("\n");
+  const stack: { indent: number; key: string }[] = [];
+  for (let index = 0; index < lines.length; index++) {
+    const match = lines[index].match(/^(\s*)([^:#]+):/);
+    if (!match) continue;
+    const indent = match[1].length;
+    while (stack.length && stack[stack.length - 1].indent >= indent)
+      stack.pop();
+    const key = match[2].trim();
+    const path = [...stack.map((item) => item.key), key].join(".");
+    if (path === target || target.startsWith(`${path}.`)) {
+      if (path === target) return index + 1;
+    }
+    const hasValue = lines[index].slice(match[0].length).trim().length > 0;
+    if (!hasValue) stack.push({ indent, key });
+  }
+  return 1;
+}
+
+function parseScalar(token: string): unknown {
+  if (/^true$/i.test(token)) return true;
+  if (/^false$/i.test(token)) return false;
+  if (/^(null|~)$/i.test(token)) return null;
+  if (/^-?\d+$/.test(token)) return Number.parseInt(token, 10);
+  if (
+    /^-?(?:\d+(?:\.\d*)?|\.\d+)(?:e[+-]?\d+)$/i.test(token) ||
+    /^-?(?:\d+\.\d*|\d*\.\d+)$/.test(token)
+  )
+    return Number(token);
+  if (/^".*"$/.test(token)) {
+    try {
+      return JSON.parse(token);
+    } catch {
+      return token.slice(1, -1);
+    }
+  }
+  if (/^'.*'$/.test(token)) return token.slice(1, -1).replace(/''/g, "'");
+  return token;
+}
+
+/** Parses the block-style YAML subset accepted by validateFluidConfig. */
+function parseBlockYaml(source: string): unknown {
+  const root: Record<string, unknown> = {};
+  const stack: { indent: number; value: Record<string, unknown> }[] = [
+    { indent: -1, value: root },
+  ];
+  for (const raw of source.split("\n")) {
+    if (!raw.trim() || raw.trimStart().startsWith("#")) continue;
+    const match = raw.match(/^(\s*)([^:#]+):(?:\s*(.*))?$/);
+    if (!match) continue;
+    const indent = match[1].length;
+    while (stack.length > 1 && stack[stack.length - 1].indent >= indent)
+      stack.pop();
+    const key = match[2].trim();
+    const token = (match[3] ?? "").trim();
+    if (token) stack[stack.length - 1].value[key] = parseScalar(token);
+    else {
+      const child: Record<string, unknown> = {};
+      stack[stack.length - 1].value[key] = child;
+      stack.push({ indent, value: child });
+    }
+  }
+  const emptyObjectsToNull = (value: unknown): unknown => {
+    if (!value || typeof value !== "object" || Array.isArray(value))
+      return value;
+    const entries = Object.entries(value as Record<string, unknown>);
+    if (!entries.length) return null;
+    return Object.fromEntries(
+      entries.map(([key, child]) => [key, emptyObjectsToNull(child)]),
+    );
+  };
+  return emptyObjectsToNull(root);
+}
+
+function matchesType(value: unknown, type: string) {
+  if (type === "null") return value === null;
+  if (type === "array") return Array.isArray(value);
+  if (type === "object")
+    return value !== null && typeof value === "object" && !Array.isArray(value);
+  if (type === "integer")
+    return typeof value === "number" && Number.isInteger(value);
+  if (type === "number")
+    return typeof value === "number" && Number.isFinite(value);
+  return typeof value === type;
+}
+
+function validateAgainstSchema(
+  value: unknown,
+  rule: SchemaRule,
+  root: FluidSchema,
+  path = "",
+  issues: SchemaViolation[] = [],
+): SchemaViolation[] {
+  if (rule.$ref) {
+    const target = String(rule.$ref)
+      .replace(/^#\//, "")
+      .split("/")
+      .reduce<unknown>(
+        (current, key) =>
+          (current as Record<string, unknown>)?.[
+            key.replace(/~1/g, "/").replace(/~0/g, "~")
+          ],
+        root,
+      );
+    return target && typeof target === "object"
+      ? validateAgainstSchema(value, target as SchemaRule, root, path, issues)
+      : issues;
+  }
+  for (const part of rule.allOf ?? [])
+    validateAgainstSchema(value, part, root, path, issues);
+  if (rule.oneOf) {
+    const matches = rule.oneOf.filter(
+      (part: SchemaRule) =>
+        !validateAgainstSchema(value, part, root, path, []).length,
+    ).length;
+    if (matches !== 1)
+      issues.push({ path, message: "must match exactly one allowed form" });
+  }
+  const types =
+    rule.type == null ? [] : Array.isArray(rule.type) ? rule.type : [rule.type];
+  if (types.length && !types.some((type: string) => matchesType(value, type))) {
+    issues.push({ path, message: `must be ${types.join(" or ")}` });
+    return issues;
+  }
+  if (rule.enum && !rule.enum.some((item: unknown) => Object.is(item, value)))
+    issues.push({ path, message: `must be one of ${rule.enum.join(", ")}` });
+  if (typeof value === "number") {
+    if (rule.minimum != null && value < rule.minimum)
+      issues.push({ path, message: `must be at least ${rule.minimum}` });
+    if (rule.maximum != null && value > rule.maximum)
+      issues.push({ path, message: `must be at most ${rule.maximum}` });
+  }
+  if (typeof value === "string" && rule.pattern) {
+    try {
+      if (!new RegExp(rule.pattern).test(value))
+        issues.push({ path, message: "has an invalid format" });
+    } catch {
+      // Ignore an invalid pattern supplied by a remote schema.
+    }
+  }
+  if (value && typeof value === "object" && !Array.isArray(value)) {
+    const object = value as Record<string, unknown>;
+    const properties = rule.properties ?? {};
+    const patterns = Object.entries(rule.patternProperties ?? {}) as [
+      string,
+      SchemaRule,
+    ][];
+    for (const required of rule.required ?? [])
+      if (!(required in object))
+        issues.push({
+          path: path ? `${path}.${required}` : required,
+          message: "is required",
+        });
+    if (
+      rule.maxProperties != null &&
+      Object.keys(object).length > rule.maxProperties
+    )
+      issues.push({
+        path,
+        message: `must have at most ${rule.maxProperties} properties`,
+      });
+    for (const [key, child] of Object.entries(object)) {
+      const childPath = path ? `${path}.${key}` : key;
+      if (properties[key])
+        validateAgainstSchema(child, properties[key], root, childPath, issues);
+      else {
+        const matchingPatterns = patterns.filter(([pattern]) =>
+          new RegExp(pattern).test(key),
+        );
+        if (matchingPatterns.length)
+          for (const [, patternRule] of matchingPatterns)
+            validateAgainstSchema(child, patternRule, root, childPath, issues);
+        else if (rule.additionalProperties === false)
+          issues.push({
+            path: childPath,
+            message: "is not a recognized property",
+          });
+        else if (
+          rule.additionalProperties &&
+          typeof rule.additionalProperties === "object"
+        )
+          validateAgainstSchema(
+            child,
+            rule.additionalProperties,
+            root,
+            childPath,
+            issues,
+          );
+      }
+    }
+  }
+  return issues;
+}
+
+/** Uses the downloaded upstream schema when online, with local checks offline. */
+export async function validateFluidConfigForSave(
+  source: string,
+): Promise<ConfigIssue[]> {
+  const localIssues = validateFluidConfig(source);
+  if (localIssues.some((issue) => issue.severity === "error"))
+    return localIssues;
+
+  const { schema, online } = await loadFluidSchemaStatus();
+  if (!online || !schema) return localIssues;
+
+  const schemaIssues = validateAgainstSchema(
+    parseBlockYaml(source),
+    schema,
+    schema,
+  ).map((error) => ({
+    severity: "error" as const,
+    line: schemaErrorLine(source, error.path),
+    path: error.path || undefined,
+    message: `Schema: ${error.message}.`,
+  }));
+  return [...localIssues, ...schemaIssues].sort((a, b) => a.line - b.line);
 }

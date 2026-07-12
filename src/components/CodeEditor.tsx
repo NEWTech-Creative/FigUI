@@ -14,7 +14,10 @@ import {
 import { sendCommand } from "../lib/http";
 import { useMachineStore } from "../store";
 import { ConfigStudio } from "./ConfigStudio";
-import { validateFluidConfig, type ConfigIssue } from "../lib/configValidation";
+import {
+  validateFluidConfigForSave,
+  type ConfigIssue,
+} from "../lib/configValidation";
 
 function escapeHtml(s: string) {
   return s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
@@ -391,7 +394,7 @@ export function CodeEditor({
   const handleSave = useCallback(
     async (force = false) => {
       if (isYamlFile && !force) {
-        const issues = validateFluidConfig(currentContent.current);
+        const issues = await validateFluidConfigForSave(currentContent.current);
         if (issues.length) {
           setValidationIssues(issues);
           return false;

@@ -52,6 +52,8 @@ type NodeData = {
   color: string;
   fields: Record<string, string>;
   parentId?: string;
+  /** Stable source key, independent of graph ordering. */
+  yamlKey?: string;
 };
 type FieldDef = {
   key: string;
@@ -875,6 +877,7 @@ function defaultNodes(): NodeData[] {
         y: 100 + i * 180,
         color: COLORS.axis,
         parentId: "axes",
+        yamlKey: a.toLowerCase(),
         fields: {
           ...defaults("axis"),
           axis: a.toLowerCase(),
@@ -893,6 +896,7 @@ function defaultNodes(): NodeData[] {
         y: 100 + i * 180,
         color: COLORS.motor,
         parentId: `axis-${a}`,
+        yamlKey: "motor0",
         fields: { ...defaults("motor"), driver: "stepstick" },
       },
     ]),
@@ -1095,6 +1099,7 @@ function nodesFromYaml(content: string): NodeData[] {
           color: COLORS.axis,
           parentId: "axes",
           fields,
+          yamlKey: letter,
         });
         ["motor0", "motor1"].forEach((motorKey, motorIndex) => {
           if (!axis[motorKey]) return;
@@ -1132,6 +1137,7 @@ function nodesFromYaml(content: string): NodeData[] {
             color: COLORS.motor,
             parentId: axisId,
             fields: scalarFields(motor, FIELDS.motor),
+            yamlKey: motorKey,
           });
           nodes.push({
             id: `${motorId}-${driver}`,
@@ -1156,6 +1162,7 @@ function nodesFromYaml(content: string): NodeData[] {
               ),
               type: driver,
             },
+            yamlKey: driver,
           });
         });
       });
@@ -1195,6 +1202,7 @@ function nodesFromYaml(content: string): NodeData[] {
           y: 80 + i * 90,
           color: COLORS.bus,
           fields: { ...scalarFields(value, FIELDS.bus), type: key },
+          yamlKey: key,
         });
     });
     const spindleTypes = FIELDS.spindle[0].options ?? [];
@@ -1209,6 +1217,7 @@ function nodesFromYaml(content: string): NodeData[] {
           y: 580,
           color: COLORS.spindle,
           fields: { ...scalarFields(root[type], FIELDS.spindle), type },
+          yamlKey: type,
         });
     }
     return nodes.length > 1 ? layoutNodes(nodes) : defaultNodes();
@@ -1630,10 +1639,12 @@ export function ConfigStudio({
   const undoRef = useRef<{ nodes: NodeData[]; source: string }[]>([]);
   const redoRef = useRef<{ nodes: NodeData[]; source: string }[]>([]);
   const [propertyQuery, setPropertyQuery] = useState("");
+  const [mutationError, setMutationError] = useState("");
   const [fluidSchema, setFluidSchema] = useState<FluidSchema | null>(null);
 
   useEffect(() => {
     setPropertyQuery("");
+    setMutationError("");
   }, [selected]);
   const active = nodes.find((n) => n.id === selected);
   const propertyFields = active
@@ -1738,6 +1749,14 @@ export function ConfigStudio({
       );
       const axisLetter =
         ["x", "y", "z", "a", "b", "c"].find((a) => !usedAxes.has(a)) ?? "x";
+      const usedMotorKeys = new Set(
+        ns
+          .filter((n) => n.kind === "motor" && n.parentId === parent.id)
+          .map((n) => n.yamlKey),
+      );
+      const motorKey = ["motor0", "motor1"].find(
+        (candidate) => !usedMotorKeys.has(candidate),
+      );
       const nodeTitle =
         kind === "motor"
           ? `${parent.title.replace(" Axis", "")} Motor ${siblingCount}`
@@ -1775,6 +1794,14 @@ export function ConfigStudio({
             ...(kind === "axis" ? { axis: axisLetter } : {}),
           },
           parentId: parent.id,
+          yamlKey:
+            kind === "axis"
+              ? axisLetter
+              : kind === "motor"
+                ? (motorKey ?? `motor${siblingCount}`)
+                : kind === "driver"
+                  ? defaults(kind).type
+                  : undefined,
         },
       ];
       const added = next[next.length - 1];
@@ -1786,9 +1813,30 @@ export function ConfigStudio({
     setSelected(id);
   };
   const update = (key: string, value: string) => {
-    recordHistory();
     const changedNode = nodes.find((node) => node.id === selected);
-    const path = changedNode ? yamlPathForField(changedNode, key, nodes) : null;
+    if (!changedNode) return;
+    const structural =
+      (changedNode.kind === "axis" && key === "axis") ||
+      (["driver", "bus", "spindle"].includes(changedNode.kind) &&
+        key === "type");
+    const path = structural
+      ? yamlPathForNode(changedNode, nodes)
+      : yamlPathForField(changedNode, key, nodes);
+    const nextSource = structural
+      ? path
+        ? renameYamlKey(sourceRef.current, path, value)
+        : null
+      : path
+        ? patchYamlValue(sourceRef.current, path, value)
+        : null;
+    if (nextSource == null) {
+      setMutationError(
+        `Could not update ${path ?? key}; the YAML structure has changed. Review the YAML and try again.`,
+      );
+      return;
+    }
+    recordHistory();
+    setMutationError("");
     setNodes((ns) =>
       ns.map((n) =>
         n.id === selected
@@ -1796,15 +1844,17 @@ export function ConfigStudio({
               ...n,
               fields: { ...n.fields, [key]: value },
               subtitle: key === "type" || key === "driver" ? value : n.subtitle,
+              yamlKey: structural ? value : n.yamlKey,
+              title:
+                changedNode.kind === "axis" && key === "axis"
+                  ? `${value.toUpperCase()} Axis`
+                  : n.title,
             }
           : n,
       ),
     );
-    if (path) {
-      const nextSource = patchYamlValue(sourceRef.current, path, value);
-      sourceRef.current = nextSource;
-      onChange(nextSource);
-    }
+    sourceRef.current = nextSource;
+    onChange(nextSource);
   };
   const remove = () => {
     if (!active || active.kind === "machine") return;
@@ -1872,6 +1922,7 @@ export function ConfigStudio({
     const placement = pendingPlacement;
     const id = `${placement.kind}-${Date.now()}`;
     setNodes((ns) => {
+      const fields = defaults(placement.kind);
       const next = [
         ...ns,
         {
@@ -1885,7 +1936,11 @@ export function ConfigStudio({
           x: position.x - 105,
           y: position.y - 38,
           color: COLORS[placement.kind],
-          fields: defaults(placement.kind),
+          fields,
+          yamlKey:
+            placement.kind === "bus" || placement.kind === "spindle"
+              ? fields.type
+              : undefined,
         },
       ];
       const added = next[next.length - 1];
@@ -2350,6 +2405,11 @@ export function ConfigStudio({
               </label>
             </div>
             <div className="h-[calc(100%-129px)] overflow-auto p-4">
+              {mutationError && (
+                <div className="mb-3 rounded-md border border-red-400/30 bg-red-500/10 px-3 py-2 text-xs text-red-300">
+                  {mutationError}
+                </div>
+              )}
               <div className="mb-2 text-[10px] font-bold uppercase tracking-wider text-[#707d90]">
                 Properties
               </div>
@@ -2441,7 +2501,7 @@ export function ConfigStudio({
 
 function yamlPathForNode(node: NodeData, nodes: NodeData[]): string | null {
   if (node.kind === "stepping" || node.kind === "axes") return node.kind;
-  if (node.kind === "axis") return `axes.${node.fields.axis}`;
+  if (node.kind === "axis") return `axes.${node.yamlKey ?? node.fields.axis}`;
   if (node.kind === "motor" || node.kind === "driver") {
     const motor =
       node.kind === "motor"
@@ -2450,16 +2510,10 @@ function yamlPathForNode(node: NodeData, nodes: NodeData[]): string | null {
     if (!motor) return null;
     const axis = nodes.find((candidate) => candidate.id === motor.parentId);
     if (!axis) return null;
-    const motors = nodes.filter(
-      (candidate) =>
-        candidate.kind === "motor" && candidate.parentId === axis.id,
-    );
-    const index = Math.max(
-      0,
-      motors.findIndex((candidate) => candidate.id === motor.id),
-    );
-    const base = `axes.${axis.fields.axis}.motor${index}`;
-    return node.kind === "driver" ? `${base}.${node.fields.type}` : base;
+    const base = `axes.${axis.yamlKey ?? axis.fields.axis}.${motor.yamlKey ?? "motor0"}`;
+    return node.kind === "driver"
+      ? `${base}.${node.yamlKey ?? node.fields.type}`
+      : base;
   }
   const roots: Partial<Record<NodeKind, string>> = {
     kinematics: "kinematics",
@@ -2473,8 +2527,8 @@ function yamlPathForNode(node: NodeData, nodes: NodeData[]): string | null {
     storage: "sdcard",
   };
   if (roots[node.kind]) return roots[node.kind]!;
-  if (node.kind === "bus") return node.fields.type || "uart1";
-  if (node.kind === "spindle") return node.fields.type || "PWM";
+  if (node.kind === "bus") return node.yamlKey ?? node.fields.type ?? "uart1";
+  if (node.kind === "spindle") return node.yamlKey ?? node.fields.type ?? "PWM";
   if (node.kind === "io")
     return node.title.toLowerCase().includes("input")
       ? "user_inputs"
@@ -2556,7 +2610,7 @@ function yamlPathForField(
   if (node.kind === "stepping") return `stepping.${key}`;
   if (node.kind === "axes") return `axes.${key}`;
   if (node.kind === "axis") {
-    const axis = node.fields.axis;
+    const axis = node.yamlKey ?? node.fields.axis;
     const homing: Record<string, string> = {
       homing_cycle: "cycle",
       homing_positive: "positive_direction",
@@ -2576,17 +2630,10 @@ function yamlPathForField(
     if (!motor) return null;
     const axis = nodes.find((candidate) => candidate.id === motor.parentId);
     if (!axis) return null;
-    const motors = nodes.filter(
-      (candidate) =>
-        candidate.kind === "motor" && candidate.parentId === axis.id,
-    );
-    const motorIndex = motors.findIndex(
-      (candidate) => candidate.id === motor.id,
-    );
-    const base = `axes.${axis.fields.axis}.motor${Math.max(0, motorIndex)}`;
+    const base = `axes.${axis.yamlKey ?? axis.fields.axis}.${motor.yamlKey ?? "motor0"}`;
     if (node.kind === "motor") return `${base}.${key}`;
     if (key === "type") return null;
-    return `${base}.${node.fields.type}.${key}`;
+    return `${base}.${node.yamlKey ?? node.fields.type}.${key}`;
   }
   const sections: Partial<Record<NodeKind, string>> = {
     control: "control",
@@ -2600,15 +2647,38 @@ function yamlPathForField(
   };
   if (sections[node.kind]) return `${sections[node.kind]}.${key}`;
   if (node.kind === "bus")
-    return key === "type" ? null : `${node.fields.type}.${key}`;
+    return key === "type" ? null : `${node.yamlKey ?? node.fields.type}.${key}`;
   if (node.kind === "spindle")
-    return key === "type" ? null : `${node.fields.type}.${key}`;
+    return key === "type" ? null : `${node.yamlKey ?? node.fields.type}.${key}`;
   if (node.kind === "io")
     return `${node.title.toLowerCase().includes("input") ? "user_inputs" : "user_outputs"}.${key}`;
   return null;
 }
 
-function patchYamlValue(source: string, path: string, value: string) {
+function renameYamlKey(source: string, path: string, nextKey: string) {
+  if (!nextKey || /[:#\s]/.test(nextKey)) return null;
+  const entries = yamlEntries(source);
+  const existing = entries.find((entry) => entry.path === path);
+  if (!existing) return null;
+  const parentPath = path.includes(".")
+    ? path.slice(0, path.lastIndexOf("."))
+    : "";
+  const nextPath = parentPath ? `${parentPath}.${nextKey}` : nextKey;
+  if (nextPath !== path && entries.some((entry) => entry.path === nextPath))
+    return null;
+  const lines = source.split("\n");
+  lines[existing.line] = lines[existing.line].replace(
+    /^(\s*)[^:#]+:/,
+    `$1${nextKey}:`,
+  );
+  return lines.join("\n");
+}
+
+function patchYamlValue(
+  source: string,
+  path: string,
+  value: string,
+): string | null {
   const lines = source.split("\n"),
     entries = yamlEntries(source),
     existing = entries.find((entry) => entry.path === path);
@@ -2626,7 +2696,7 @@ function patchYamlValue(source: string, path: string, value: string) {
       : "",
     key = path.slice(path.lastIndexOf(".") + 1),
     parent = entries.find((entry) => entry.path === parentPath);
-  if (!parent) return source;
+  if (!parent) return null;
   let insertAt = parent.line + 1;
   while (insertAt < lines.length) {
     const indent = lines[insertAt].match(/^\s*/)?.[0].length ?? 0;
@@ -2661,7 +2731,7 @@ function contentFromNodes(nodes: NodeData[], baseSource = "") {
   if (axes.length) {
     out.push("", "axes:");
     for (const a of axes) {
-      out.push(`  ${a.fields.axis}:`);
+      out.push(`  ${a.yamlKey ?? a.fields.axis}:`);
       for (const f of FIELDS.axis.filter(
         (f) =>
           !f.key.startsWith("motor") &&
@@ -2686,7 +2756,7 @@ function contentFromNodes(nodes: NodeData[], baseSource = "") {
         (n) => n.kind === "motor" && n.parentId === a.id,
       );
       motors.forEach((motor, index) => {
-        out.push(`    motor${index}:`);
+        out.push(`    ${motor.yamlKey ?? `motor${index}`}:`);
         for (const key of [
           "limit_neg_pin",
           "limit_pos_pin",
@@ -2702,7 +2772,10 @@ function contentFromNodes(nodes: NodeData[], baseSource = "") {
           (n) => n.kind === "driver" && n.parentId === motor.id,
         );
         const driver =
-          driverNode?.fields.type || motor.fields.driver || "stepstick";
+          driverNode?.yamlKey ||
+          driverNode?.fields.type ||
+          motor.fields.driver ||
+          "stepstick";
         out.push(`      ${driver}:`);
         const driverFields = driverNode?.fields ?? motor.fields;
         const definitions = driverNode ? FIELDS.driver : FIELDS.motor;

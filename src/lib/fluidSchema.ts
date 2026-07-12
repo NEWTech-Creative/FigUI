@@ -4,6 +4,7 @@ const CACHE_KEY = "fluidui.fluidnc-schema.v1";
 const MAX_SCHEMA_BYTES = 500_000;
 
 export type FluidSchema = {
+  [key: string]: unknown;
   $defs?: Record<string, SchemaNode>;
 };
 
@@ -18,7 +19,12 @@ export type SchemaNode = {
   allOf?: SchemaNode[];
 };
 
-let pending: Promise<FluidSchema | null> | null = null;
+export type FluidSchemaResult = {
+  schema: FluidSchema | null;
+  online: boolean;
+};
+
+let pending: Promise<FluidSchemaResult> | null = null;
 
 function parseSchema(text: string): FluidSchema | null {
   if (!text || text.length > MAX_SCHEMA_BYTES) return null;
@@ -30,13 +36,16 @@ function parseSchema(text: string): FluidSchema | null {
   }
 }
 
-async function fetchSchema(): Promise<FluidSchema | null> {
+async function fetchSchema(): Promise<FluidSchemaResult> {
   let cached: string | null = null;
   try {
     cached = localStorage.getItem(CACHE_KEY);
   } catch {
     // Storage is optional; the in-bundle definitions remain the final fallback.
   }
+
+  if (typeof navigator !== "undefined" && !navigator.onLine)
+    return { schema: cached ? parseSchema(cached) : null, online: false };
 
   const controller = new AbortController();
   const timeout = window.setTimeout(() => controller.abort(), 3500);
@@ -55,15 +64,20 @@ async function fetchSchema(): Promise<FluidSchema | null> {
     } catch {
       // A full/disabled cache must not prevent use of the downloaded schema.
     }
-    return schema;
+    return { schema, online: true };
   } catch {
-    return cached ? parseSchema(cached) : null;
+    return { schema: cached ? parseSchema(cached) : null, online: false };
   } finally {
     window.clearTimeout(timeout);
   }
 }
 
 export function loadFluidSchema(): Promise<FluidSchema | null> {
+  pending ??= fetchSchema();
+  return pending.then((result) => result.schema);
+}
+
+export function loadFluidSchemaStatus(): Promise<FluidSchemaResult> {
   pending ??= fetchSchema();
   return pending;
 }
