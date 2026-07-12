@@ -1,6 +1,6 @@
 import { execSync } from 'child_process'
 import { readFileSync, writeFileSync, statSync, existsSync } from 'fs'
-import { gzipSync } from 'zlib'
+import { gzipAsync } from '@gfx/zopfli'
 
 const KB = 1024
 const ESP32_SPIFFS_LIMIT = 1_400 * KB
@@ -31,8 +31,8 @@ if (existsSync(faviconPath)) {
   console.log(`  favicon.png inlined (${fmt(faviconB64.length * 0.75)})`)
 }
 
-console.log('\n[3/3] Gzipping (level 9)…')
-const gz = gzipSync(Buffer.from(html), { level: 9 })
+console.log('\n[3/3] Compressing with Zopfli…')
+const gz = await gzipAsync(Buffer.from(html), { numiterations: 15 })
 const outPath = 'dist/index.html.gz'
 writeFileSync(outPath, gz)
 
