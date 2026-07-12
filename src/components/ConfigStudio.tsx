@@ -1260,6 +1260,11 @@ function PinEditor({
       "void",
     ]),
   );
+  const pinCount = family === "gpio" ? 49 : 32;
+  const pinOptions = Array.from({ length: pinCount }, (_, i) => String(i));
+
+  if (/^\d+$/.test(index) && !pinOptions.includes(index))
+    pinOptions.push(index);
   return (
     <div className="grid grid-cols-[1fr_72px] gap-1.5">
       <select
@@ -1276,9 +1281,10 @@ function PinEditor({
           value={index}
           onChange={(e) => set(family, e.target.value)}
           className="rounded-md border border-white/10 bg-[#10141c] px-2 py-2 font-mono text-xs outline-none"
+          aria-label={`${family} pin number`}
         >
-          {Array.from({ length: family === "gpio" ? 40 : 32 }, (_, i) => (
-            <option key={i}>{i}</option>
+          {pinOptions.map((pin) => (
+            <option key={pin}>{pin}</option>
           ))}
         </select>
       ) : (

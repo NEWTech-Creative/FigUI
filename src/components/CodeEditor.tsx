@@ -229,7 +229,9 @@ export function CodeEditor({
   const [saving, setSaving] = useState(false);
   const [dirty, setDirty] = useState(false);
   const [savedOnce, setSavedOnce] = useState(false);
-  const isConfig = filename === "config.yaml";
+  const isYamlFile = YAML_EXT.has(
+    filename.slice(filename.lastIndexOf(".")).toLowerCase(),
+  );
   const [confirmClose, setConfirmClose] = useState(false);
   const [validationIssues, setValidationIssues] = useState<
     ConfigIssue[] | null
@@ -244,7 +246,7 @@ export function CodeEditor({
   const [matchIndex, setMatchIndex] = useState(0);
   const [matchCount, setMatchCount] = useState(0);
   const [view, setView] = useState<"studio" | "code">(
-    isConfig ? initialView : "code",
+    isYamlFile ? initialView : "code",
   );
   const [studioSource, setStudioSource] = useState(content);
   const [studioKey, setStudioKey] = useState(0);
@@ -388,7 +390,7 @@ export function CodeEditor({
 
   const handleSave = useCallback(
     async (force = false) => {
-      if (isConfig && !force) {
+      if (isYamlFile && !force) {
         const issues = validateFluidConfig(currentContent.current);
         if (issues.length) {
           setValidationIssues(issues);
@@ -399,13 +401,13 @@ export function CodeEditor({
       try {
         await onSave(currentContent.current);
         setDirty(false);
-        if (isConfig) setSavedOnce(true);
+        if (isYamlFile) setSavedOnce(true);
         return true;
       } finally {
         setSaving(false);
       }
     },
-    [onSave, isConfig],
+    [onSave, isYamlFile],
   );
 
   const handleStudioChange = useCallback(
@@ -538,7 +540,7 @@ export function CodeEditor({
     >
       <div
         className={`bg-surface border border-border shadow-xl flex flex-col animate-in ${
-          isConfig
+          isYamlFile
             ? "w-screen h-screen rounded-none"
             : "w-[90vw] h-[85vh] max-w-[1000px] rounded-sm"
         }`}
@@ -561,7 +563,7 @@ export function CodeEditor({
             )}
           </div>
           <div className="flex items-center gap-1 shrink-0">
-            {isConfig && (
+            {isYamlFile && (
               <div className="mr-1 flex rounded-md border border-border bg-elevated p-0.5">
                 <button
                   className={`flex items-center gap-1 rounded px-2 py-1 text-xs ${view === "studio" ? "bg-surface text-accent shadow-sm" : "text-text-muted"}`}
@@ -605,7 +607,7 @@ export function CodeEditor({
                 {saving ? "Saving…" : "Save"}
               </span>
             </button>
-            {isConfig && savedOnce && !dirty && (
+            {isYamlFile && savedOnce && !dirty && (
               <button
                 className="btn btn-warn text-sm py-1 px-2"
                 onClick={handleRestart}
@@ -672,7 +674,7 @@ export function CodeEditor({
           </div>
         )}
 
-        {isConfig && (
+        {isYamlFile && (
           <div
             className={`${view === "studio" ? "flex" : "hidden"} min-h-0 flex-1`}
           >
@@ -686,7 +688,7 @@ export function CodeEditor({
         )}
         <div
           ref={scrollRef}
-          className={`${isConfig && view === "studio" ? "hidden" : "block"} flex-1 overflow-auto min-h-0 bg-elevated/50`}
+          className={`${isYamlFile && view === "studio" ? "hidden" : "block"} flex-1 overflow-auto min-h-0 bg-elevated/50`}
         >
           <div className="flex min-h-full">
             {/* Gutter */}

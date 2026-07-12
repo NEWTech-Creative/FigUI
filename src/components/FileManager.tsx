@@ -645,13 +645,15 @@ export function FileManager({ isTablet }: { isTablet?: boolean }) {
   async function handleSaveFile(content: string) {
     if (!editing) return;
     if (
-      editing.filename === "config.yaml" &&
+      /\.ya?ml$/i.test(editing.filename) &&
       content.includes("# Edited using Config Studio") &&
       !editing.content.includes("# Edited using Config Studio")
     ) {
+      const extensionIndex = editing.filename.lastIndexOf(".");
+      const backupName = `${editing.filename.slice(0, extensionIndex)}_backup${editing.filename.slice(extensionIndex)}`;
       await saveFileContent(
         editing.path,
-        "config_backup.yaml",
+        backupName,
         editing.content,
         fs,
       );
