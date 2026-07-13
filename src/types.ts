@@ -106,6 +106,7 @@ export interface ControllerSettings {
   hasMist?: boolean
   hasFlood?: boolean
   hasProbe?: boolean
+  hasToolsetter?: boolean
 }
 
 export interface FluidNCSetting {

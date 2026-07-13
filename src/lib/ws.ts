@@ -389,6 +389,18 @@ function consumeSilentLine(line: string): boolean {
 // Inbound line handling
 // ──────────────────────────────────────────────────────────────────────────
 
+type ProbeCapabilityReport = { kind: 'probe' | 'toolsetter'; enabled: boolean }
+
+function parseProbeCapabilityLine(line: string): ProbeCapabilityReport | null {
+  const match = line.match(/^\[MSG:INFO:\s*(Probe|Toolsetter)(?:\s+Pin:)?\s+(.+?)\]$/i)
+  if (!match) return null
+  const pin = match[2].trim().replace(/[\s_-]+/g, '').toUpperCase()
+  return {
+    kind: match[1].toLowerCase() as ProbeCapabilityReport['kind'],
+    enabled: pin !== '' && pin !== 'NOPIN' && pin !== 'VOID',
+  }
+}
+
 function handleLine(line: string) {
   connectionHealth.lastResponseTime = Date.now()
   if (connectionHealth.missedPings !== 0) {
@@ -426,10 +438,11 @@ function handleLine(line: string) {
     return
   }
 
-  const probeMatch = line.match(/^\[MSG:INFO:\s*Probe(?:\s+Pin:)?\s+(.+?)\]$/i)
-  if (probeMatch) {
-    const pin = probeMatch[1].trim().replace(/[\s_-]+/g, '').toUpperCase()
-    useMachineStore.getState().updateControllerSettings({ hasProbe: pin !== '' && pin !== 'NOPIN' })
+  const probeCapability = parseProbeCapabilityLine(line)
+  if (probeCapability) {
+    useMachineStore.getState().updateControllerSettings(probeCapability.kind === 'probe'
+      ? { hasProbe: probeCapability.enabled }
+      : { hasToolsetter: probeCapability.enabled })
   }
 
   if (line === 'ok' || line === 'error') {
@@ -539,11 +552,13 @@ export async function sendStartupQueries() {
     const hasMist  = /\[MSG:INFO:\s*Mist coolant/i.test(ssText)
     const hasFlood = /\[MSG:INFO:\s*Flood coolant/i.test(ssText)
     if (hasMist || hasFlood) useMachineStore.getState().updateControllerSettings({ hasMist, hasFlood })
-    const probeMatch = ssText.match(/\[MSG:INFO:\s*Probe(?:\s+Pin:)?\s+(.+?)\]/i)
-    if (probeMatch) {
-      const pin = probeMatch[1].trim().replace(/[\s_-]+/g, '').toUpperCase()
-      useMachineStore.getState().updateControllerSettings({ hasProbe: pin !== '' && pin !== 'NOPIN' })
-    }
+    const probeReports = ssText.split('\n')
+      .map(raw => parseProbeCapabilityLine(raw.trim()))
+      .filter((value): value is ProbeCapabilityReport => value != null)
+    useMachineStore.getState().updateControllerSettings({
+      hasProbe: probeReports.some(report => report.kind === 'probe' && report.enabled),
+      hasToolsetter: probeReports.some(report => report.kind === 'toolsetter' && report.enabled),
+    })
     ssText.split('\n').forEach(raw => {
       const line = raw.trim()
       if (line) lineHandlers.forEach(fn => fn(line))

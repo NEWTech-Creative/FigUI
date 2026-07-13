@@ -56,6 +56,8 @@ const CYCLE_INSTRUCTIONS: Record<CycleId, string> = {
   'rectangle-center': 'Start inside the feature near center. The cycle touches X−/X+, centers X, then touches Y−/Y+ and sets X0 Y0.',
 }
 
+const TOOLSETTER_ONLY_HINT = 'Only a toolsetter is configured. Only Z-height setting is available; X/Y and center probing require a probe input.'
+
 function usePersisted<T>(key: string, init: T): [T, (v: T) => void] {
   const [val, setVal] = useState<T>(() => {
     try {
@@ -306,6 +308,9 @@ function toDisplayInput(value: number, units: 'mm' | 'in', decimals: number) {
 
 export function ProbePanel({ isTablet, embedded = false }: { isTablet?: boolean; embedded?: boolean }) {
   const reportedHasProbe = useMachineStore(s => s.controllerSettings.hasProbe)
+  const reportedHasToolsetter = useMachineStore(s => s.controllerSettings.hasToolsetter)
+  const hasProbingInput = reportedHasProbe === true || reportedHasToolsetter === true
+  const toolsetterOnly = reportedHasProbe === false && reportedHasToolsetter === true
   const [open, setOpen] = useState(embedded)
   const [selected, setSelected] = usePersisted<CycleId>('probe.cycle', 'z-surface')
   const [running, setRunning] = useState<RunningCycle | null>(null)
@@ -332,11 +337,17 @@ export function ProbePanel({ isTablet, embedded = false }: { isTablet?: boolean;
   }
 
   function selectCycle(cycle: CycleId) {
-    if (runningRef.current) return
+    if (runningRef.current || (toolsetterOnly && cycle !== 'z-surface')) return
     setSelected(cycle)
     setCompletedCycle(null)
     setMessage(CYCLE_INSTRUCTIONS[cycle])
   }
+
+  useEffect(() => {
+    if (toolsetterOnly && selected !== 'z-surface' && !runningRef.current) {
+      selectCycle('z-surface')
+    }
+  }, [toolsetterOnly, selected])
 
   function pauseBackgroundTraffic() {
     if (backgroundPausedRef.current) return
@@ -482,7 +493,8 @@ export function ProbePanel({ isTablet, embedded = false }: { isTablet?: boolean;
   }, [])
 
   function runProbe() {
-    if (!canProbe || running || probeFeed <= 0 || maxTravel <= 0 || retract <= 0) return
+    if (!canProbe || running || (toolsetterOnly && selected !== 'z-surface')
+      || probeFeed <= 0 || maxTravel <= 0 || retract <= 0) return
     setCompletedCycle(null)
     pauseBackgroundTraffic()
     const edge = selected.match(/^([xy])-(negative|positive)$/)
@@ -529,8 +541,10 @@ export function ProbePanel({ isTablet, embedded = false }: { isTablet?: boolean;
 
   const selectedCycle = CYCLES.find(c => c.id === selected)!
   const usesDiameter = selected !== 'z-surface'
+  const selectedCycleUnavailable = toolsetterOnly && selected !== 'z-surface'
+  const canRunSelectedCycle = canProbe && !selectedCycleUnavailable
 
-  if (!reportedHasProbe) return null
+  if (!hasProbingInput) return null
 
   return (
     <div className={embedded ? '' : 'panel'}>
@@ -547,7 +561,9 @@ export function ProbePanel({ isTablet, embedded = false }: { isTablet?: boolean;
         <div>
           <div className="text-[13px] font-bold uppercase tracking-[.12em] text-text-dim mb-2">Single surface</div>
           <div className="grid grid-cols-5 gap-2">
-            {CYCLES.filter(c => c.group === 'edge').map(c => <button key={c.id} onClick={() => selectCycle(c.id)} disabled={!!running}
+            {CYCLES.filter(c => c.group === 'edge').map(c => <button key={c.id} onClick={() => selectCycle(c.id)}
+              disabled={!!running || (toolsetterOnly && c.id !== 'z-surface')}
+              title={toolsetterOnly && c.id !== 'z-surface' ? TOOLSETTER_ONLY_HINT : c.label}
               className={`btn justify-center font-mono ${isTablet ? 'h-14 text-xl' : 'h-10 text-base'} ${selected === c.id ? 'btn-primary' : 'btn-ghost'}`}>
               {c.short}
             </button>)}
@@ -556,7 +572,9 @@ export function ProbePanel({ isTablet, embedded = false }: { isTablet?: boolean;
         <div>
           <div className="text-[13px] font-bold uppercase tracking-[.12em] text-text-dim mb-2">Center finding</div>
           <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
-            {CYCLES.filter(c => c.group === 'center').map(c => <button key={c.id} onClick={() => selectCycle(c.id)} disabled={!!running}
+            {CYCLES.filter(c => c.group === 'center').map(c => <button key={c.id} onClick={() => selectCycle(c.id)}
+              disabled={!!running || toolsetterOnly}
+              title={toolsetterOnly ? TOOLSETTER_ONLY_HINT : c.label}
               className={`btn min-w-0 justify-center whitespace-normal text-center leading-tight ${isTablet ? 'h-14 text-xl' : 'min-h-10 h-auto py-2 text-sm sm:h-10 sm:py-0 sm:text-base'} ${selected === c.id ? 'btn-primary' : 'btn-ghost'}`}>
               {c.label}
             </button>)}
@@ -592,10 +610,10 @@ export function ProbePanel({ isTablet, embedded = false }: { isTablet?: boolean;
         </div>
 
         <div className="flex gap-2">
-          <button className={`btn flex-1 justify-center font-semibold gap-2 ${isTablet ? 'h-16 text-xl' : 'h-11 text-base'} ${canProbe && !running ? 'btn-warn' : 'btn-ghost'}`}
-            onClick={runProbe} disabled={!canProbe || !!running}>
+          <button className={`btn flex-1 justify-center font-semibold gap-2 ${isTablet ? 'h-16 text-xl' : 'h-11 text-base'} ${canRunSelectedCycle && !running ? 'btn-warn' : 'btn-ghost'}`}
+            onClick={runProbe} disabled={!canRunSelectedCycle || !!running}>
             <Target size={isTablet ? 22 : 17} />
-            {running ? probeHeld ? 'Cycle held' : 'Cycle active' : canProbe ? `Run ${selectedCycle.label}` : connected ? 'Machine not Idle' : 'Controller offline'}
+            {running ? probeHeld ? 'Cycle held' : 'Cycle active' : selectedCycleUnavailable ? 'General probe required' : canProbe ? `Run ${selectedCycle.label}` : connected ? 'Machine not Idle' : 'Controller offline'}
           </button>
           {running && !probeHeld && <button
             className={`btn btn-danger justify-center gap-2 ${isTablet ? 'h-16 px-6 text-xl' : 'h-11 px-4'}`}

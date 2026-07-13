@@ -269,7 +269,14 @@ function validateAgainstSchema(
     issues.push({ path, message: `must be ${types.join(" or ")}` });
     return issues;
   }
-  if (rule.enum && !rule.enum.some((item: unknown) => Object.is(item, value)))
+  if (
+    rule.enum &&
+    !rule.enum.some((item: unknown) =>
+      typeof item === "string" && typeof value === "string"
+        ? item.toLowerCase() === value.toLowerCase()
+        : Object.is(item, value),
+    )
+  )
     issues.push({ path, message: `must be one of ${rule.enum.join(", ")}` });
   if (typeof value === "number") {
     if (rule.minimum != null && value < rule.minimum)
@@ -279,7 +286,7 @@ function validateAgainstSchema(
   }
   if (typeof value === "string" && rule.pattern) {
     try {
-      if (!new RegExp(rule.pattern).test(value))
+      if (!new RegExp(rule.pattern, "i").test(value))
         issues.push({ path, message: "has an invalid format" });
     } catch {
       // Ignore an invalid pattern supplied by a remote schema.
@@ -293,7 +300,11 @@ function validateAgainstSchema(
       SchemaRule,
     ][];
     for (const required of rule.required ?? [])
-      if (!(required in object))
+      if (
+        !Object.keys(object).some(
+          (key) => key.toLowerCase() === String(required).toLowerCase(),
+        )
+      )
         issues.push({
           path: path ? `${path}.${required}` : required,
           message: "is required",
@@ -308,11 +319,20 @@ function validateAgainstSchema(
       });
     for (const [key, child] of Object.entries(object)) {
       const childPath = path ? `${path}.${key}` : key;
-      if (properties[key])
-        validateAgainstSchema(child, properties[key], root, childPath, issues);
+      const propertyKey = Object.keys(properties).find(
+        (candidate) => candidate.toLowerCase() === key.toLowerCase(),
+      );
+      if (propertyKey)
+        validateAgainstSchema(
+          child,
+          properties[propertyKey],
+          root,
+          childPath,
+          issues,
+        );
       else {
         const matchingPatterns = patterns.filter(([pattern]) =>
-          new RegExp(pattern).test(key),
+          new RegExp(pattern, "i").test(key),
         );
         if (matchingPatterns.length)
           for (const [, patternRule] of matchingPatterns)

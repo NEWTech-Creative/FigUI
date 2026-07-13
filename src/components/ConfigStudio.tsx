@@ -986,7 +986,10 @@ function scalarFields(source: unknown, defs: FieldDef[]) {
   >;
   return Object.fromEntries(
     defs.map((f) => {
-      const raw = obj[f.key];
+      const sourceKey = Object.keys(obj).find(
+        (key) => key.toLowerCase() === f.key.toLowerCase(),
+      );
+      const raw = sourceKey == null ? undefined : obj[sourceKey];
       const fallback =
         f.type === "boolean"
           ? "false"
@@ -1207,17 +1210,20 @@ function nodesFromYaml(content: string): NodeData[] {
     });
     const spindleTypes = FIELDS.spindle[0].options ?? [];
     for (const type of spindleTypes) {
-      if (root[type] != null)
+      const sourceKey = Object.keys(root).find(
+        (key) => key.toLowerCase() === type.toLowerCase(),
+      );
+      if (sourceKey != null && root[sourceKey] != null)
         nodes.push({
-          id: `spindle-${type}`,
+          id: `spindle-${sourceKey}`,
           kind: "spindle",
-          title: type,
+          title: sourceKey,
           subtitle: "Spindle / tool output",
           x: 920,
           y: 580,
           color: COLORS.spindle,
-          fields: { ...scalarFields(root[type], FIELDS.spindle), type },
-          yamlKey: type,
+          fields: { ...scalarFields(root[sourceKey], FIELDS.spindle), type },
+          yamlKey: sourceKey,
         });
     }
     return nodes.length > 1 ? layoutNodes(nodes) : defaultNodes();
@@ -1387,7 +1393,9 @@ function MachineHub({
           <Cpu size={18} />
         </span>
         <span>
-          <span className="block text-sm font-semibold">{node.title}</span>
+          <span className="block text-sm font-semibold">
+            {node.fields.name || node.title}
+          </span>
           <span className="block text-[10px] text-[#6f7c90]">
             {node.fields.board || "FluidNC configuration"}
           </span>

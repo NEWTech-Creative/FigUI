@@ -246,9 +246,11 @@ export function ProgramExecutionPanel({ isTablet, initiallyOpen = false, accordi
 export function ProbeOrProgramPanel({ isTablet }: { isTablet?: boolean }) {
   const status = useMachineStore(s => s.status)
   const reportedHasProbe = useMachineStore(s => s.controllerSettings.hasProbe)
+  const reportedHasToolsetter = useMachineStore(s => s.controllerSettings.hasToolsetter)
+  const hasProbingInput = reportedHasProbe || reportedHasToolsetter
   const isProgramRunning = (status.state === 'Run' || status.state === 'Hold')
     && (!!status.sdFilename || status.plannerLineNumber != null)
   return isProgramRunning
     ? <ProgramExecutionPanel isTablet={isTablet} />
-    : reportedHasProbe ? <ProbePanel isTablet={isTablet} /> : null
+    : hasProbingInput ? <ProbePanel isTablet={isTablet} /> : null
 }

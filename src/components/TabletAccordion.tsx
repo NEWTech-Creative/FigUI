@@ -24,22 +24,23 @@ export function TabletAccordion({ tabletTab, setTabletTab, onLaunchPanel }: Tabl
   const spindleMax = useMachineStore(s => s.controllerSettings.spindleMax)
   const hasSpindle = Boolean(spindleMax)
   const reportedHasProbe = useMachineStore(s => s.controllerSettings.hasProbe)
-  const hasProbe = Boolean(reportedHasProbe)
+  const reportedHasToolsetter = useMachineStore(s => s.controllerSettings.hasToolsetter)
+  const hasProbingInput = Boolean(reportedHasProbe || reportedHasToolsetter)
   const status = useMachineStore(s => s.status)
   const isProgramRunning = (status.state === 'Run' || status.state === 'Hold')
     && (!!status.sdFilename || status.plannerLineNumber != null)
 
   useEffect(() => {
     if (!isProgramRunning && expanded === 'program') setExpanded('visualizer')
-    if (!hasProbe && portraitTab === 'probing') setPortraitTab('viewer')
-    if (!hasProbe && tabletTab === 'probing') setTabletTab('viewer')
-  }, [isProgramRunning, expanded, hasProbe, portraitTab, tabletTab, setTabletTab])
+    if (!hasProbingInput && portraitTab === 'probing') setPortraitTab('viewer')
+    if (!hasProbingInput && tabletTab === 'probing') setTabletTab('viewer')
+  }, [isProgramRunning, expanded, hasProbingInput, portraitTab, tabletTab, setTabletTab])
 
   const TABS = [
     { id: 'viewer',   label: 'Viewer',   Icon: Eye },
     { id: 'files',    label: 'Files',    Icon: FolderOpen },
     { id: 'macros',   label: 'Macros',   Icon: Zap },
-    ...(hasProbe ? [{ id: 'probing', label: 'Probing', Icon: Target }] : []),
+    ...(hasProbingInput ? [{ id: 'probing', label: 'Probing', Icon: Target }] : []),
     { id: 'terminal', label: 'Terminal', Icon: TerminalSquare },
     { id: 'plugins',  label: 'Plugins',  Icon: Puzzle },
   ]
@@ -48,7 +49,7 @@ export function TabletAccordion({ tabletTab, setTabletTab, onLaunchPanel }: Tabl
     { id: 'viewer',    label: 'Viewer',    Icon: Eye },
     { id: 'files',     label: 'Files',     Icon: FolderOpen },
     { id: 'macros',    label: 'Macros',    Icon: Zap },
-    ...(hasProbe ? [{ id: 'probing', label: 'Probing', Icon: Target }] : []),
+    ...(hasProbingInput ? [{ id: 'probing', label: 'Probing', Icon: Target }] : []),
     { id: 'terminal',  label: 'Terminal',  Icon: TerminalSquare },
     ...(hasSpindle ? [{ id: 'spindle', label: 'Spindle', Icon: Power }] : []),
     { id: 'overrides', label: 'Overrides', Icon: Sliders },
@@ -89,7 +90,7 @@ export function TabletAccordion({ tabletTab, setTabletTab, onLaunchPanel }: Tabl
             )}
             {portraitTab === 'files'     && <FileManager isTablet />}
             {portraitTab === 'macros'    && <Macros isTablet />}
-            {portraitTab === 'probing' && hasProbe && <div className="p-3"><ProbePanel isTablet embedded /></div>}
+            {portraitTab === 'probing' && hasProbingInput && <div className="p-3"><ProbePanel isTablet embedded /></div>}
             {portraitTab === 'terminal'  && <Terminal />}
             {portraitTab === 'spindle' && hasSpindle && (
               <div className="p-5">
@@ -148,7 +149,7 @@ export function TabletAccordion({ tabletTab, setTabletTab, onLaunchPanel }: Tabl
                 </div>
                 {tabletTab === 'files'    && <FileManager isTablet />}
                 {tabletTab === 'macros'   && <Macros isTablet />}
-                {tabletTab === 'probing' && hasProbe && <div className="h-full overflow-y-auto p-3"><ProbePanel isTablet embedded /></div>}
+                {tabletTab === 'probing' && hasProbingInput && <div className="h-full overflow-y-auto p-3"><ProbePanel isTablet embedded /></div>}
                 {tabletTab === 'terminal' && <Terminal />}
                 {tabletTab === 'plugins'  && <PluginLauncher isTablet onLaunchPanel={onLaunchPanel} activeLayout="tablet" />}
               </div>
