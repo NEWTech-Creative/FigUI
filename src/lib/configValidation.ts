@@ -7,13 +7,14 @@ export type ConfigIssue = {
   path?: string;
 };
 const PIN =
-  /^(NO_PIN|no_pin|void|gpio\.\d+|i2so\.\d+|uart_channel\d+\.\d+|pinext\d+\.\d+)(:(high|low|pu|pd|ds[0-3]))*$/i;
+  /^(?:NO_PIN|void|(?:(?:gpio|i2so|uart_channel\d+|pinext[0-9])\.\d+)(?::(?:high|low|pu|pd|ds[0-3]))*)$/i;
 
 export function validateFluidConfig(source: string): ConfigIssue[] {
   const issues: ConfigIssue[] = [],
-    lines = source.split("\n");
+    lines = source.split(/\r\n|\n|\r/);
   const stack: { indent: number; key: string }[] = [],
-    siblingIndents = new Map<string, number>();
+    siblingIndents = new Map<string, number>(),
+    siblingKeys = new Map<string, Map<string, { key: string; line: number }>>();
   const pins = new Map<string, { line: number; path: string }>(),
     values = new Map<string, { value: string; line: number }>();
   if (!source.trim())
@@ -54,11 +55,52 @@ export function validateFluidConfig(source: string): ConfigIssue[] {
       stack.pop();
     const parent = stack.map((item) => item.key).join("."),
       path = parent ? `${parent}.${key}` : key;
+    const keysAtLevel = siblingKeys.get(parent) ?? new Map();
+    const previousKey = keysAtLevel.get(key.toLowerCase());
+    if (previousKey)
+      issues.push({
+        severity: "error",
+        line,
+        path,
+        message: `Duplicate key; ${key} conflicts with ${previousKey.key} on line ${previousKey.line}.`,
+      });
+    else {
+      keysAtLevel.set(key.toLowerCase(), { key, line });
+      siblingKeys.set(parent, keysAtLevel);
+    }
     const macroValue =
       /(^|\.)(macros\.(?:startup_line\d+|macro\d+|after_(?:homing|reset|unlock))|m6_macro)$/i.test(
         path,
       );
     const fullyQuoted = /^(?:".*"|'.*')$/.test(rawValue);
+    if (
+      (rawValue.startsWith('"') && !rawValue.endsWith('"')) ||
+      (rawValue.startsWith("'") && !rawValue.endsWith("'"))
+    )
+      issues.push({
+        severity: "error",
+        line,
+        path,
+        message: "Quoted values must have matching opening and closing quotes.",
+      });
+    if (/^".*\\(?:["\\nrtu]).*"$/.test(rawValue))
+      issues.push({
+        severity: "error",
+        line,
+        path,
+        message: "FluidNC does not support YAML-style quoted-string escapes.",
+      });
+    if (
+      /^(?:passthrough_)?mode$/i.test(key) &&
+      !/^[5-8][NEO][12]$/i.test(value)
+    )
+      issues.push({
+        severity: "error",
+        line,
+        path,
+        message:
+          "Invalid UART mode; expected data bits, parity, and stop bits (for example 8N1).",
+      });
     if (!macroValue && !fullyQuoted && /\s+#/.test(rawValue))
       issues.push({
         severity: "error",
@@ -106,7 +148,7 @@ export function validateFluidConfig(source: string): ConfigIssue[] {
         const previous = pins.get(base);
         if (previous)
           issues.push({
-            severity: "error",
+            severity: "warning",
             line,
             path,
             message: `${base} is already used on line ${previous.line} (${previous.path}).`,
@@ -168,7 +210,7 @@ type SchemaViolation = { path: string; message: string };
 
 function schemaErrorLine(source: string, target: string): number {
   if (!target) return 1;
-  const lines = source.split("\n");
+  const lines = source.split(/\r\n|\n|\r/);
   const stack: { indent: number; key: string }[] = [];
   for (let index = 0; index < lines.length; index++) {
     const match = lines[index].match(/^(\s*)([^:#]+):/);
@@ -216,12 +258,17 @@ function parseScalar(token: string, key: string): unknown {
 }
 
 /** Parses the block-style YAML subset accepted by validateFluidConfig. */
-function parseBlockYaml(source: string): unknown {
+function parseBlockYaml(
+  source: string,
+  scalarTokens?: Map<string, string>,
+): unknown {
   const root: Record<string, unknown> = {};
-  const stack: { indent: number; value: Record<string, unknown> }[] = [
-    { indent: -1, value: root },
-  ];
-  for (const raw of source.split("\n")) {
+  const stack: {
+    indent: number;
+    value: Record<string, unknown>;
+    path: string;
+  }[] = [{ indent: -1, value: root, path: "" }];
+  for (const raw of source.split(/\r\n|\n|\r/)) {
     if (!raw.trim() || raw.trimStart().startsWith("#")) continue;
     const match = raw.match(/^(\s*)([^:#]+):(?:\s*(.*))?$/);
     if (!match) continue;
@@ -230,11 +277,15 @@ function parseBlockYaml(source: string): unknown {
       stack.pop();
     const key = match[2].trim();
     const token = (match[3] ?? "").trim();
-    if (token) stack[stack.length - 1].value[key] = parseScalar(token, key);
-    else {
+    const parent = stack[stack.length - 1];
+    const path = parent.path ? `${parent.path}.${key}` : key;
+    if (token) {
+      parent.value[key] = parseScalar(token, key);
+      scalarTokens?.set(path.toLowerCase(), token);
+    } else {
       const child: Record<string, unknown> = {};
-      stack[stack.length - 1].value[key] = child;
-      stack.push({ indent, value: child });
+      parent.value[key] = child;
+      stack.push({ indent, value: child, path });
     }
   }
   const emptyObjectsToNull = (value: unknown): unknown => {
@@ -267,6 +318,7 @@ function validateAgainstSchema(
   root: FluidSchema,
   path = "",
   issues: SchemaViolation[] = [],
+  scalarTokens?: Map<string, string>,
 ): SchemaViolation[] {
   // FluidNC treats an empty optional scalar as unset. Config exports commonly
   // retain those keys (for example `atc:`), while JSON Schema represents the
@@ -284,21 +336,40 @@ function validateAgainstSchema(
         root,
       );
     return target && typeof target === "object"
-      ? validateAgainstSchema(value, target as SchemaRule, root, path, issues)
+      ? validateAgainstSchema(
+          value,
+          target as SchemaRule,
+          root,
+          path,
+          issues,
+          scalarTokens,
+        )
       : issues;
   }
   for (const part of rule.allOf ?? [])
-    validateAgainstSchema(value, part, root, path, issues);
+    validateAgainstSchema(value, part, root, path, issues, scalarTokens);
   if (rule.oneOf) {
     const matches = rule.oneOf.filter(
       (part: SchemaRule) =>
-        !validateAgainstSchema(value, part, root, path, []).length,
+        !validateAgainstSchema(value, part, root, path, [], scalarTokens)
+          .length,
     ).length;
     if (matches !== 1)
       issues.push({ path, message: "must match exactly one allowed form" });
   }
   const types =
     rule.type == null ? [] : Array.isArray(rule.type) ? rule.type : [rule.type];
+  const scalarToken = scalarTokens?.get(path.toLowerCase());
+  if (
+    types.includes("integer") &&
+    typeof value === "number" &&
+    scalarToken != null &&
+    !/^-?\d+$/.test(scalarToken)
+  )
+    issues.push({
+      path,
+      message: "must be a plain decimal integer without a decimal point",
+    });
   if (types.length && !types.some((type: string) => matchesType(value, type))) {
     issues.push({ path, message: `must be ${types.join(" or ")}` });
     return issues;
@@ -363,6 +434,7 @@ function validateAgainstSchema(
           root,
           childPath,
           issues,
+          scalarTokens,
         );
       else {
         const matchingPatterns = patterns.filter(([pattern]) =>
@@ -370,7 +442,14 @@ function validateAgainstSchema(
         );
         if (matchingPatterns.length)
           for (const [, patternRule] of matchingPatterns)
-            validateAgainstSchema(child, patternRule, root, childPath, issues);
+            validateAgainstSchema(
+              child,
+              patternRule,
+              root,
+              childPath,
+              issues,
+              scalarTokens,
+            );
         else if (
           rule.additionalProperties &&
           typeof rule.additionalProperties === "object"
@@ -381,6 +460,7 @@ function validateAgainstSchema(
             root,
             childPath,
             issues,
+            scalarTokens,
           );
         // Unknown keys are intentionally tolerated here. FluidNC accepts and
         // ignores or version-selects fields that the upstream schema omits;
@@ -403,12 +483,17 @@ export async function validateFluidConfigForSave(
   const { schema, online } = await loadFluidSchemaStatus();
   if (!online || !schema) return localIssues;
 
+  const scalarTokens = new Map<string, string>();
+  const parsed = parseBlockYaml(source, scalarTokens);
   const schemaIssues = validateAgainstSchema(
-    parseBlockYaml(source),
+    parsed,
     schema,
     schema,
+    "",
+    [],
+    scalarTokens,
   ).map((error) => ({
-    severity: "error" as const,
+    severity: "warning" as const,
     line: schemaErrorLine(source, error.path),
     path: error.path || undefined,
     message: `Schema: ${error.message}.`,

@@ -39,6 +39,7 @@ type NodeKind =
   | "coolant"
   | "macro"
   | "io"
+  | "start"
   | "parking"
   | "display"
   | "atc";
@@ -54,6 +55,8 @@ type NodeData = {
   parentId?: string;
   /** Stable source key, independent of graph ordering. */
   yamlKey?: string;
+  /** Stable nested factory/type key (for example kinematics.CoreXY). */
+  yamlTypeKey?: string;
 };
 type FieldDef = {
   key: string;
@@ -113,10 +116,11 @@ const PALETTE: {
         sub: "Reset, hold, start, E-stop",
       },
       {
-        kind: "parking",
-        title: "Startup & parking",
-        sub: "Homing and safety-door motion",
+        kind: "start",
+        title: "Startup",
+        sub: "Boot and reset behavior",
       },
+      { kind: "parking", title: "Parking", sub: "Safety-door motion" },
       { kind: "macro", title: "Macros", sub: "Startup and event commands" },
     ],
   },
@@ -378,16 +382,43 @@ const FIELDS: Record<NodeKind, FieldDef[]> = {
       key: "type",
       label: "Bus type",
       type: "select",
-      options: ["uart1", "uart2", "i2c0", "i2c1", "spi", "i2so"],
+      options: [
+        "uart1",
+        "uart2",
+        "uart_channel1",
+        "uart_channel2",
+        "i2c0",
+        "i2c1",
+        "spi",
+        "i2so",
+      ],
     },
     { key: "txd_pin", label: "TX pin", type: "pin" },
     { key: "rxd_pin", label: "RX pin", type: "pin" },
+    { key: "rts_pin", label: "RTS pin", type: "pin" },
+    { key: "cts_pin", label: "CTS pin", type: "pin" },
     { key: "sda_pin", label: "SDA pin", type: "pin" },
     { key: "scl_pin", label: "SCL pin", type: "pin" },
     { key: "sck_pin", label: "Clock pin", type: "pin" },
     { key: "mosi_pin", label: "MOSI pin", type: "pin" },
     { key: "miso_pin", label: "MISO pin", type: "pin" },
     { key: "baud", label: "Baud rate", type: "number" },
+    { key: "mode", label: "UART mode" },
+    { key: "passthrough_baud", label: "Passthrough baud", type: "number" },
+    { key: "passthrough_mode", label: "Passthrough mode" },
+    { key: "uart_num", label: "UART bus", type: "number" },
+    {
+      key: "report_interval_ms",
+      label: "Report interval",
+      type: "number",
+      unit: "ms",
+    },
+    {
+      key: "message_level",
+      label: "Message level",
+      type: "select",
+      options: ["None", "Error", "Warn", "Info", "Debug", "Verbose"],
+    },
     { key: "frequency", label: "Frequency", type: "number", unit: "Hz" },
   ],
   storage: [
@@ -407,6 +438,12 @@ const FIELDS: Record<NodeKind, FieldDef[]> = {
     { key: "pin", label: "Probe pin", type: "pin" },
     { key: "toolsetter_pin", label: "Tool setter pin", type: "pin" },
     { key: "check_mode_start", label: "Allow check mode", type: "boolean" },
+    { key: "hard_stop", label: "Stop immediately", type: "boolean" },
+    {
+      key: "probe_hard_limit",
+      label: "Probe hard limit",
+      type: "boolean",
+    },
   ],
   coolant: [
     { key: "flood_pin", label: "Flood pin", type: "pin" },
@@ -417,6 +454,8 @@ const FIELDS: Record<NodeKind, FieldDef[]> = {
     { key: "startup_line0", label: "Startup line 0" },
     { key: "startup_line1", label: "Startup line 1" },
     { key: "after_homing", label: "After homing" },
+    { key: "after_reset", label: "After reset" },
+    { key: "after_unlock", label: "After unlock" },
     { key: "macro0", label: "Macro 0" },
     { key: "macro1", label: "Macro 1" },
     { key: "macro2", label: "Macro 2" },
@@ -434,9 +473,20 @@ const FIELDS: Record<NodeKind, FieldDef[]> = {
       type: "pin" as const,
     })),
   ],
-  parking: [
+  start: [
     { key: "must_home", label: "Must home", type: "boolean" },
-    { key: "check_limits", label: "Check limits at boot", type: "boolean" },
+    {
+      key: "deactivate_parking",
+      label: "Deactivate parking at startup",
+      type: "boolean",
+    },
+    {
+      key: "check_limits",
+      label: "Check limits at startup",
+      type: "boolean",
+    },
+  ],
+  parking: [
     { key: "enable", label: "Parking enabled", type: "boolean" },
     {
       key: "axis",
@@ -456,14 +506,38 @@ const FIELDS: Record<NodeKind, FieldDef[]> = {
       type: "number",
       unit: "mm/min",
     },
+    {
+      key: "pullout_distance_mm",
+      label: "Pull-out distance",
+      type: "number",
+      unit: "mm",
+    },
+    {
+      key: "pullout_rate_mm_per_min",
+      label: "Pull-out rate",
+      type: "number",
+      unit: "mm/min",
+    },
   ],
   display: [
+    {
+      key: "report_interval_ms",
+      label: "Report interval",
+      type: "number",
+      unit: "ms",
+    },
     { key: "i2c_num", label: "I²C bus", type: "number" },
     { key: "i2c_address", label: "Address (decimal)", type: "number" },
     { key: "width", label: "Width", type: "number", unit: "px" },
     { key: "height", label: "Height", type: "number", unit: "px" },
     { key: "flip", label: "Flip", type: "boolean" },
     { key: "mirror", label: "Mirror", type: "boolean" },
+    {
+      key: "radio_delay_ms",
+      label: "Radio delay",
+      type: "number",
+      unit: "ms",
+    },
   ],
   atc: [
     { key: "safe_z_mpos_mm", label: "Safe Z", type: "number", unit: "mm" },
@@ -481,6 +555,12 @@ const FIELDS: Record<NodeKind, FieldDef[]> = {
     },
     { key: "change_mpos_mm", label: "Change position array" },
     { key: "ets_mpos_mm", label: "Tool setter position array" },
+    {
+      key: "ets_rapid_z_mpos_mm",
+      label: "Tool setter rapid Z",
+      type: "number",
+      unit: "mm",
+    },
   ],
 };
 
@@ -729,6 +809,7 @@ const COLORS: Record<NodeKind, string> = {
   coolant: "#42a7ba",
   macro: "#a47851",
   io: "#4e9f83",
+  start: "#b47b48",
   parking: "#b47b48",
   display: "#458fa8",
   atc: "#bf675b",
@@ -767,7 +848,7 @@ const HUB_PARTITIONS = [
     capabilities: ["Controls", "Parking", "Macros"],
     color: "#47a986",
     direction: "right" as const,
-    kinds: ["control", "parking", "macro"] as NodeKind[],
+    kinds: ["control", "start", "parking", "macro"] as NodeKind[],
     add: "control" as NodeKind,
   },
 ];
@@ -808,7 +889,8 @@ const ROOT_OPTIONS: Record<
   ],
   safety: [
     { kind: "control", title: "Control inputs" },
-    { kind: "parking", title: "Startup & parking" },
+    { kind: "start", title: "Startup" },
+    { kind: "parking", title: "Parking" },
     { kind: "macro", title: "Macros" },
   ],
 };
@@ -984,7 +1066,7 @@ function scalarFields(source: unknown, defs: FieldDef[]) {
     string,
     unknown
   >;
-  return Object.fromEntries(
+  const known = Object.fromEntries(
     defs.map((f) => {
       const sourceKey = Object.keys(obj).find(
         (key) => key.toLowerCase() === f.key.toLowerCase(),
@@ -1008,6 +1090,27 @@ function scalarFields(source: unknown, defs: FieldDef[]) {
       return [f.key, String(raw)];
     }),
   );
+  for (const [key, value] of Object.entries(obj)) {
+    if (
+      value == null ||
+      typeof value === "object" ||
+      defs.some((field) => field.key.toLowerCase() === key.toLowerCase())
+    )
+      continue;
+    known[key] = String(value);
+  }
+  return known;
+}
+
+function inferredField(key: string, value: string): FieldDef {
+  const label = key
+    .replace(/_/g, " ")
+    .replace(/^./, (letter) => letter.toUpperCase());
+  if (/_pin$|^pin$/i.test(key)) return { key, label, type: "pin" };
+  if (/^(?:true|false)$/i.test(value)) return { key, label, type: "boolean" };
+  if (/^-?(?:\d+(?:\.\d*)?|\.\d+)(?:e[+-]?\d+)?$/i.test(value))
+    return { key, label, type: "number" };
+  return { key, label, type: "text" };
 }
 
 function objectEntryIgnoreCase(
@@ -1031,13 +1134,14 @@ function parseConfig(content: string): Record<string, any> {
     stack: { indent: number; value: Record<string, any> }[] = [
       { indent: -1, value: root },
     ];
-  for (const raw of content.split("\n")) {
+  for (const raw of splitYamlLines(content)) {
     if (!raw.trim() || raw.trimStart().startsWith("#")) continue;
     const match = raw.match(/^(\s*)([^:#]+):(?:\s*(.*))?$/);
     if (!match) continue;
     const indent = match[1].length,
       key = match[2].trim(),
-      token = (match[3] ?? "").trim();
+      sourceToken = match[3] ?? "",
+      token = sourceToken.trim();
     while (stack.length > 1 && stack[stack.length - 1].indent >= indent)
       stack.pop();
     const parent = stack[stack.length - 1].value;
@@ -1046,20 +1150,29 @@ function parseConfig(content: string): Record<string, any> {
       parent[key] = child;
       stack.push({ indent, value: child });
     } else {
-      const clean = token.replace(/^(['"])(.*)\1$/, "$2");
-      parent[key] = /^true$/i.test(clean)
+      const quoted = token.match(/^(['"])(.*)\1$/);
+      if (quoted) {
+        parent[key] = quoted[2];
+        continue;
+      }
+      const preserveWhitespace =
+        /^(?:name|board|meta|atc|model|cw_cmd|ccw_cmd|off_cmd|set_rpm_cmd|get_min_rpm_cmd|get_max_rpm_cmd|get_rpm_cmd|idle)$/i.test(
+          key,
+        );
+      const clean = preserveWhitespace ? sourceToken : token;
+      parent[key] = /^true$/i.test(token)
         ? true
-        : /^false$/i.test(clean)
+        : /^false$/i.test(token)
           ? false
-          : /^-?\d+(?:\.\d+)?$/.test(clean)
-            ? Number(clean)
+          : /^-?\d+(?:\.\d+)?$/.test(token)
+            ? Number(token)
             : clean;
     }
   }
   return root;
 }
 
-function nodesFromYaml(content: string): NodeData[] {
+export function nodesFromYaml(content: string): NodeData[] {
   if (!content.trim()) return defaultNodes();
   try {
     const root = parseConfig(content);
@@ -1156,15 +1269,24 @@ function nodesFromYaml(content: string): NodeData[] {
             "standard_stepper",
             "null_motor",
           ];
-          const driverKey = Object.keys(motor).find((key) =>
-            driverTypes.some(
-              (type) => type.toLowerCase() === key.toLowerCase(),
-            ),
-          );
+          const driverKey =
+            Object.keys(motor).find((key) =>
+              driverTypes.some(
+                (type) => type.toLowerCase() === key.toLowerCase(),
+              ),
+            ) ??
+            Object.keys(motor).find(
+              (key) =>
+                motor[key] != null &&
+                typeof motor[key] === "object" &&
+                !/^homing$/i.test(key),
+            );
           const driver =
             driverTypes.find(
               (type) => type.toLowerCase() === driverKey?.toLowerCase(),
-            ) ?? "stepstick";
+            ) ??
+            driverKey ??
+            "stepstick";
           const driverFields =
             driverKey &&
             motor[driverKey] &&
@@ -1216,7 +1338,8 @@ function nodesFromYaml(content: string): NodeData[] {
       ["probe", "probe", "Probe"],
       ["coolant", "coolant", "Coolant"],
       ["macros", "macro", "Macros"],
-      ["parking", "parking", "Startup & parking"],
+      ["start", "start", "Startup"],
+      ["parking", "parking", "Parking"],
       ["oled", "display", "OLED display"],
       ["atc_manual", "atc", "Tool changer"],
       ["sdcard", "storage", "SD card"],
@@ -1238,8 +1361,40 @@ function nodesFromYaml(content: string): NodeData[] {
           yamlKey: sectionEntry[0],
         });
     });
+    const kinematicsEntry = objectEntryIgnoreCase(root, "kinematics");
+    if (
+      kinematicsEntry &&
+      kinematicsEntry[1] &&
+      typeof kinematicsEntry[1] === "object"
+    ) {
+      const configured = kinematicsEntry[1] as Record<string, unknown>;
+      const typeEntry = Object.entries(configured).find(
+        ([, value]) => value == null || typeof value === "object",
+      );
+      if (typeEntry) {
+        const canonicalType =
+          FIELDS.kinematics[0].options?.find(
+            (option) => option.toLowerCase() === typeEntry[0].toLowerCase(),
+          ) ?? typeEntry[0];
+        nodes.push({
+          id: "kinematics",
+          kind: "kinematics",
+          title: "Kinematics",
+          subtitle: canonicalType,
+          x: 920,
+          y: 500,
+          color: COLORS.kinematics,
+          fields: {
+            ...scalarFields(typeEntry[1], FIELDS.kinematics),
+            type: canonicalType,
+          },
+          yamlKey: kinematicsEntry[0],
+          yamlTypeKey: typeEntry[0],
+        });
+      }
+    }
     Object.entries(root).forEach(([key, value], i) => {
-      if (/^uart\d+$|^i2c\d+$|^(spi|i2so)$/i.test(key))
+      if (/^uart(?:_channel)?\d+$|^i2c\d+$|^(spi|i2so)$/i.test(key))
         nodes.push({
           id: `bus-${key}`,
           kind: "bus",
@@ -1353,11 +1508,14 @@ function PinEditor({
         <div />
       )}
       <select
-        value={parts.find((p) => p === "low" || p === "high") ?? "high"}
+        value={
+          parts.find((part) => /^(?:low|high)$/i.test(part))?.toLowerCase() ??
+          "high"
+        }
         onChange={(e) =>
           set(family, index, [
             e.target.value,
-            ...parts.slice(1).filter((p) => p !== "low" && p !== "high"),
+            ...parts.slice(1).filter((part) => !/^(?:low|high)$/i.test(part)),
           ])
         }
         disabled={family === "NO_PIN" || family === "void"}
@@ -1367,10 +1525,12 @@ function PinEditor({
         <option>low</option>
       </select>
       <select
-        value={parts.find((p) => p === "pu" || p === "pd") ?? ""}
+        value={
+          parts.find((part) => /^(?:pu|pd)$/i.test(part))?.toLowerCase() ?? ""
+        }
         onChange={(e) =>
           set(family, index, [
-            ...parts.slice(1).filter((p) => p !== "pu" && p !== "pd"),
+            ...parts.slice(1).filter((part) => !/^(?:pu|pd)$/i.test(part)),
             ...(e.target.value ? [e.target.value] : []),
           ])
         }
@@ -1702,7 +1862,7 @@ export function ConfigStudio({
     setMutationError("");
   }, [selected]);
   const active = nodes.find((n) => n.id === selected);
-  const propertyFields = active
+  const knownPropertyFields = active
     ? active.kind === "driver"
       ? (driverFieldsFromSchema(fluidSchema, active.fields.type) ??
         (DRIVER_FIELDS_BY_TYPE[active.fields.type.toLowerCase()]
@@ -1713,6 +1873,28 @@ export function ConfigStudio({
             )
           : FIELDS.driver))
       : FIELDS[active.kind]
+    : [];
+  const propertyFields = active
+    ? [
+        ...knownPropertyFields,
+        ...Object.entries(active.fields)
+          .filter(
+            ([key]) =>
+              !knownPropertyFields.some(
+                (field) => field.key.toLowerCase() === key.toLowerCase(),
+              ),
+          )
+          .map(([key, value]) => inferredField(key, value)),
+      ].map((field) =>
+        field.key === "type" &&
+        field.options &&
+        active.fields.type &&
+        !field.options.some(
+          (option) => option.toLowerCase() === active.fields.type.toLowerCase(),
+        )
+          ? { ...field, options: [...field.options, active.fields.type] }
+          : field,
+      )
     : [];
   const snapshotNodes = (value: NodeData[]) =>
     value.map((node) => ({ ...node, fields: { ...node.fields } }));
@@ -1872,10 +2054,12 @@ export function ConfigStudio({
     if (!changedNode) return;
     const structural =
       (changedNode.kind === "axis" && key === "axis") ||
-      (["driver", "bus", "spindle"].includes(changedNode.kind) &&
+      (["driver", "bus", "spindle", "kinematics"].includes(changedNode.kind) &&
         key === "type");
     const path = structural
-      ? yamlPathForNode(changedNode, nodes)
+      ? changedNode.kind === "kinematics"
+        ? `${changedNode.yamlKey ?? "kinematics"}.${changedNode.yamlTypeKey ?? changedNode.fields.type}`
+        : yamlPathForNode(changedNode, nodes)
       : yamlPathForField(changedNode, key, nodes);
     const nextSource = structural
       ? path
@@ -1899,7 +2083,14 @@ export function ConfigStudio({
               ...n,
               fields: { ...n.fields, [key]: value },
               subtitle: key === "type" || key === "driver" ? value : n.subtitle,
-              yamlKey: structural ? value : n.yamlKey,
+              yamlKey:
+                structural && changedNode.kind !== "kinematics"
+                  ? value
+                  : n.yamlKey,
+              yamlTypeKey:
+                structural && changedNode.kind === "kinematics"
+                  ? value
+                  : n.yamlTypeKey,
               title:
                 changedNode.kind === "axis" && key === "axis"
                   ? `${value.toUpperCase()} Axis`
@@ -2554,7 +2745,10 @@ export function ConfigStudio({
   );
 }
 
-function yamlPathForNode(node: NodeData, nodes: NodeData[]): string | null {
+export function yamlPathForNode(
+  node: NodeData,
+  nodes: NodeData[],
+): string | null {
   if (node.kind === "stepping" || node.kind === "axes") return node.kind;
   if (node.kind === "axis") return `axes.${node.yamlKey ?? node.fields.axis}`;
   if (node.kind === "motor" || node.kind === "driver") {
@@ -2571,17 +2765,18 @@ function yamlPathForNode(node: NodeData, nodes: NodeData[]): string | null {
       : base;
   }
   const roots: Partial<Record<NodeKind, string>> = {
-    kinematics: "kinematics",
     control: "control",
     probe: "probe",
     coolant: "coolant",
     macro: "macros",
+    start: "start",
     parking: "parking",
     display: "oled",
     atc: "atc_manual",
     storage: "sdcard",
   };
-  if (roots[node.kind]) return roots[node.kind]!;
+  if (node.kind === "kinematics") return node.yamlKey ?? "kinematics";
+  if (roots[node.kind]) return node.yamlKey ?? roots[node.kind]!;
   if (node.kind === "bus") return node.yamlKey ?? node.fields.type ?? "uart1";
   if (node.kind === "spindle") return node.yamlKey ?? node.fields.type ?? "PWM";
   if (node.kind === "io")
@@ -2595,13 +2790,25 @@ function yamlPathEquals(left: string, right: string) {
   return left.toLowerCase() === right.toLowerCase();
 }
 
+function yamlLineEnding(source: string) {
+  return source.includes("\r\n") ? "\r\n" : source.includes("\r") ? "\r" : "\n";
+}
+
+function splitYamlLines(source: string) {
+  return source.split(/\r\n|\n|\r/);
+}
+
+function joinYamlLines(lines: string[], source: string) {
+  return lines.join(yamlLineEnding(source));
+}
+
 function insertNodeYaml(source: string, node: NodeData, nodes: NodeData[]) {
   const path = yamlPathForNode(node, nodes);
   if (!path) return source;
   if (yamlEntries(source).some((entry) => yamlPathEquals(entry.path, path)))
     return source;
   const generated = contentFromNodes(nodes, "");
-  const generatedLines = generated.split("\n"),
+  const generatedLines = splitYamlLines(generated),
     generatedIndex = yamlEntries(generated),
     target = generatedIndex.find((entry) => yamlPathEquals(entry.path, path));
   let block: string[];
@@ -2622,11 +2829,12 @@ function insertNodeYaml(source: string, node: NodeData, nodes: NodeData[]) {
   const parentPath = path.includes(".")
       ? path.slice(0, path.lastIndexOf("."))
       : "",
-    baseLines = source.split("\n"),
+    baseLines = splitYamlLines(source),
     baseIndex = yamlEntries(source),
     parent = baseIndex.find((entry) => yamlPathEquals(entry.path, parentPath));
   if (!parent) {
-    return `${source.replace(/\s*$/, "")}\n\n${block.map((line) => line.slice(target?.indent ?? 0)).join("\n")}\n`;
+    const eol = yamlLineEnding(source);
+    return `${source.replace(/\s*$/, "")}${eol}${eol}${block.map((line) => line.slice(target?.indent ?? 0)).join(eol)}${eol}`;
   }
   let insertAt = parent.line + 1;
   while (insertAt < baseLines.length) {
@@ -2640,13 +2848,13 @@ function insertNodeYaml(source: string, node: NodeData, nodes: NodeData[]) {
     (line) => `${" ".repeat(targetIndent)}${line.slice(sourceIndent)}`,
   );
   baseLines.splice(insertAt, 0, ...block);
-  return baseLines.join("\n");
+  return joinYamlLines(baseLines, source);
 }
 
 function removeNodeYaml(source: string, node: NodeData, nodes: NodeData[]) {
   const path = yamlPathForNode(node, nodes);
   if (!path) return source;
-  const lines = source.split("\n"),
+  const lines = splitYamlLines(source),
     target = yamlEntries(source).find((entry) =>
       yamlPathEquals(entry.path, path),
     );
@@ -2660,10 +2868,10 @@ function removeNodeYaml(source: string, node: NodeData, nodes: NodeData[]) {
   let start = target.line;
   if (target.indent === 0 && start > 0 && !lines[start - 1].trim()) start--;
   lines.splice(start, end - start);
-  return lines.join("\n");
+  return joinYamlLines(lines, source);
 }
 
-function yamlPathForField(
+export function yamlPathForField(
   node: NodeData,
   key: string,
   nodes: NodeData[],
@@ -2702,12 +2910,18 @@ function yamlPathForField(
     probe: "probe",
     coolant: "coolant",
     macro: "macros",
+    start: "start",
     parking: "parking",
     display: "oled",
     atc: "atc_manual",
     storage: "sdcard",
   };
-  if (sections[node.kind]) return `${sections[node.kind]}.${key}`;
+  if (node.kind === "kinematics")
+    return key === "type"
+      ? null
+      : `${node.yamlKey ?? "kinematics"}.${node.yamlTypeKey ?? node.fields.type}.${key}`;
+  if (sections[node.kind])
+    return `${node.yamlKey ?? sections[node.kind]}.${key}`;
   if (node.kind === "bus")
     return key === "type" ? null : `${node.yamlKey ?? node.fields.type}.${key}`;
   if (node.kind === "spindle")
@@ -2731,40 +2945,67 @@ function renameYamlKey(source: string, path: string, nextKey: string) {
     entries.some((entry) => yamlPathEquals(entry.path, nextPath))
   )
     return null;
-  const lines = source.split("\n");
+  const lines = splitYamlLines(source);
   lines[existing.line] = lines[existing.line].replace(
     /^(\s*)[^:#]+:/,
     `$1${nextKey}:`,
   );
-  return lines.join("\n");
+  return joinYamlLines(lines, source);
 }
 
-function formatYamlScalar(value: string, oldValue: string, path: string) {
+export function formatYamlScalar(
+  value: string,
+  oldValue: string,
+  path: string,
+) {
   if (!value) return "";
+  if (
+    /(^|\.)(macros\.(?:startup_line\d+|macro\d+|after_(?:homing|reset|unlock))|m6_macro)$/i.test(
+      path,
+    )
+  )
+    return value;
   const leaf = path.slice(path.lastIndexOf(".") + 1);
   const mustDoubleQuote = /^(?:passthrough_)?mode$/i.test(leaf);
+  const fieldDefinition = Object.values(FIELDS)
+    .flat()
+    .find((field) => field.key.toLowerCase() === leaf.toLowerCase());
+  const numericToken = /^-?(?:\d+(?:\.\d*)?|\.\d+)(?:e[+-]?\d+)?$/i;
+  if (
+    /^(?:true|false)$/i.test(value) &&
+    (fieldDefinition?.type === "boolean" || /^(?:true|false)$/i.test(oldValue))
+  )
+    return value.toLowerCase();
+  if (
+    numericToken.test(value) &&
+    (fieldDefinition?.type === "number" || numericToken.test(oldValue))
+  )
+    return value;
   const looksAmbiguous =
     value.trim() !== value ||
     value.includes(":") ||
+    value.includes("#") ||
     /^(?:true|false|null|~|-?(?:\d+(?:\.\d*)?|\.\d+)(?:e[+-]?\d+)?)$/i.test(
       value,
     ) ||
-    /^[{[|>*&!%@`]/.test(value);
+    /^[{[|>?*&#%!@`-]/.test(value);
   const existingQuote = oldValue.match(/^(['"]).*\1$/)?.[1];
   const quote = mustDoubleQuote ? '"' : existingQuote;
   if (quote && !value.includes(quote)) return `${quote}${value}${quote}`;
   if ((mustDoubleQuote || looksAmbiguous) && !value.includes('"'))
     return `"${value}"`;
-  if (looksAmbiguous && !value.includes("'")) return `'${value}'`;
+  // FluidNC does not implement general YAML escaping. If double quotes cannot
+  // safely represent the scalar, retain its plain spelling instead of emitting
+  // single-quote/escape syntax that FluidNC itself may not understand.
   return value;
 }
 
-function patchYamlValue(
+export function patchYamlValue(
   source: string,
   path: string,
   value: string,
 ): string | null {
-  const lines = source.split("\n"),
+  const lines = splitYamlLines(source),
     entries = yamlEntries(source),
     existing = entries.find((entry) => yamlPathEquals(entry.path, path));
   if (existing) {
@@ -2772,7 +3013,7 @@ function patchYamlValue(
     const formatted = formatYamlScalar(value, old, path);
     lines[existing.line] =
       `${" ".repeat(existing.indent)}${existing.key}: ${formatted}`;
-    return lines.join("\n");
+    return joinYamlLines(lines, source);
   }
   const parentPath = path.includes(".")
       ? path.slice(0, path.lastIndexOf("."))
@@ -2792,7 +3033,7 @@ function patchYamlValue(
     0,
     `${" ".repeat(parent.indent + 2)}${key}:${formatted ? ` ${formatted}` : ""}`,
   );
-  return lines.join("\n");
+  return joinYamlLines(lines, source);
 }
 
 function contentFromNodes(nodes: NodeData[], baseSource = "") {
@@ -2800,10 +3041,11 @@ function contentFromNodes(nodes: NodeData[], baseSource = "") {
   const machine = nodes.find((n) => n.kind === "machine");
   if (machine) {
     out.push(
-      `name: "${machine.fields.name}"`,
-      `board: "${machine.fields.board}"`,
+      `name: ${formatYamlScalar(machine.fields.name, "", "name")}`,
+      `board: ${formatYamlScalar(machine.fields.board, "", "board")}`,
     );
-    if (machine.fields.meta) out.push(`meta: "${machine.fields.meta}"`);
+    if (machine.fields.meta)
+      out.push(`meta: ${formatYamlScalar(machine.fields.meta, "", "meta")}`);
   }
   const stepping = nodes.find((n) => n.kind === "stepping");
   if (stepping) {
@@ -2812,7 +3054,10 @@ function contentFromNodes(nodes: NodeData[], baseSource = "") {
       "stepping:",
       ...FIELDS.stepping
         .filter((f) => stepping.fields[f.key])
-        .map((f) => `  ${f.key}: ${stepping.fields[f.key]}`),
+        .map(
+          (f) =>
+            `  ${f.key}: ${formatYamlScalar(stepping.fields[f.key], "", `stepping.${f.key}`)}`,
+        ),
     );
   }
   const axes = nodes.filter((n) => n.kind === "axis");
@@ -2885,12 +3130,28 @@ function contentFromNodes(nodes: NodeData[], baseSource = "") {
     probe: "probe",
     coolant: "coolant",
     macro: "macros",
+    start: "start",
     parking: "parking",
     display: "oled",
     atc: "atc_manual",
     storage: "sdcard",
   };
   for (const n of nodes) {
+    if (n.kind === "kinematics") {
+      const type = n.fields.type || "Cartesian";
+      const fields = Object.keys(n.fields).filter(
+        (key) => key !== "type" && n.fields[key] !== "",
+      );
+      out.push(
+        "",
+        `${n.yamlKey ?? "kinematics"}:`,
+        `  ${n.yamlTypeKey ?? type}:`,
+        ...fields.map(
+          (key) =>
+            `    ${key}: ${formatYamlScalar(n.fields[key], "", `kinematics.${type}.${key}`)}`,
+        ),
+      );
+    }
     const section = simple[n.kind];
     if (section) {
       const sectionLines =
@@ -2902,7 +3163,7 @@ function contentFromNodes(nodes: NodeData[], baseSource = "") {
           : FIELDS[n.kind]
               .filter((f) => n.fields[f.key] && n.fields[f.key] !== "false")
               .map((f) => `  ${f.key}: ${n.fields[f.key]}`);
-      out.push("", `${section}:`, ...sectionLines);
+      out.push("", `${n.yamlKey ?? section}:`, ...sectionLines);
     }
     if (n.kind === "bus") {
       const type = n.fields.type || "uart1";
@@ -2960,9 +3221,9 @@ function contentFromNodes(nodes: NodeData[], baseSource = "") {
 
 function mergeGraphYaml(baseSource: string, generatedSource: string) {
   if (!baseSource.trim()) return generatedSource;
-  let lines = baseSource.split("\n");
+  let lines = splitYamlLines(baseSource);
   for (const entry of yamlEntries(generatedSource)) {
-    let index = yamlEntries(lines.join("\n"));
+    let index = yamlEntries(joinYamlLines(lines, baseSource));
     const existing = index.find((item) =>
       yamlPathEquals(item.path, entry.path),
     );
@@ -2975,7 +3236,7 @@ function mergeGraphYaml(baseSource: string, generatedSource: string) {
     const parentPath = entry.path.includes(".")
       ? entry.path.slice(0, entry.path.lastIndexOf("."))
       : "";
-    index = yamlEntries(lines.join("\n"));
+    index = yamlEntries(joinYamlLines(lines, baseSource));
     const parent = index.find((item) => yamlPathEquals(item.path, parentPath));
     const indent = parent ? parent.indent + 2 : 0;
     let insertAt = lines.length;
@@ -2993,10 +3254,10 @@ function mergeGraphYaml(baseSource: string, generatedSource: string) {
       `${" ".repeat(indent)}${entry.key}:${entry.hasValue ? ` ${entry.value}` : ""}`,
     );
   }
-  return lines.join("\n");
+  return joinYamlLines(lines, baseSource);
 }
 
-function yamlEntries(source: string) {
+export function yamlEntries(source: string) {
   const result: {
       path: string;
       key: string;
@@ -3006,7 +3267,7 @@ function yamlEntries(source: string) {
       line: number;
     }[] = [],
     stack: { indent: number; key: string }[] = [];
-  source.split("\n").forEach((raw, line) => {
+  splitYamlLines(source).forEach((raw, line) => {
     if (!raw.trim() || raw.trimStart().startsWith("#")) return;
     const match = raw.match(/^(\s*)([^:#]+):(?:\s*(.*))?$/);
     if (!match) return;
