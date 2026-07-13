@@ -809,17 +809,16 @@ export function CodeEditor({
               >
                 Cancel
               </button>
-              {validationIssues.every((i) => i.severity === "warning") && (
-                <button
-                  className="btn btn-warn"
-                  onClick={() => {
-                    setValidationIssues(null);
-                    handleSave(true);
-                  }}
-                >
-                  Save anyway
-                </button>
-              )}
+              <button
+                className="btn btn-warn"
+                onClick={() => {
+                  setValidationIssues(null);
+                  handleSave(true);
+                }}
+                title="Save without validation"
+              >
+                Save anyway
+              </button>
               <button
                 className="btn btn-primary"
                 onClick={() => {
