@@ -7,7 +7,7 @@ export type ConfigIssue = {
   path?: string;
 };
 const PIN =
-  /^(NO_PIN|no_pin|void|gpio\.\d+|i2so\.\d+|uart_channel\d+\.\d+)(:(high|low|pu|pd|ds[0-3]))*$/i;
+  /^(NO_PIN|no_pin|void|gpio\.\d+|i2so\.\d+|uart_channel\d+\.\d+|pinext\d+\.\d+)(:(high|low|pu|pd|ds[0-3]))*$/i;
 
 export function validateFluidConfig(source: string): ConfigIssue[] {
   const issues: ConfigIssue[] = [],
@@ -30,13 +30,7 @@ export function validateFluidConfig(source: string): ConfigIssue[] {
         line,
         message: "Tabs are not allowed; use spaces.",
       });
-    if (/^\s*[^#\n]+:\s*[^#\n]+\s+#/.test(raw))
-      issues.push({
-        severity: "error",
-        line,
-        message: "Inline comments are not supported by FluidNC.",
-      });
-    if (/^\s*---\s*$|:\s*[\[{]/.test(raw))
+    if (/^\s*---\s*$/.test(raw))
       issues.push({
         severity: "error",
         line,
@@ -54,11 +48,37 @@ export function validateFluidConfig(source: string): ConfigIssue[] {
     }
     const indent = match[1].length,
       key = match[2].trim(),
-      value = (match[3] ?? "").trim().replace(/^(['"])(.*)\1$/, "$2");
+      rawValue = (match[3] ?? "").trim(),
+      value = rawValue.replace(/^(['"])(.*)\1$/, "$2");
     while (stack.length && stack[stack.length - 1].indent >= indent)
       stack.pop();
     const parent = stack.map((item) => item.key).join("."),
       path = parent ? `${parent}.${key}` : key;
+    const macroValue =
+      /(^|\.)(macros\.(?:startup_line\d+|macro\d+|after_(?:homing|reset|unlock))|m6_macro)$/i.test(
+        path,
+      );
+    const fullyQuoted = /^(?:".*"|'.*')$/.test(rawValue);
+    if (!macroValue && !fullyQuoted && /\s+#/.test(rawValue))
+      issues.push({
+        severity: "error",
+        line,
+        path,
+        message: "Inline comments are not supported by FluidNC.",
+      });
+    if (
+      !macroValue &&
+      !fullyQuoted &&
+      (/^[\[{]/.test(rawValue) ||
+        /^[&*]/.test(rawValue) ||
+        /^[|>][+-]?$/.test(rawValue))
+    )
+      issues.push({
+        severity: "error",
+        line,
+        path,
+        message: "Unsupported YAML feature; use block-style FluidNC YAML.",
+      });
     const knownIndent = siblingIndents.get(parent);
     if (knownIndent == null) siblingIndents.set(parent, indent);
     else if (knownIndent !== indent)
@@ -73,7 +93,7 @@ export function validateFluidConfig(source: string): ConfigIssue[] {
       return;
     }
     values.set(path, { value, line });
-    if (/_pin$|\.pin$/.test(path)) {
+    if (/_pin$|\.pin$/i.test(path)) {
       if (!PIN.test(value))
         issues.push({
           severity: "error",
@@ -96,7 +116,7 @@ export function validateFluidConfig(source: string): ConfigIssue[] {
     }
     if (
       !/^(true|false)$/i.test(value) &&
-      /(^|\.)(soft_limits|hard_limits|positive_direction|enable|enabled|must_home|check_limits|use_enable|off_on_alarm)$/.test(
+      /(^|\.)(soft_limits|hard_limits|positive_direction|enable|enabled|must_home|check_limits|use_enable|off_on_alarm)$/i.test(
         path,
       )
     )
@@ -107,28 +127,31 @@ export function validateFluidConfig(source: string): ConfigIssue[] {
         message: "Boolean values must be exactly true or false.",
       });
   });
+  const normalizedValues = new Map(
+    [...values].map(([path, entry]) => [path.toLowerCase(), entry]),
+  );
   for (const axis of ["x", "y", "z", "a", "b", "c"])
     for (const motor of ["motor0", "motor1"]) {
       const prefix = `axes.${axis}.${motor}`,
-        driverField = [...values.keys()].find(
+        driverField = [...normalizedValues.keys()].find(
           (path) =>
             path.startsWith(`${prefix}.`) &&
-            /\.(stepstick|standard_stepper|tmc_\d+|servo)\./.test(path),
+            /\.(stepstick|standard_stepper|tmc_\d+|servo)\./i.test(path),
         );
       if (!driverField) continue;
       const driver = driverField.slice(0, driverField.lastIndexOf("."));
       for (const field of ["step_pin", "direction_pin"]) {
-        const entry = values.get(`${driver}.${field}`);
+        const entry = normalizedValues.get(`${driver}.${field}`);
         if (!entry || /^(NO_PIN|no_pin)$/i.test(entry.value))
           issues.push({
             severity: "error",
-            line: entry?.line ?? values.get(driverField)?.line ?? 1,
+            line: entry?.line ?? normalizedValues.get(driverField)?.line ?? 1,
             path: `${driver}.${field}`,
             message: `${axis.toUpperCase()} ${motor} requires a ${field.replace("_", " ")}.`,
           });
       }
     }
-  if (![...values.keys()].some((path) => /^axes\.[xyzabc]\./.test(path)))
+  if (![...values.keys()].some((path) => /^axes\.[xyzabc]\./i.test(path)))
     issues.push({
       severity: "warning",
       line: 1,
@@ -155,8 +178,13 @@ function schemaErrorLine(source: string, target: string): number {
       stack.pop();
     const key = match[2].trim();
     const path = [...stack.map((item) => item.key), key].join(".");
-    if (path === target || target.startsWith(`${path}.`)) {
-      if (path === target) return index + 1;
+    const normalizedPath = path.toLowerCase();
+    const normalizedTarget = target.toLowerCase();
+    if (
+      normalizedPath === normalizedTarget ||
+      normalizedTarget.startsWith(`${normalizedPath}.`)
+    ) {
+      if (normalizedPath === normalizedTarget) return index + 1;
     }
     const hasValue = lines[index].slice(match[0].length).trim().length > 0;
     if (!hasValue) stack.push({ indent, key });
@@ -164,7 +192,9 @@ function schemaErrorLine(source: string, target: string): number {
   return 1;
 }
 
-function parseScalar(token: string): unknown {
+function parseScalar(token: string, key: string): unknown {
+  if (/^(?:passthrough_)?mode$/i.test(key))
+    return token.replace(/^(['"])(.*)\1$/, "$2");
   if (/^true$/i.test(token)) return true;
   if (/^false$/i.test(token)) return false;
   if (/^(null|~)$/i.test(token)) return null;
@@ -200,7 +230,7 @@ function parseBlockYaml(source: string): unknown {
       stack.pop();
     const key = match[2].trim();
     const token = (match[3] ?? "").trim();
-    if (token) stack[stack.length - 1].value[key] = parseScalar(token);
+    if (token) stack[stack.length - 1].value[key] = parseScalar(token, key);
     else {
       const child: Record<string, unknown> = {};
       stack[stack.length - 1].value[key] = child;
@@ -238,6 +268,10 @@ function validateAgainstSchema(
   path = "",
   issues: SchemaViolation[] = [],
 ): SchemaViolation[] {
+  // FluidNC treats an empty optional scalar as unset. Config exports commonly
+  // retain those keys (for example `atc:`), while JSON Schema represents the
+  // empty value as null and would otherwise reject it as the scalar's type.
+  if (value === null) return issues;
   if (rule.$ref) {
     const target = String(rule.$ref)
       .replace(/^#\//, "")
@@ -337,11 +371,6 @@ function validateAgainstSchema(
         if (matchingPatterns.length)
           for (const [, patternRule] of matchingPatterns)
             validateAgainstSchema(child, patternRule, root, childPath, issues);
-        else if (rule.additionalProperties === false)
-          issues.push({
-            path: childPath,
-            message: "is not a recognized property",
-          });
         else if (
           rule.additionalProperties &&
           typeof rule.additionalProperties === "object"
@@ -353,6 +382,10 @@ function validateAgainstSchema(
             childPath,
             issues,
           );
+        // Unknown keys are intentionally tolerated here. FluidNC accepts and
+        // ignores or version-selects fields that the upstream schema omits;
+        // that schema is canonical-generation guidance, not a compatibility
+        // contract for configs produced by every supported firmware version.
       }
     }
   }

@@ -4,3 +4,4 @@ dist/
 strip.sh
 notes.md
 fluidnc-config-schema.json
+fluidnc-config-spec.md

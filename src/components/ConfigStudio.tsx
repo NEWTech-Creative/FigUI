@@ -999,9 +999,31 @@ function scalarFields(source: unknown, defs: FieldDef[]) {
       if (raw == null) return [f.key, fallback];
       if (typeof raw === "object")
         return [f.key, Object.keys(raw as object).length === 0 ? "" : fallback];
+      if (f.options) {
+        const canonical = f.options.find(
+          (option) => option.toLowerCase() === String(raw).toLowerCase(),
+        );
+        if (canonical != null) return [f.key, canonical];
+      }
       return [f.key, String(raw)];
     }),
   );
+}
+
+function objectEntryIgnoreCase(
+  source: unknown,
+  wantedKey: string,
+): [string, any] | null {
+  if (!source || typeof source !== "object") return null;
+  const object = source as Record<string, any>;
+  const key = Object.keys(object).find(
+    (candidate) => candidate.toLowerCase() === wantedKey.toLowerCase(),
+  );
+  return key == null ? null : [key, object[key]];
+}
+
+function objectValueIgnoreCase(source: unknown, wantedKey: string): any {
+  return objectEntryIgnoreCase(source, wantedKey)?.[1];
 }
 
 function parseConfig(content: string): Record<string, any> {
@@ -1025,14 +1047,13 @@ function parseConfig(content: string): Record<string, any> {
       stack.push({ indent, value: child });
     } else {
       const clean = token.replace(/^(['"])(.*)\1$/, "$2");
-      parent[key] =
-        clean === "true"
-          ? true
-          : clean === "false"
-            ? false
-            : /^-?\d+(?:\.\d+)?$/.test(clean)
-              ? Number(clean)
-              : clean;
+      parent[key] = /^true$/i.test(clean)
+        ? true
+        : /^false$/i.test(clean)
+          ? false
+          : /^-?\d+(?:\.\d+)?$/.test(clean)
+            ? Number(clean)
+            : clean;
     }
   }
   return root;
@@ -1054,18 +1075,24 @@ function nodesFromYaml(content: string): NodeData[] {
         fields: { ...scalarFields(root, FIELDS.machine) },
       },
     ];
-    if (root.stepping)
+    const steppingEntry = objectEntryIgnoreCase(root, "stepping");
+    if (steppingEntry) {
+      const stepping = steppingEntry[1];
       nodes.push({
         id: "stepping",
         kind: "stepping",
         title: "Stepping",
-        subtitle: `${root.stepping.engine ?? "RMT"} stepping engine`,
+        subtitle: `${objectValueIgnoreCase(stepping, "engine") ?? "RMT"} stepping engine`,
         x: 330,
         y: 40,
         color: COLORS.stepping,
-        fields: scalarFields(root.stepping, FIELDS.stepping),
+        fields: scalarFields(stepping, FIELDS.stepping),
+        yamlKey: steppingEntry[0],
       });
-    const axes = root.axes && typeof root.axes === "object" ? root.axes : {};
+    }
+    const axesEntry = objectEntryIgnoreCase(root, "axes");
+    const axes =
+      axesEntry && typeof axesEntry[1] === "object" ? axesEntry[1] : {};
     nodes.push({
       id: "axes",
       kind: "axes",
@@ -1075,6 +1102,7 @@ function nodesFromYaml(content: string): NodeData[] {
       y: 190,
       color: COLORS.axes,
       fields: scalarFields(axes, FIELDS.axes),
+      yamlKey: axesEntry?.[0],
     });
     Object.entries(axes)
       .filter(([letter]) => /^[xyzabc]$/i.test(letter))
@@ -1083,14 +1111,19 @@ function nodesFromYaml(content: string): NodeData[] {
           axisId = `axis-${letter.toUpperCase()}`;
         const fields: Record<string, string> = {
           ...scalarFields(axis, FIELDS.axis),
-          axis: letter,
+          axis: letter.toLowerCase(),
         };
-        if (axis.homing) {
-          fields.homing_cycle = String(axis.homing.cycle ?? "");
-          fields.homing_positive = String(
-            axis.homing.positive_direction ?? false,
+        const homing = objectValueIgnoreCase(axis, "homing");
+        if (homing && typeof homing === "object") {
+          fields.homing_cycle = String(
+            objectValueIgnoreCase(homing, "cycle") ?? "",
           );
-          fields.homing_mpos_mm = String(axis.homing.mpos_mm ?? "");
+          fields.homing_positive = String(
+            objectValueIgnoreCase(homing, "positive_direction") ?? false,
+          );
+          fields.homing_mpos_mm = String(
+            objectValueIgnoreCase(homing, "mpos_mm") ?? "",
+          );
         }
         nodes.push({
           id: axisId,
@@ -1105,29 +1138,38 @@ function nodesFromYaml(content: string): NodeData[] {
           yamlKey: letter,
         });
         ["motor0", "motor1"].forEach((motorKey, motorIndex) => {
-          if (!axis[motorKey]) return;
-          const motor = axis[motorKey] as Record<string, any>;
+          const motorEntry = objectEntryIgnoreCase(axis, motorKey);
+          if (!motorEntry) return;
+          const motor = motorEntry[1] as Record<string, any>;
+          const driverTypes = [
+            "stepstick",
+            "tmc_2130",
+            "tmc_2208",
+            "tmc_2209",
+            "tmc_5160",
+            "tmc_5160Pro",
+            "tmc_2160Pro",
+            "tmc_2160",
+            "rc_servo",
+            "solenoid",
+            "dynamixel2",
+            "standard_stepper",
+            "null_motor",
+          ];
+          const driverKey = Object.keys(motor).find((key) =>
+            driverTypes.some(
+              (type) => type.toLowerCase() === key.toLowerCase(),
+            ),
+          );
           const driver =
-            Object.keys(motor).find((k) =>
-              [
-                "stepstick",
-                "tmc_2130",
-                "tmc_2208",
-                "tmc_2209",
-                "tmc_5160",
-                "tmc_5160Pro",
-                "tmc_2160Pro",
-                "tmc_2160",
-                "rc_servo",
-                "solenoid",
-                "dynamixel2",
-                "standard_stepper",
-                "null_motor",
-              ].some((type) => type.toLowerCase() === k.toLowerCase()),
+            driverTypes.find(
+              (type) => type.toLowerCase() === driverKey?.toLowerCase(),
             ) ?? "stepstick";
           const driverFields =
-            motor[driver] && typeof motor[driver] === "object"
-              ? motor[driver]
+            driverKey &&
+            motor[driverKey] &&
+            typeof motor[driverKey] === "object"
+              ? motor[driverKey]
               : {};
           const motorId = `${axisId}-${motorKey}`;
           nodes.push({
@@ -1140,7 +1182,7 @@ function nodesFromYaml(content: string): NodeData[] {
             color: COLORS.motor,
             parentId: axisId,
             fields: scalarFields(motor, FIELDS.motor),
-            yamlKey: motorKey,
+            yamlKey: motorEntry[0],
           });
           nodes.push({
             id: `${motorId}-${driver}`,
@@ -1165,7 +1207,7 @@ function nodesFromYaml(content: string): NodeData[] {
               ),
               type: driver,
             },
-            yamlKey: driver,
+            yamlKey: driverKey ?? driver,
           });
         });
       });
@@ -1182,7 +1224,8 @@ function nodesFromYaml(content: string): NodeData[] {
       ["user_outputs", "io", "User outputs"],
     ];
     sectionKinds.forEach(([key, kind, title], i) => {
-      if (root[key] != null)
+      const sectionEntry = objectEntryIgnoreCase(root, key);
+      if (sectionEntry && sectionEntry[1] != null)
         nodes.push({
           id: `${kind}-${i}`,
           kind,
@@ -1191,11 +1234,12 @@ function nodesFromYaml(content: string): NodeData[] {
           x: 920 + (i % 2) * 240,
           y: 80 + (i % 5) * 135,
           color: COLORS[kind],
-          fields: scalarFields(root[key], FIELDS[kind]),
+          fields: scalarFields(sectionEntry[1], FIELDS[kind]),
+          yamlKey: sectionEntry[0],
         });
     });
     Object.entries(root).forEach(([key, value], i) => {
-      if (/^uart\d+$|^i2c\d+$|^(spi|i2so)$/.test(key))
+      if (/^uart\d+$|^i2c\d+$|^(spi|i2so)$/i.test(key))
         nodes.push({
           id: `bus-${key}`,
           kind: "bus",
@@ -1204,7 +1248,10 @@ function nodesFromYaml(content: string): NodeData[] {
           x: 1180,
           y: 80 + i * 90,
           color: COLORS.bus,
-          fields: { ...scalarFields(value, FIELDS.bus), type: key },
+          fields: {
+            ...scalarFields(value, FIELDS.bus),
+            type: key.toLowerCase(),
+          },
           yamlKey: key,
         });
     });
@@ -2544,14 +2591,19 @@ function yamlPathForNode(node: NodeData, nodes: NodeData[]): string | null {
   return null;
 }
 
+function yamlPathEquals(left: string, right: string) {
+  return left.toLowerCase() === right.toLowerCase();
+}
+
 function insertNodeYaml(source: string, node: NodeData, nodes: NodeData[]) {
   const path = yamlPathForNode(node, nodes);
   if (!path) return source;
-  if (yamlEntries(source).some((entry) => entry.path === path)) return source;
+  if (yamlEntries(source).some((entry) => yamlPathEquals(entry.path, path)))
+    return source;
   const generated = contentFromNodes(nodes, "");
   const generatedLines = generated.split("\n"),
     generatedIndex = yamlEntries(generated),
-    target = generatedIndex.find((entry) => entry.path === path);
+    target = generatedIndex.find((entry) => yamlPathEquals(entry.path, path));
   let block: string[];
   if (target) {
     let end = target.line + 1;
@@ -2572,7 +2624,7 @@ function insertNodeYaml(source: string, node: NodeData, nodes: NodeData[]) {
       : "",
     baseLines = source.split("\n"),
     baseIndex = yamlEntries(source),
-    parent = baseIndex.find((entry) => entry.path === parentPath);
+    parent = baseIndex.find((entry) => yamlPathEquals(entry.path, parentPath));
   if (!parent) {
     return `${source.replace(/\s*$/, "")}\n\n${block.map((line) => line.slice(target?.indent ?? 0)).join("\n")}\n`;
   }
@@ -2595,7 +2647,9 @@ function removeNodeYaml(source: string, node: NodeData, nodes: NodeData[]) {
   const path = yamlPathForNode(node, nodes);
   if (!path) return source;
   const lines = source.split("\n"),
-    target = yamlEntries(source).find((entry) => entry.path === path);
+    target = yamlEntries(source).find((entry) =>
+      yamlPathEquals(entry.path, path),
+    );
   if (!target) return source;
   let end = target.line + 1;
   while (end < lines.length) {
@@ -2666,13 +2720,16 @@ function yamlPathForField(
 function renameYamlKey(source: string, path: string, nextKey: string) {
   if (!nextKey || /[:#\s]/.test(nextKey)) return null;
   const entries = yamlEntries(source);
-  const existing = entries.find((entry) => entry.path === path);
+  const existing = entries.find((entry) => yamlPathEquals(entry.path, path));
   if (!existing) return null;
   const parentPath = path.includes(".")
     ? path.slice(0, path.lastIndexOf("."))
     : "";
   const nextPath = parentPath ? `${parentPath}.${nextKey}` : nextKey;
-  if (nextPath !== path && entries.some((entry) => entry.path === nextPath))
+  if (
+    !yamlPathEquals(nextPath, path) &&
+    entries.some((entry) => yamlPathEquals(entry.path, nextPath))
+  )
     return null;
   const lines = source.split("\n");
   lines[existing.line] = lines[existing.line].replace(
@@ -2682,6 +2739,26 @@ function renameYamlKey(source: string, path: string, nextKey: string) {
   return lines.join("\n");
 }
 
+function formatYamlScalar(value: string, oldValue: string, path: string) {
+  if (!value) return "";
+  const leaf = path.slice(path.lastIndexOf(".") + 1);
+  const mustDoubleQuote = /^(?:passthrough_)?mode$/i.test(leaf);
+  const looksAmbiguous =
+    value.trim() !== value ||
+    value.includes(":") ||
+    /^(?:true|false|null|~|-?(?:\d+(?:\.\d*)?|\.\d+)(?:e[+-]?\d+)?)$/i.test(
+      value,
+    ) ||
+    /^[{[|>*&!%@`]/.test(value);
+  const existingQuote = oldValue.match(/^(['"]).*\1$/)?.[1];
+  const quote = mustDoubleQuote ? '"' : existingQuote;
+  if (quote && !value.includes(quote)) return `${quote}${value}${quote}`;
+  if ((mustDoubleQuote || looksAmbiguous) && !value.includes('"'))
+    return `"${value}"`;
+  if (looksAmbiguous && !value.includes("'")) return `'${value}'`;
+  return value;
+}
+
 function patchYamlValue(
   source: string,
   path: string,
@@ -2689,12 +2766,10 @@ function patchYamlValue(
 ): string | null {
   const lines = source.split("\n"),
     entries = yamlEntries(source),
-    existing = entries.find((entry) => entry.path === path);
+    existing = entries.find((entry) => yamlPathEquals(entry.path, path));
   if (existing) {
     const old = existing.value;
-    let formatted = value;
-    if (/^".*"$/.test(old)) formatted = `"${value.replace(/"/g, '\\"')}"`;
-    else if (/^'.*'$/.test(old)) formatted = `'${value.replace(/'/g, "''")}'`;
+    const formatted = formatYamlScalar(value, old, path);
     lines[existing.line] =
       `${" ".repeat(existing.indent)}${existing.key}: ${formatted}`;
     return lines.join("\n");
@@ -2703,7 +2778,7 @@ function patchYamlValue(
       ? path.slice(0, path.lastIndexOf("."))
       : "",
     key = path.slice(path.lastIndexOf(".") + 1),
-    parent = entries.find((entry) => entry.path === parentPath);
+    parent = entries.find((entry) => yamlPathEquals(entry.path, parentPath));
   if (!parent) return null;
   let insertAt = parent.line + 1;
   while (insertAt < lines.length) {
@@ -2711,7 +2786,12 @@ function patchYamlValue(
     if (lines[insertAt].trim() && indent <= parent.indent) break;
     insertAt++;
   }
-  lines.splice(insertAt, 0, `${" ".repeat(parent.indent + 2)}${key}: ${value}`);
+  const formatted = formatYamlScalar(value, "", path);
+  lines.splice(
+    insertAt,
+    0,
+    `${" ".repeat(parent.indent + 2)}${key}:${formatted ? ` ${formatted}` : ""}`,
+  );
   return lines.join("\n");
 }
 
@@ -2836,7 +2916,10 @@ function contentFromNodes(nodes: NodeData[], baseSource = "") {
               n.fields[f.key] &&
               n.fields[f.key] !== "NO_PIN",
           )
-          .map((f) => `  ${f.key}: ${n.fields[f.key]}`),
+          .map(
+            (f) =>
+              `  ${f.key}: ${formatYamlScalar(n.fields[f.key], "", `${type}.${f.key}`)}`,
+          ),
       );
     }
     if (n.kind === "spindle") {
@@ -2880,7 +2963,9 @@ function mergeGraphYaml(baseSource: string, generatedSource: string) {
   let lines = baseSource.split("\n");
   for (const entry of yamlEntries(generatedSource)) {
     let index = yamlEntries(lines.join("\n"));
-    const existing = index.find((item) => item.path === entry.path);
+    const existing = index.find((item) =>
+      yamlPathEquals(item.path, entry.path),
+    );
     if (existing && entry.hasValue) {
       lines[existing.line] =
         `${" ".repeat(existing.indent)}${entry.key}: ${entry.value}`;
@@ -2891,7 +2976,7 @@ function mergeGraphYaml(baseSource: string, generatedSource: string) {
       ? entry.path.slice(0, entry.path.lastIndexOf("."))
       : "";
     index = yamlEntries(lines.join("\n"));
-    const parent = index.find((item) => item.path === parentPath);
+    const parent = index.find((item) => yamlPathEquals(item.path, parentPath));
     const indent = parent ? parent.indent + 2 : 0;
     let insertAt = lines.length;
     if (parent) {
