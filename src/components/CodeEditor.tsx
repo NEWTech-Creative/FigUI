@@ -101,6 +101,80 @@ type FileKind = "gcode" | "yaml" | "text";
 const GCODE_EXT = new Set([".g", ".gco", ".gcode", ".nc", ".ncc"]);
 const YAML_EXT = new Set([".yaml", ".yml"]);
 
+type TextEdit = { at: number; remove: number; insert: string };
+
+function mapOffsetThroughEdits(
+  offset: number,
+  edits: TextEdit[],
+  includeInsertionAtOffset: boolean,
+) {
+  let delta = 0;
+  for (const edit of edits) {
+    if (offset < edit.at) break;
+    if (offset === edit.at && !includeInsertionAtOffset) break;
+    if (offset <= edit.at + edit.remove) {
+      return (
+        edit.at + delta + (includeInsertionAtOffset ? edit.insert.length : 0)
+      );
+    }
+    delta += edit.insert.length - edit.remove;
+  }
+  return offset + delta;
+}
+
+/** Toggle indentation-aware YAML comments on every line touched by a selection. */
+export function toggleYamlLineComments(
+  code: string,
+  selectionStart: number,
+  selectionEnd: number,
+) {
+  const anchor = Math.max(0, Math.min(code.length, selectionStart));
+  const focus = Math.max(0, Math.min(code.length, selectionEnd));
+  const low = Math.min(anchor, focus);
+  const high = Math.max(anchor, focus);
+  const lineStart = code.lastIndexOf("\n", low - 1) + 1;
+  // A selection ending at column zero belongs to the preceding selected line.
+  const effectiveEnd = high > low && code[high - 1] === "\n" ? high - 1 : high;
+  const nextNewline = code.indexOf("\n", effectiveEnd);
+  const lineEnd = nextNewline === -1 ? code.length : nextNewline;
+  const lines = code.slice(lineStart, lineEnd).split("\n");
+  const nonBlank = lines.filter((line) => !/^\s*$/.test(line));
+  if (!nonBlank.length) return { code, start: anchor, end: focus };
+
+  const shouldUncomment = nonBlank.every((line) => /^\s*#/.test(line));
+  const edits: TextEdit[] = [];
+  let offset = lineStart;
+  for (const line of lines) {
+    if (!/^\s*$/.test(line)) {
+      if (shouldUncomment) {
+        const match = line.match(/^(\s*)# ?/)!;
+        edits.push({
+          at: offset + match[1].length,
+          remove: match[0].length - match[1].length,
+          insert: "",
+        });
+      } else {
+        const indentation = line.match(/^\s*/)?.[0].length ?? 0;
+        edits.push({ at: offset + indentation, remove: 0, insert: "# " });
+      }
+    }
+    offset += line.length + 1;
+  }
+
+  let nextCode = "";
+  let cursor = 0;
+  for (const edit of edits) {
+    nextCode += code.slice(cursor, edit.at) + edit.insert;
+    cursor = edit.at + edit.remove;
+  }
+  nextCode += code.slice(cursor);
+
+  const collapsed = anchor === focus;
+  const map = (value: number) =>
+    mapOffsetThroughEdits(value, edits, collapsed || value === high);
+  return { code: nextCode, start: map(anchor), end: map(focus) };
+}
+
 function detectKind(filename: string): FileKind {
   const ext = filename.slice(filename.lastIndexOf(".")).toLowerCase();
   if (GCODE_EXT.has(ext)) return "gcode";
@@ -317,10 +391,37 @@ export function CodeEditor({
       }
     });
     // Overtype handler must fire before CodeJar's keydown (capture phase)
+    const handleYamlCommentShortcut = (event: KeyboardEvent) => {
+      if (
+        kind !== "yaml" ||
+        (!event.metaKey && !event.ctrlKey) ||
+        (event.key !== "/" && event.code !== "Slash")
+      )
+        return;
+      event.preventDefault();
+      const position = jar.save();
+      const code = jar.toString();
+      const toggled = toggleYamlLineComments(
+        code,
+        position.start,
+        position.end,
+      );
+      if (toggled.code === code) return;
+      jar.recordHistory();
+      jar.updateCode(toggled.code);
+      jar.restore({
+        start: toggled.start,
+        end: toggled.end,
+        dir: position.dir,
+      });
+      jar.recordHistory();
+    };
     el.addEventListener("keydown", handleOvertype, true);
+    el.addEventListener("keydown", handleYamlCommentShortcut, true);
     jarRef.current = jar;
     return () => {
       el.removeEventListener("keydown", handleOvertype, true);
+      el.removeEventListener("keydown", handleYamlCommentShortcut, true);
       jar.destroy();
     };
   }, [content, kind, makeHighlighter, view]);
