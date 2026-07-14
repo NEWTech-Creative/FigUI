@@ -12,6 +12,7 @@ let statusPollTimer: ReturnType<typeof setInterval> | null = null
 let gcStatePollTimer: ReturnType<typeof setInterval> | null = null
 let pendingPingOks = 0
 let backgroundTrafficSuspensions = 0
+let responseTrafficSuspensions = 0
 
 interface SilentResponseMatcher {
   starts: (line: string) => boolean
@@ -283,7 +284,7 @@ function closeCurrentSocket() {
 }
 
 function startPing() {
-  if (backgroundTrafficSuspensions > 0) return
+  if (backgroundTrafficSuspensions > 0 || responseTrafficSuspensions > 0) return
   stopPing()
   pingTimer = setInterval(() => {
     if (socket?.readyState !== WebSocket.OPEN) return
@@ -321,7 +322,7 @@ function stopStatusPoll() {
 }
 
 function startGcStatePoll() {
-  if (backgroundTrafficSuspensions > 0) return
+  if (backgroundTrafficSuspensions > 0 || responseTrafficSuspensions > 0) return
   stopGcStatePoll()
   const tick = () => {
     if (socket?.readyState !== WebSocket.OPEN) return
@@ -411,7 +412,13 @@ function handleLine(line: string) {
   if (line.startsWith('currentID:')) { pageId = line.slice(10); persistPageId(); return }
   if (line.startsWith('CURRENT_ID:')) { pageId = line.slice(11); persistPageId(); return }
   if (line.startsWith('activeID:') || line.startsWith('ACTIVE_ID:')) return
-  if (line === 'PING' || line.startsWith('PING:')) return
+  if (line === 'PING' || line.startsWith('PING:')) {
+    // Async FluidNC builds answer a ping by echoing it instead of returning
+    // `ok`. Keep the accounting balanced or later G-code acknowledgements
+    // will be incorrectly discarded as stale ping responses.
+    if (pendingPingOks > 0) pendingPingOks--
+    return
+  }
 
   const isSilentLine = consumeSilentLine(line)
 
@@ -510,6 +517,17 @@ export function sendRaw(cmd: string) {
   return socket?.readyState === WebSocket.OPEN
 }
 
+/** Send one acknowledged program block immediately while response traffic is suspended. */
+export function sendStreamRaw(cmd: string) {
+  if (socket?.readyState !== WebSocket.OPEN) return false
+  try {
+    socket.send(new TextEncoder().encode(cmd + '\n'))
+    return true
+  } catch {
+    return false
+  }
+}
+
 export function sendSilentRaw(cmd: string, silentResponseMatcher: SilentResponseMatcher) {
   queueCommand({
     command: cmd,
@@ -543,6 +561,33 @@ export function resumeBackgroundTraffic() {
   startStatusPoll()
   startGcStatePoll()
   startLivenessWatchdog()
+}
+
+/**
+ * Pause only background commands that generate `ok` responses. Realtime
+ * status polling remains active, which lets an acknowledged G-code stream
+ * track Run/Hold/Idle without mistaking query acknowledgements for job lines.
+ */
+export function suspendResponseTraffic() {
+  responseTrafficSuspensions++
+  stopPing()
+  stopGcStatePoll()
+  // Any ping old enough to still be counted has either already answered via
+  // an echo or will settle before an exclusive stream sends its first block.
+  // It must not be allowed to claim a program block's acknowledgement.
+  pendingPingOks = 0
+}
+
+export function resumeResponseTraffic() {
+  responseTrafficSuspensions = Math.max(0, responseTrafficSuspensions - 1)
+  if (
+    responseTrafficSuspensions > 0
+    || backgroundTrafficSuspensions > 0
+    || socket?.readyState !== WebSocket.OPEN
+  ) return
+  connectionHealth.lastResponseTime = Date.now()
+  startPing()
+  startGcStatePoll()
 }
 
 
@@ -656,6 +701,7 @@ export function isSocketOpen(): boolean {
 export function disconnect() {
   generation++
   backgroundTrafficSuspensions = 0
+  responseTrafficSuspensions = 0
   stopPing()
   stopLivenessWatchdog()
   stopStatusPoll()

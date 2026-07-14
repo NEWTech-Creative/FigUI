@@ -21,8 +21,9 @@ interface GCodeStore {
   fileName: string | null
   sourceText: string | null
   restartSource: {
-    path: string
+    path: string | null
     fileName: string
+    sourceText?: string
     requestedLine: number
     resumeLine: number
   } | null

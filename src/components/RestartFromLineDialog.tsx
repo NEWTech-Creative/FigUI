@@ -6,7 +6,7 @@ import { useGCodeStore } from '../store/gcode'
 
 interface Props {
   sourceText: string
-  sourcePath: string
+  sourcePath: string | null
   sourceName: string
   defaultSafeMachineZMm: number | null
   onClose: () => void
@@ -136,21 +136,25 @@ export function RestartFromLineDialog({
     try {
       const generated = buildRestartProgram(sourceText, analysis, {
         sourceName,
-        sourcePath,
+        sourcePath: sourcePath ?? `local:${sourceName}`,
         safeMachineZMm: safeZ,
         clearanceMm: clearance,
         approachFeedMmPerMin: approachFeed,
       })
-      const { directory } = splitPath(sourcePath)
-      const generatedPath = `${directory}${generatedName}`
-      await saveFileContent(directory, generatedName, generated, 'sd')
+      let generatedPath: string | null = null
+      if (sourcePath) {
+        const { directory } = splitPath(sourcePath)
+        generatedPath = `${directory}${generatedName}`
+        await saveFileContent(directory, generatedName, generated, 'sd')
+        window.dispatchEvent(new Event('files:changed'))
+      }
       await loadFromText(generated, generatedName, generatedPath, {
         path: sourcePath,
         fileName: sourceName,
+        sourceText: sourcePath ? undefined : sourceText,
         requestedLine: analysis.requestedLine,
         resumeLine: analysis.resumeLine,
       })
-      window.dispatchEvent(new Event('files:changed'))
       onClose()
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : 'Could not prepare the restart file.')
