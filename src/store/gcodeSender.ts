@@ -1,20 +1,28 @@
 import { create } from 'zustand'
 import { useMachineStore } from '../store'
 import {
+  getLastDisconnectReason,
   isSocketOpen,
   onLine,
+  onSessionTaken,
   onSoftReset,
   resumeResponseTraffic,
+  sendExclusiveStreamPing,
+  sendRealtimeNow,
   sendStreamRaw,
-  sendRealtime,
   suspendResponseTraffic,
 } from '../lib/ws'
 
 export type SenderPhase = 'idle' | 'streaming' | 'paused' | 'draining' | 'completed' | 'aborted' | 'error'
 
+type StreamBarrier = 'pause' | 'tool-change' | 'end' | null
+
 interface StreamBlock {
   command: string
   sourceLine: number
+  wireBytes: number
+  barrier: StreamBarrier
+  hasMotion: boolean
 }
 
 interface SenderState {
@@ -24,6 +32,7 @@ interface SenderState {
   totalSourceLines: number
   completedBlocks: number
   totalBlocks: number
+  notice: string | null
   error: string | null
   start: (text: string, fileName: string) => boolean
   pause: () => void
@@ -32,13 +41,36 @@ interface SenderState {
   dismiss: () => void
 }
 
+// FluidNC advertises a 256-byte WebSocket receive budget. A 128-byte sender
+// window (the same conservative range used by mature GRBL senders) leaves
+// ample room for WebSocket/task scheduling jitter on the ESP32.
+const STREAM_WINDOW_BYTES = 128
+const MAX_COMMAND_BYTES = 240
+const TOOL_CHANGE_SETTLE_MS = 300
+const DRAIN_IDLE_GRACE_MS = 1500
+const PROGRESS_PUBLISH_MS = 100
+const STREAM_KEEPALIVE_MS = 4000
+
 let blocks: StreamBlock[] = []
+let pendingBlocks: StreamBlock[] = []
 let nextBlock = 0
-let awaitingResponse = false
+let inFlightBytes = 0
 let ownsExclusiveTraffic = false
 let completionTimer: ReturnType<typeof setTimeout> | null = null
-let responseTimer: ReturnType<typeof setTimeout> | null = null
+let settleTimer: ReturnType<typeof setTimeout> | null = null
+let resumeTimer: ReturnType<typeof setTimeout> | null = null
+let progressTimer: ReturnType<typeof setTimeout> | null = null
+let keepaliveTimer: ReturnType<typeof setTimeout> | null = null
 let resumePending = false
+let keepaliveDue = false
+let keepaliveInFlight = false
+let acknowledgedBlocks = 0
+let lastAcknowledgedLine: number | null = null
+let programHasMotion = false
+let sawBusyState = false
+let drainStartedAt = 0
+let endWasSynchronized = false
+let wakeLock: { release: () => Promise<void> } | null = null
 
 function stripComments(raw: string) {
   let result = ''
@@ -52,27 +84,98 @@ function stripComments(raw: string) {
   return result.trim()
 }
 
-export function buildStreamBlocks(text: string): { blocks: StreamBlock[]; totalSourceLines: number } {
+function classifyBlock(executable: string): { barrier: StreamBarrier; hasMotion: boolean } {
+  const codes = new Set<number>()
+  const mWords = executable.matchAll(/M\s*([+-]?(?:\d+(?:\.\d*)?|\.\d+))/gi)
+  for (const match of mWords) codes.add(Number(match[1]))
+  const barrier: StreamBarrier = codes.has(2) || codes.has(30)
+    ? 'end'
+    : codes.has(0)
+      ? 'pause'
+      : codes.has(6) ? 'tool-change' : null
+
+  // Axis-only modal moves are motion too. A false positive only adds a short,
+  // safe Idle confirmation at EOF; a false negative could complete too early.
+  const hasMotion = /G\s*0*[0123](?:\.0*)?(?=[A-Z\s]|$)/i.test(executable)
+    || /[XYZABC]\s*[+-]?(?:\d|\.)/i.test(executable)
+  return { barrier, hasMotion }
+}
+
+export function buildStreamBlocks(text: string): {
+  blocks: StreamBlock[]
+  totalSourceLines: number
+  ignoredAfterEnd: number
+} {
   const lines = text.replace(/\r\n?/g, '\n').split('\n')
   if (lines.length > 1 && lines[lines.length - 1] === '') lines.pop()
   const streamBlocks: StreamBlock[] = []
+  let endSeen = false
+  let ignoredAfterEnd = 0
+
   lines.forEach((raw, index) => {
     const executable = stripComments(raw)
     if (!executable || executable === '%') return
+    if (endSeen) {
+      ignoredAfterEnd++
+      return
+    }
     const command = raw.trim()
-    streamBlocks.push({ command, sourceLine: index + 1 })
+    const classification = classifyBlock(executable)
+    streamBlocks.push({
+      command,
+      sourceLine: index + 1,
+      wireBytes: new TextEncoder().encode(command).byteLength + 1,
+      ...classification,
+    })
+    if (classification.barrier === 'end') endSeen = true
   })
-  return { blocks: streamBlocks, totalSourceLines: Math.max(1, lines.length) }
+  return { blocks: streamBlocks, totalSourceLines: Math.max(1, lines.length), ignoredAfterEnd }
 }
 
-function clearCompletionTimer() {
+function clearTimers() {
   if (completionTimer) clearTimeout(completionTimer)
+  if (settleTimer) clearTimeout(settleTimer)
+  if (resumeTimer) clearTimeout(resumeTimer)
+  if (progressTimer) clearTimeout(progressTimer)
+  if (keepaliveTimer) clearTimeout(keepaliveTimer)
   completionTimer = null
+  settleTimer = null
+  resumeTimer = null
+  progressTimer = null
+  keepaliveTimer = null
 }
 
-function clearResponseTimer() {
-  if (responseTimer) clearTimeout(responseTimer)
-  responseTimer = null
+function publishProgress() {
+  if (progressTimer) clearTimeout(progressTimer)
+  progressTimer = null
+  useGCodeSenderStore.setState({
+    completedBlocks: acknowledgedBlocks,
+    acceptedLine: lastAcknowledgedLine,
+  })
+}
+
+function recordAcknowledgment(block: StreamBlock, publishImmediately = false) {
+  acknowledgedBlocks++
+  lastAcknowledgedLine = block.sourceLine
+  if (publishImmediately) {
+    publishProgress()
+  } else if (!progressTimer) {
+    progressTimer = setTimeout(publishProgress, PROGRESS_PUBLISH_MS)
+  }
+}
+
+async function acquireWakeLock() {
+  if (wakeLock || document.visibilityState !== 'visible') return
+  const nav = navigator as Navigator & {
+    wakeLock?: { request: (type: 'screen') => Promise<{ release: () => Promise<void> }> }
+  }
+  try { wakeLock = await nav.wakeLock?.request('screen') ?? null } catch { /* unsupported or denied */ }
+}
+
+function releaseWakeLock() {
+  const current = wakeLock
+  wakeLock = null
+  if (current) void current.release().catch(() => undefined)
 }
 
 function releaseExclusiveTraffic() {
@@ -81,51 +184,107 @@ function releaseExclusiveTraffic() {
   resumeResponseTraffic()
 }
 
+function scheduleStreamKeepalive() {
+  if (keepaliveTimer) clearTimeout(keepaliveTimer)
+  keepaliveTimer = setTimeout(() => {
+    keepaliveTimer = null
+    keepaliveDue = true
+    void serviceStreamKeepalive()
+  }, STREAM_KEEPALIVE_MS)
+}
+
+async function serviceStreamKeepalive() {
+  if (!ownsExclusiveTraffic || keepaliveInFlight || !keepaliveDue || pendingBlocks.length > 0) return
+  const phase = useGCodeSenderStore.getState().phase
+  if (!['streaming', 'paused', 'draining'].includes(phase)) return
+
+  keepaliveDue = false
+  keepaliveInFlight = true
+  await sendExclusiveStreamPing()
+  keepaliveInFlight = false
+  if (!ownsExclusiveTraffic) return
+  scheduleStreamKeepalive()
+  if (useGCodeSenderStore.getState().phase === 'streaming') pump()
+}
+
+function disconnectedMessage(action = 'streaming') {
+  const reason = getLastDisconnectReason()
+  return `Controller disconnected while ${action}${reason ? `: ${reason}` : ''}.`
+}
+
 function finish(phase: 'completed' | 'aborted' | 'error', error: string | null = null) {
-  clearCompletionTimer()
-  clearResponseTimer()
-  awaitingResponse = false
+  publishProgress()
+  clearTimers()
+  pendingBlocks = []
+  inFlightBytes = 0
   resumePending = false
+  keepaliveDue = false
+  keepaliveInFlight = false
   releaseExclusiveTraffic()
+  releaseWakeLock()
   useGCodeSenderStore.setState({ phase, error })
 }
 
+function enterDraining(synchronizedEnd = false) {
+  if (useGCodeSenderStore.getState().phase === 'draining') return
+  drainStartedAt = Date.now()
+  endWasSynchronized = synchronizedEnd
+  useGCodeSenderStore.setState({ phase: 'draining' })
+  scheduleDrainCheck()
+}
+
 function scheduleDrainCheck() {
-  clearCompletionTimer()
+  if (completionTimer) clearTimeout(completionTimer)
   completionTimer = setTimeout(() => {
     const sender = useGCodeSenderStore.getState()
-    const machine = useMachineStore.getState()
     if (sender.phase !== 'draining') return
-    if (machine.status.state === 'Idle') finish('completed')
-    else scheduleDrainCheck()
-  }, 300)
+    const machineState = useMachineStore.getState().status.state
+    const elapsed = Date.now() - drainStartedAt
+    if (machineState === 'Idle' && (
+      sawBusyState
+      || endWasSynchronized
+      || !programHasMotion
+      || elapsed >= DRAIN_IDLE_GRACE_MS
+    )) {
+      finish('completed')
+      return
+    }
+    scheduleDrainCheck()
+  }, 200)
 }
 
 function pump() {
   const state = useGCodeSenderStore.getState()
-  if (state.phase !== 'streaming' || awaitingResponse) return
+  if (state.phase !== 'streaming') return
   if (!isSocketOpen()) {
-    finish('error', 'Controller disconnected while streaming.')
+    finish('error', disconnectedMessage())
     return
   }
-  if (nextBlock >= blocks.length) {
-    useGCodeSenderStore.setState({ phase: 'draining' })
-    scheduleDrainCheck()
+  if (keepaliveDue || keepaliveInFlight) {
+    void serviceStreamKeepalive()
     return
   }
 
-  const block = blocks[nextBlock]
-  awaitingResponse = true
-  if (!sendStreamRaw(block.command)) {
-    finish('error', 'Controller disconnected while streaming.')
-    return
+  while (nextBlock < blocks.length) {
+    const block = blocks[nextBlock]
+    const pendingBarrier = pendingBlocks.some(item => item.barrier !== null)
+    if (pendingBarrier) return
+    // Stop/tool/end commands must execute alone, after all earlier blocks have
+    // acknowledged, so FluidNC cannot read past a program-control boundary.
+    if (block.barrier && pendingBlocks.length > 0) return
+    if (pendingBlocks.length > 0 && inFlightBytes + block.wireBytes > STREAM_WINDOW_BYTES) return
+
+    if (!sendStreamRaw(block.command)) {
+      finish('error', disconnectedMessage())
+      return
+    }
+    pendingBlocks.push(block)
+    inFlightBytes += block.wireBytes
+    nextBlock++
+    if (block.barrier) return
   }
-  clearResponseTimer()
-  responseTimer = setTimeout(() => {
-    if (!awaitingResponse || blocks[nextBlock] !== block) return
-    sendRealtime(0x18)
-    finish('error', `File line ${block.sourceLine}: controller did not acknowledge the G-code block.`)
-  }, 30_000)
+
+  if (pendingBlocks.length === 0) enterDraining()
 }
 
 export const useGCodeSenderStore = create<SenderState>((set, get) => ({
@@ -135,6 +294,7 @@ export const useGCodeSenderStore = create<SenderState>((set, get) => ({
   totalSourceLines: 0,
   completedBlocks: 0,
   totalBlocks: 0,
+  notice: null,
   error: null,
 
   start: (text, fileName) => {
@@ -144,25 +304,34 @@ export const useGCodeSenderStore = create<SenderState>((set, get) => ({
 
     const built = buildStreamBlocks(text)
     if (built.blocks.length === 0) {
-      set({ phase: 'error', fileName, error: 'This file contains no executable G-code.' })
+      set({ phase: 'error', fileName, notice: null, error: 'This file contains no executable G-code.' })
       return false
     }
-    const oversized = built.blocks.find(block => new TextEncoder().encode(block.command).byteLength > 240)
+    const oversized = built.blocks.find(block => block.wireBytes - 1 > MAX_COMMAND_BYTES)
     if (oversized) {
       set({
         phase: 'error',
         fileName,
-        error: `File line ${oversized.sourceLine} exceeds the supported 240-byte controller line length.`,
+        notice: null,
+        error: `File line ${oversized.sourceLine} exceeds the supported ${MAX_COMMAND_BYTES}-byte controller line length.`,
       })
       return false
     }
 
     blocks = built.blocks
+    pendingBlocks = []
     nextBlock = 0
-    awaitingResponse = false
+    inFlightBytes = 0
     resumePending = false
-    clearCompletionTimer()
-    clearResponseTimer()
+    keepaliveDue = false
+    keepaliveInFlight = false
+    acknowledgedBlocks = 0
+    lastAcknowledgedLine = null
+    programHasMotion = blocks.some(block => block.hasMotion)
+    sawBusyState = false
+    drainStartedAt = 0
+    endWasSynchronized = false
+    clearTimers()
     suspendResponseTraffic()
     ownsExclusiveTraffic = true
     set({
@@ -172,58 +341,97 @@ export const useGCodeSenderStore = create<SenderState>((set, get) => ({
       totalSourceLines: built.totalSourceLines,
       completedBlocks: 0,
       totalBlocks: built.blocks.length,
+      notice: built.ignoredAfterEnd > 0
+        ? `${built.ignoredAfterEnd} executable line${built.ignoredAfterEnd === 1 ? '' : 's'} after M2/M30 will not be sent.`
+        : null,
       error: null,
     })
-    // Let any already-queued status/query response settle before the first block.
-    setTimeout(pump, 50)
+    void acquireWakeLock()
+    scheduleStreamKeepalive()
+    // Let a response to a query already on the wire settle before claiming the
+    // FIFO acknowledgement stream.
+    settleTimer = setTimeout(pump, 75)
     return true
   },
 
   pause: () => {
     if (get().phase !== 'streaming' && get().phase !== 'draining') return
-    sendRealtime(0x21)
+    sendRealtimeNow(0x21)
     resumePending = false
     set({ phase: 'paused' })
   },
 
   resume: () => {
     if (get().phase !== 'paused') return
-    sendRealtime(0x7e)
+    if (useMachineStore.getState().status.state === 'Door') return
+    if (!sendRealtimeNow(0x7e)) {
+      finish('error', disconnectedMessage('resuming the stream'))
+      return
+    }
     resumePending = true
-    const phase = nextBlock >= blocks.length && !awaitingResponse ? 'draining' : 'streaming'
-    set({ phase })
-    if (phase === 'streaming') pump()
-    else scheduleDrainCheck()
+    // Wait for Run so post-M0 blocks cannot overtake cycle start. The fallback
+    // covers an already-idle pause where FluidNC does not emit a Run report.
+    resumeTimer = setTimeout(() => {
+      if (!resumePending || useGCodeSenderStore.getState().phase !== 'paused') return
+      const machineState = useMachineStore.getState().status.state
+      if (machineState === 'Hold' || machineState === 'Door') {
+        resumePending = false
+        return
+      }
+      resumePending = false
+      const phase = nextBlock >= blocks.length && pendingBlocks.length === 0 ? 'draining' : 'streaming'
+      set({ phase })
+      if (phase === 'streaming') pump()
+      else { drainStartedAt = Date.now(); scheduleDrainCheck() }
+    }, 500)
   },
 
   abort: () => {
     if (!['streaming', 'paused', 'draining'].includes(get().phase)) return
-    sendRealtime(0x18)
+    sendRealtimeNow(0x18)
     finish('aborted')
   },
 
   dismiss: () => {
     if (['streaming', 'paused', 'draining'].includes(get().phase)) return
-    set({ phase: 'idle', fileName: null, acceptedLine: null, error: null })
+    set({ phase: 'idle', fileName: null, acceptedLine: null, notice: null, error: null })
   },
 }))
 
 onLine(line => {
-  if (!ownsExclusiveTraffic || !awaitingResponse) return
+  if (!ownsExclusiveTraffic || pendingBlocks.length === 0) return
   if (line === 'ok') {
-    clearResponseTimer()
-    awaitingResponse = false
-    const acknowledgedBlock = blocks[nextBlock]
-    nextBlock++
-    useGCodeSenderStore.setState({
-      completedBlocks: nextBlock,
-      acceptedLine: acknowledgedBlock?.sourceLine ?? null,
-    })
+    const acknowledged = pendingBlocks.shift()!
+    inFlightBytes = Math.max(0, inFlightBytes - acknowledged.wireBytes)
+    recordAcknowledgment(acknowledged, acknowledged.barrier !== null || nextBlock >= blocks.length)
+
+    if (acknowledged.barrier === 'pause') {
+      resumePending = false
+      useGCodeSenderStore.setState({ phase: 'paused' })
+      if (keepaliveDue) void serviceStreamKeepalive()
+      return
+    }
+    if (acknowledged.barrier === 'end') {
+      nextBlock = blocks.length
+      enterDraining(true)
+      if (keepaliveDue) void serviceStreamKeepalive()
+      return
+    }
+    if (acknowledged.barrier === 'tool-change') {
+      settleTimer = setTimeout(() => {
+        if (keepaliveDue) void serviceStreamKeepalive()
+        else pump()
+      }, TOOL_CHANGE_SETTLE_MS)
+      return
+    }
+    if (pendingBlocks.length === 0 && keepaliveDue) {
+      void serviceStreamKeepalive()
+      return
+    }
     pump()
   } else if (line === 'error' || line.startsWith('error:') || line.startsWith('ALARM:') || line.includes('[MSG:ERR')) {
-    const sourceLine = blocks[nextBlock]?.sourceLine
-    // Do not let already-planned motion continue after a rejected program line.
-    sendRealtime(0x18)
+    const sourceLine = pendingBlocks[0]?.sourceLine
+    sendRealtimeNow(0x18)
     finish('error', `${sourceLine ? `File line ${sourceLine}: ` : ''}${line}`)
   }
 })
@@ -232,26 +440,56 @@ onSoftReset(() => {
   if (ownsExclusiveTraffic) finish('aborted')
 })
 
+onSessionTaken(() => {
+  if (!ownsExclusiveTraffic) return
+  sendRealtimeNow(0x21)
+  finish('error', 'Another FluidUI page took control. The local stream was feed-held for safety.')
+})
+
 useMachineStore.subscribe((state, previous) => {
   const sender = useGCodeSenderStore.getState()
   if (!['streaming', 'paused', 'draining'].includes(sender.phase)) return
   if (previous.connected && !state.connected) {
-    finish('error', 'Controller disconnected while streaming.')
+    finish('error', disconnectedMessage())
     return
   }
   if (state.status.state === 'Alarm') {
     finish('error', `Controller alarm${state.status.alarmCode ? ` ${state.status.alarmCode}` : ''}.`)
     return
   }
-  if (state.status.state === 'Hold' && sender.phase !== 'paused' && !resumePending) {
+  if (state.status.state !== 'Idle') sawBusyState = true
+  if ((state.status.state === 'Hold' || state.status.state === 'Door') && sender.phase !== 'paused' && !resumePending) {
     useGCodeSenderStore.setState({ phase: 'paused' })
   } else if (state.status.state === 'Run') {
     resumePending = false
+    if (resumeTimer) clearTimeout(resumeTimer)
+    resumeTimer = null
     if (sender.phase === 'paused') {
-      const phase = nextBlock >= blocks.length && !awaitingResponse ? 'draining' : 'streaming'
+      const phase = nextBlock >= blocks.length && pendingBlocks.length === 0 ? 'draining' : 'streaming'
       useGCodeSenderStore.setState({ phase })
       if (phase === 'streaming') pump()
-      else scheduleDrainCheck()
+      else { drainStartedAt = Date.now(); scheduleDrainCheck() }
     }
+  }
+})
+
+window.addEventListener('beforeunload', event => {
+  const phase = useGCodeSenderStore.getState().phase
+  if (!['streaming', 'paused', 'draining'].includes(phase)) return
+  event.preventDefault()
+  event.returnValue = ''
+})
+
+window.addEventListener('pagehide', () => {
+  const phase = useGCodeSenderStore.getState().phase
+  if (['streaming', 'paused', 'draining'].includes(phase)) sendRealtimeNow(0x21)
+})
+
+document.addEventListener('visibilitychange', () => {
+  const phase = useGCodeSenderStore.getState().phase
+  if (document.visibilityState !== 'visible') {
+    releaseWakeLock()
+  } else if (['streaming', 'paused', 'draining'].includes(phase)) {
+    void acquireWakeLock()
   }
 })

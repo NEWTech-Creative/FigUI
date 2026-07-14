@@ -1528,6 +1528,7 @@ export function GCodeViewer({ className, isTablet, showOverrides, fitToViewSigna
   const senderCompletedBlocks = useGCodeSenderStore(s => s.completedBlocks)
   const senderTotalBlocks = useGCodeSenderStore(s => s.totalBlocks)
   const senderAcceptedLine = useGCodeSenderStore(s => s.acceptedLine)
+  const senderNotice = useGCodeSenderStore(s => s.notice)
   const senderError = useGCodeSenderStore(s => s.error)
   const startSender = useGCodeSenderStore(s => s.start)
   const pauseSender = useGCodeSenderStore(s => s.pause)
@@ -2628,6 +2629,9 @@ export function GCodeViewer({ className, isTablet, showOverrides, fitToViewSigna
                 <div className="h-full rounded-full bg-info transition-all" style={{ width: `${senderProgress}%` }} />
               </div>
             )}
+            {senderNotice && (
+              <div className="mt-2 text-[11px] text-warning">{senderNotice}</div>
+            )}
           </div>
         )}
 
@@ -2707,7 +2711,12 @@ export function GCodeViewer({ className, isTablet, showOverrides, fitToViewSigna
             </button>
           )}
           {isJobHeld && (
-            <button className={`btn btn-ok-solid gap-1.5 ${isTablet ? 'text-xl py-3' : 'text-sm'} justify-center flex-1`} onClick={() => senderPhase === 'paused' ? resumeSender() : sendRealtime(0x7e)}>
+            <button
+              className={`btn btn-ok-solid gap-1.5 ${isTablet ? 'text-xl py-3' : 'text-sm'} justify-center flex-1`}
+              onClick={() => senderPhase === 'paused' ? resumeSender() : sendRealtime(0x7e)}
+              disabled={senderPhase === 'paused' && status.state === 'Door'}
+              title={senderPhase === 'paused' && status.state === 'Door' ? 'Close the safety door before resuming' : undefined}
+            >
               <Play size={isTablet ? 18 : 13} />
               Resume
             </button>

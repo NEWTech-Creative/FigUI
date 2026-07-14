@@ -5,12 +5,15 @@ import { sendCommand } from './http'
 let socket: WebSocket | null = null
 
 let generation = 0
+let lastDisconnectReason: string | null = null
 
 let pingTimer: ReturnType<typeof setInterval> | null = null
 let livenessTimer: ReturnType<typeof setInterval> | null = null
 let statusPollTimer: ReturnType<typeof setInterval> | null = null
 let gcStatePollTimer: ReturnType<typeof setInterval> | null = null
 let pendingPingOks = 0
+let exclusivePingResolve: ((received: boolean) => void) | null = null
+let exclusivePingTimer: ReturnType<typeof setTimeout> | null = null
 let backgroundTrafficSuspensions = 0
 let responseTrafficSuspensions = 0
 
@@ -144,6 +147,8 @@ type LineHandler = (line: string) => void
 const lineHandlers = new Set<LineHandler>()
 type SoftResetHandler = () => void
 const softResetHandlers = new Set<SoftResetHandler>()
+type SessionTakenHandler = () => void
+const sessionTakenHandlers = new Set<SessionTakenHandler>()
 
 export const getPageId = () => pageId
 
@@ -155,6 +160,12 @@ export function onLine(fn: LineHandler): () => void {
 export function onSoftReset(fn: SoftResetHandler): () => void {
   softResetHandlers.add(fn)
   return () => { softResetHandlers.delete(fn) }
+}
+
+/** Called when FluidNC reports that another browser page became the active UI. */
+export function onSessionTaken(fn: SessionTakenHandler): () => void {
+  sessionTakenHandlers.add(fn)
+  return () => { sessionTakenHandlers.delete(fn) }
 }
 
 const PING_INTERVAL_MS = 5000
@@ -201,6 +212,7 @@ export function connect(host: string): Promise<void> {
       clearTimeout(openTimeout)
 
       connectionHealth.lastResponseTime = Date.now()
+      lastDisconnectReason = null
       connectionHealth.missedPings = 0
       updateConnectionHealth()
 
@@ -214,8 +226,11 @@ export function connect(host: string): Promise<void> {
       resolve()
     }
 
-    ws.onclose = () => {
+    ws.onclose = (event) => {
       if (myGen !== generation) return
+      lastDisconnectReason = event.reason
+        ? `WebSocket closed (${event.code}: ${event.reason})`
+        : `WebSocket closed (${event.code})`
       handleDisconnect()
       if (!settled) {
         settled = true
@@ -261,6 +276,7 @@ function handleDisconnect() {
   pendingSilentResponses.length = 0
   activeSilentResponse = null
   pendingPingOks = 0
+  settleExclusivePing(false)
   // Drop queued commands — sending them on a future reconnect would be
   // surprising (e.g. queued jog moves shouldn't auto-resume).
   commandQueue.length = 0
@@ -354,6 +370,7 @@ function startLivenessWatchdog() {
       // Bump generation first so the impending onclose is ignored as stale,
       // then run the cleanup ourselves.
       generation++
+      lastDisconnectReason = `No controller traffic for ${Math.round(LIVENESS_TIMEOUT_MS / 1000)} seconds`
       try { ws.close() } catch { /* noop */ }
       socket = null
       handleDisconnect()
@@ -411,8 +428,12 @@ function handleLine(line: string) {
 
   if (line.startsWith('currentID:')) { pageId = line.slice(10); persistPageId(); return }
   if (line.startsWith('CURRENT_ID:')) { pageId = line.slice(11); persistPageId(); return }
-  if (line.startsWith('activeID:') || line.startsWith('ACTIVE_ID:')) return
+  if (line.startsWith('activeID:') || line.startsWith('ACTIVE_ID:')) {
+    sessionTakenHandlers.forEach(fn => fn())
+    return
+  }
   if (line === 'PING' || line.startsWith('PING:')) {
+    if (exclusivePingResolve && line.startsWith('PING:')) settleExclusivePing(true)
     // Async FluidNC builds answer a ping by echoing it instead of returning
     // `ok`. Keep the accounting balanced or later G-code acknowledgements
     // will be incorrectly discarded as stale ping responses.
@@ -421,6 +442,14 @@ function handleLine(line: string) {
   }
 
   const isSilentLine = consumeSilentLine(line)
+
+  // Some older FluidNC builds acknowledge an application ping with `ok`
+  // instead of the modern PING echo. Exclusive stream pings are only sent
+  // after the program FIFO drains, so this response is unambiguous.
+  if (exclusivePingResolve && (line === 'ok' || line === 'error')) {
+    settleExclusivePing(true)
+    return
+  }
 
   if (line.startsWith('<') && line.endsWith('>')) {
     const parsed = parseStatusReport(line)
@@ -526,6 +555,31 @@ export function sendStreamRaw(cmd: string) {
   } catch {
     return false
   }
+}
+
+function settleExclusivePing(received: boolean) {
+  if (exclusivePingTimer) clearTimeout(exclusivePingTimer)
+  exclusivePingTimer = null
+  const resolve = exclusivePingResolve
+  exclusivePingResolve = null
+  resolve?.(received)
+}
+
+/**
+ * Send FluidNC's application keepalive while an exclusive G-code stream owns
+ * normal `ok` responses. The sender guarantees its program FIFO is empty.
+ */
+export function sendExclusiveStreamPing(timeoutMs = 2000): Promise<boolean> {
+  if (socket?.readyState !== WebSocket.OPEN || exclusivePingResolve) return Promise.resolve(false)
+  return new Promise(resolve => {
+    exclusivePingResolve = resolve
+    exclusivePingTimer = setTimeout(() => settleExclusivePing(false), timeoutMs)
+    try {
+      socket!.send(`PING:${pageId}\n`)
+    } catch {
+      settleExclusivePing(false)
+    }
+  })
 }
 
 export function sendSilentRaw(cmd: string, silentResponseMatcher: SilentResponseMatcher) {
@@ -634,6 +688,18 @@ export function sendRealtime(byte: number) {
   return socket?.readyState === WebSocket.OPEN
 }
 
+/** Best-effort immediate realtime byte, for stream ordering and page lifecycle safety. */
+export function sendRealtimeNow(byte: number) {
+  if (socket?.readyState !== WebSocket.OPEN) return false
+  try {
+    socket.send(Uint8Array.of(byte))
+    if (byte === 0x18) softResetHandlers.forEach(handler => handler())
+    return true
+  } catch {
+    return false
+  }
+}
+
 export function sendPriorityCancel(): Promise<boolean> {
   return new Promise((resolve) => {
     let resolved = false
@@ -698,6 +764,10 @@ export function isSocketOpen(): boolean {
   return socket?.readyState === WebSocket.OPEN
 }
 
+export function getLastDisconnectReason(): string | null {
+  return lastDisconnectReason
+}
+
 export function disconnect() {
   generation++
   backgroundTrafficSuspensions = 0
@@ -708,6 +778,7 @@ export function disconnect() {
   stopGcStatePoll()
   stopCommandProcessor()
   pendingSilentResponses.length = 0
+  settleExclusivePing(false)
   activeSilentResponse = null
   pendingAcknowledgments.forEach(({ timeoutId }) => clearTimeout(timeoutId))
   pendingAcknowledgments.clear()
