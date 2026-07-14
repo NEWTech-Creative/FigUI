@@ -3,12 +3,13 @@ import { useMachineStore } from '../store'
 import { useGCodeStore } from './gcode'
 import {
   getLastDisconnectReason,
+  isResponseTrafficQuiescent,
   isSocketOpen,
+  isStreamTransportWritable,
   onLine,
   onSessionTaken,
   onSoftReset,
   resumeResponseTraffic,
-  sendExclusiveStreamPing,
   sendRealtimeNow,
   sendStreamRaw,
   suspendResponseTraffic,
@@ -45,18 +46,21 @@ interface SenderState {
   dismiss: () => void
 }
 
-// FluidNC advertises a 256-byte WebSocket receive budget. A 128-byte sender
-// window (the same conservative range used by mature GRBL senders) leaves
-// ample room for WebSocket/task scheduling jitter on the ESP32.
-const STREAM_WINDOW_BYTES = 128
+const STREAM_WINDOW_BYTES = 127
 const MAX_COMMAND_BYTES = 240
 const TOOL_CHANGE_SETTLE_MS = 300
 const DRAIN_IDLE_GRACE_MS = 1500
 const PROGRESS_PUBLISH_MS = 100
-const STREAM_KEEPALIVE_MS = 4000
+const STREAM_PREPARE_TIMEOUT_MS = 5000
+const TRANSPORT_RETRY_MS = 10
+const LOST_ACK_IDLE_GRACE_MS = 3000
+
+interface PendingBlock {
+  block: StreamBlock
+}
 
 let blocks: StreamBlock[] = []
-let pendingBlocks: StreamBlock[] = []
+let pendingBlocks: PendingBlock[] = []
 let nextBlock = 0
 let inFlightBytes = 0
 let ownsExclusiveTraffic = false
@@ -64,10 +68,11 @@ let completionTimer: ReturnType<typeof setTimeout> | null = null
 let settleTimer: ReturnType<typeof setTimeout> | null = null
 let resumeTimer: ReturnType<typeof setTimeout> | null = null
 let progressTimer: ReturnType<typeof setTimeout> | null = null
-let keepaliveTimer: ReturnType<typeof setTimeout> | null = null
+let pumpTimer: ReturnType<typeof setTimeout> | null = null
+let acknowledgmentTimer: ReturnType<typeof setTimeout> | null = null
 let resumePending = false
-let keepaliveDue = false
-let keepaliveInFlight = false
+let responseChannelReady = false
+let pendingIdleSince = 0
 let acknowledgedBlocks = 0
 let lastAcknowledgedLine: number | null = null
 let programHasMotion = false
@@ -141,12 +146,14 @@ function clearTimers() {
   if (settleTimer) clearTimeout(settleTimer)
   if (resumeTimer) clearTimeout(resumeTimer)
   if (progressTimer) clearTimeout(progressTimer)
-  if (keepaliveTimer) clearTimeout(keepaliveTimer)
+  if (pumpTimer) clearTimeout(pumpTimer)
+  if (acknowledgmentTimer) clearTimeout(acknowledgmentTimer)
   completionTimer = null
   settleTimer = null
   resumeTimer = null
   progressTimer = null
-  keepaliveTimer = null
+  pumpTimer = null
+  acknowledgmentTimer = null
 }
 
 function publishProgress() {
@@ -188,29 +195,6 @@ function releaseExclusiveTraffic() {
   resumeResponseTraffic()
 }
 
-function scheduleStreamKeepalive() {
-  if (keepaliveTimer) clearTimeout(keepaliveTimer)
-  keepaliveTimer = setTimeout(() => {
-    keepaliveTimer = null
-    keepaliveDue = true
-    void serviceStreamKeepalive()
-  }, STREAM_KEEPALIVE_MS)
-}
-
-async function serviceStreamKeepalive() {
-  if (!ownsExclusiveTraffic || keepaliveInFlight || !keepaliveDue || pendingBlocks.length > 0) return
-  const phase = useGCodeSenderStore.getState().phase
-  if (!['streaming', 'paused', 'draining'].includes(phase)) return
-
-  keepaliveDue = false
-  keepaliveInFlight = true
-  await sendExclusiveStreamPing()
-  keepaliveInFlight = false
-  if (!ownsExclusiveTraffic) return
-  scheduleStreamKeepalive()
-  if (useGCodeSenderStore.getState().phase === 'streaming') pump()
-}
-
 function disconnectedMessage(action = 'streaming') {
   const reason = getLastDisconnectReason()
   return `Controller disconnected while ${action}${reason ? `: ${reason}` : ''}.`
@@ -227,8 +211,8 @@ function finish(phase: 'completed' | 'aborted' | 'error', error: string | null =
   pendingBlocks = []
   inFlightBytes = 0
   resumePending = false
-  keepaliveDue = false
-  keepaliveInFlight = false
+  responseChannelReady = false
+  pendingIdleSince = 0
   releaseExclusiveTraffic()
   releaseWakeLock()
   useGCodeSenderStore.setState({ phase, error, failureLine, failureLineSource })
@@ -262,21 +246,81 @@ function scheduleDrainCheck() {
   }, 200)
 }
 
+function schedulePump(delay = TRANSPORT_RETRY_MS) {
+  if (pumpTimer) return
+  pumpTimer = setTimeout(() => {
+    pumpTimer = null
+    pump()
+  }, delay)
+}
+
+function scheduleAcknowledgmentCheck() {
+  if (acknowledgmentTimer) clearTimeout(acknowledgmentTimer)
+  acknowledgmentTimer = null
+  if (pendingBlocks.length === 0) return
+  acknowledgmentTimer = setTimeout(() => {
+    acknowledgmentTimer = null
+    const sender = useGCodeSenderStore.getState()
+    if (!ownsExclusiveTraffic || !['streaming', 'paused', 'draining'].includes(sender.phase)) return
+    if (!isSocketOpen()) {
+      finish('error', disconnectedMessage())
+      return
+    }
+
+    // A Run/Hold/Door block can legitimately wait a long time for planner
+    // space. Idle with an outstanding block cannot: the controller has
+    // finished everything it accepted, so its terminal response was lost.
+    const machineState = useMachineStore.getState().status.state
+    if (machineState !== 'Idle') {
+      pendingIdleSince = 0
+    } else if (pendingIdleSince === 0) {
+      pendingIdleSince = Date.now()
+    } else if (Date.now() - pendingIdleSince >= LOST_ACK_IDLE_GRACE_MS) {
+      const oldest = pendingBlocks[0]
+      finish('error', `File line ${oldest.block.sourceLine}: controller stopped acknowledging the stream while the WebSocket remained open.`)
+      return
+    }
+    scheduleAcknowledgmentCheck()
+  }, 500)
+}
+
+function waitForExclusiveResponseChannel(startedAt: number) {
+  if (!ownsExclusiveTraffic || useGCodeSenderStore.getState().phase !== 'streaming') return
+  if (!isSocketOpen()) {
+    finish('error', disconnectedMessage('preparing the stream'))
+    return
+  }
+  if (isResponseTrafficQuiescent() && useMachineStore.getState().status.state === 'Idle') {
+    responseChannelReady = true
+    pump()
+    return
+  }
+  if (Date.now() - startedAt >= STREAM_PREPARE_TIMEOUT_MS) {
+    finish('error', 'Could not start the stream because an earlier controller command did not finish.')
+    return
+  }
+  settleTimer = setTimeout(() => {
+    settleTimer = null
+    waitForExclusiveResponseChannel(startedAt)
+  }, 25)
+}
+
 function pump() {
   const state = useGCodeSenderStore.getState()
   if (state.phase !== 'streaming') return
+  if (!responseChannelReady) return
   if (!isSocketOpen()) {
     finish('error', disconnectedMessage())
     return
   }
-  if (keepaliveDue || keepaliveInFlight) {
-    void serviceStreamKeepalive()
+  if (!isStreamTransportWritable()) {
+    schedulePump()
     return
   }
 
   while (nextBlock < blocks.length) {
     const block = blocks[nextBlock]
-    const pendingBarrier = pendingBlocks.some(item => item.barrier !== null)
+    const pendingBarrier = pendingBlocks.some(item => item.block.barrier !== null)
     if (pendingBarrier) return
     // Stop/tool/end commands must execute alone, after all earlier blocks have
     // acknowledged, so FluidNC cannot read past a program-control boundary.
@@ -287,8 +331,10 @@ function pump() {
       finish('error', disconnectedMessage())
       return
     }
-    pendingBlocks.push(block)
+    pendingBlocks.push({ block })
+    pendingIdleSince = 0
     inFlightBytes += block.wireBytes
+    scheduleAcknowledgmentCheck()
     nextBlock++
     if (block.barrier) return
   }
@@ -335,8 +381,8 @@ export const useGCodeSenderStore = create<SenderState>((set, get) => ({
     nextBlock = 0
     inFlightBytes = 0
     resumePending = false
-    keepaliveDue = false
-    keepaliveInFlight = false
+    responseChannelReady = false
+    pendingIdleSince = 0
     acknowledgedBlocks = 0
     lastAcknowledgedLine = null
     programHasMotion = blocks.some(block => block.hasMotion)
@@ -362,15 +408,21 @@ export const useGCodeSenderStore = create<SenderState>((set, get) => ({
       error: null,
     })
     void acquireWakeLock()
-    scheduleStreamKeepalive()
-    // Let a response to a query already on the wire settle before claiming the
-    // FIFO acknowledgement stream.
-    settleTimer = setTimeout(pump, 75)
+    // Stop new response-producing UI traffic, then wait until anything already
+    // queued or on the wire has settled before claiming the FIFO response lane.
+    const preparingSince = Date.now()
+    settleTimer = setTimeout(() => {
+      settleTimer = null
+      waitForExclusiveResponseChannel(preparingSince)
+    }, 25)
     return true
   },
 
   pause: () => {
     if (get().phase !== 'streaming' && get().phase !== 'draining') return
+    // No program block has been sent while the response channel is preparing,
+    // so entering Paused here would strand the preparation handshake.
+    if (get().phase === 'streaming' && !responseChannelReady) return
     sendRealtimeNow(0x21)
     resumePending = false
     set({ phase: 'paused' })
@@ -416,36 +468,31 @@ export const useGCodeSenderStore = create<SenderState>((set, get) => ({
 onLine(line => {
   if (!ownsExclusiveTraffic || pendingBlocks.length === 0) return
   if (line === 'ok') {
-    const acknowledged = pendingBlocks.shift()!
+    const acknowledged = pendingBlocks.shift()!.block
+    pendingIdleSince = 0
     inFlightBytes = Math.max(0, inFlightBytes - acknowledged.wireBytes)
+    scheduleAcknowledgmentCheck()
     recordAcknowledgment(acknowledged, acknowledged.barrier !== null || nextBlock >= blocks.length)
 
     if (acknowledged.barrier === 'pause') {
       resumePending = false
       useGCodeSenderStore.setState({ phase: 'paused' })
-      if (keepaliveDue) void serviceStreamKeepalive()
       return
     }
     if (acknowledged.barrier === 'end') {
       nextBlock = blocks.length
       enterDraining(true)
-      if (keepaliveDue) void serviceStreamKeepalive()
       return
     }
     if (acknowledged.barrier === 'tool-change') {
       settleTimer = setTimeout(() => {
-        if (keepaliveDue) void serviceStreamKeepalive()
-        else pump()
+        pump()
       }, TOOL_CHANGE_SETTLE_MS)
-      return
-    }
-    if (pendingBlocks.length === 0 && keepaliveDue) {
-      void serviceStreamKeepalive()
       return
     }
     pump()
   } else if (line === 'error' || line.startsWith('error:') || line.startsWith('ALARM:') || line.includes('[MSG:ERR')) {
-    const sourceLine = pendingBlocks[0]?.sourceLine
+    const sourceLine = pendingBlocks[0]?.block.sourceLine
     sendRealtimeNow(0x18)
     finish('error', `${sourceLine ? `File line ${sourceLine}: ` : ''}${line}`)
   }
@@ -473,7 +520,12 @@ useMachineStore.subscribe((state, previous) => {
     return
   }
   if (state.status.state !== 'Idle') sawBusyState = true
-  if ((state.status.state === 'Hold' || state.status.state === 'Door') && sender.phase !== 'paused' && !resumePending) {
+  if (
+    responseChannelReady
+    && (state.status.state === 'Hold' || state.status.state === 'Door')
+    && sender.phase !== 'paused'
+    && !resumePending
+  ) {
     useGCodeSenderStore.setState({ phase: 'paused' })
   } else if (state.status.state === 'Run') {
     resumePending = false
