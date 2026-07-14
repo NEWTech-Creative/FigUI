@@ -26,6 +26,10 @@ function splitPath(path: string) {
   }
 }
 
+function controllerFilesystem(path: string): 'sd' | 'local' {
+  return /^\/sd(?:\/|$)/i.test(path) ? 'sd' : 'local'
+}
+
 function fmt(value: number | null, suffix = '') {
   if (value == null || !Number.isFinite(value)) return '—'
   return `${Number(value.toFixed(3))}${suffix}`
@@ -163,7 +167,7 @@ export function RestartFromLineDialog({
       } else {
         const { directory } = splitPath(sourcePath)
         const generatedPath = `${directory}${generatedName}`
-        await saveFileContent(directory, generatedName, generated, 'sd')
+        await saveFileContent(directory, generatedName, generated, controllerFilesystem(sourcePath))
         window.dispatchEvent(new Event('files:changed'))
         await loadFromText(generated, generatedName, generatedPath, restartMetadata)
       }

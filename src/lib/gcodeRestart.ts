@@ -309,6 +309,20 @@ function restoreMotionOnSuffix(lines: string[], motion: RestartModalState['motio
   })
 }
 
+function validateRestartProgram(program: string) {
+  const lines = normalizedLines(program)
+  for (let index = 0; index < lines.length; index++) {
+    const code = stripComments(lines[index])
+    if (!code) continue
+    const words = wordsIn(code)
+    const hasArcMotion = words.some(word => word.letter === 'G' && (word.value === 2 || word.value === 3))
+    const hasArcGeometry = words.some(word => ['X', 'Y', 'Z', 'I', 'J', 'K', 'R'].includes(word.letter))
+    if (hasArcMotion && !hasArcGeometry) {
+      throw new Error(`Generated restart line ${index + 1} contains an arc command without arc geometry.`)
+    }
+  }
+}
+
 export function analyzeRestart(text: string, requestedLine: number): RestartAnalysis {
   const lines = normalizedLines(text)
   const clampedRequested = Math.max(1, Math.min(Math.trunc(requestedLine), lines.length))
@@ -479,7 +493,9 @@ export function buildRestartProgram(text: string, analysis: RestartAnalysis, opt
     ...resumedLines,
   )
 
-  return `${output.join('\n')}\n`
+  const program = `${output.join('\n')}\n`
+  validateRestartProgram(program)
+  return program
 }
 
 export function makeRestartFilename(sourceName: string, line: number) {

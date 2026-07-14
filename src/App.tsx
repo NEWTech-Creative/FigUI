@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { useMachineStore } from './store'
 import { useGCodeStore } from './store/gcode'
+import { useGCodeSenderStore } from './store/gcodeSender'
 import { useTerminalStore } from './store/terminal'
 import { connect, isSocketOpen, onLine, sendStartupQueries } from './lib/ws'
 import { setBase, getDeviceInfo, getDeviceInfoFast, loadMacroCfg } from './lib/http'
@@ -81,6 +82,11 @@ export function App() {
   const machineState = useMachineStore(s => s.status.state)
   const activeLayout = useActiveLayout(layoutMode)
   const loadGCodeFile = useGCodeStore(s => s.loadFile)
+  const senderPhase = useGCodeSenderStore(s => s.phase)
+  const senderFileName = useGCodeSenderStore(s => s.fileName)
+  const senderError = useGCodeSenderStore(s => s.error)
+  const senderFailureLine = useGCodeSenderStore(s => s.failureLine)
+  const senderFailureLineSource = useGCodeSenderStore(s => s.failureLineSource)
   const [phase, setPhase]   = useState<Phase>('connecting')
   const [errMsg, setErrMsg] = useState('')
   const [settingsOpen, setSettingsOpen] = useState(false)
@@ -431,20 +437,45 @@ export function App() {
     </div>
   )
 
+  const streamRecoveryNotice = senderPhase === 'error' && senderFailureLine != null ? (
+    <div className="mx-4 w-full max-w-md rounded-lg border border-warn/40 bg-surface px-4 py-3.5 shadow-2xl">
+      <div className="flex items-center gap-2 text-warn font-semibold">
+        <AlertTriangle size={17} className="shrink-0" />
+        Local job interrupted
+      </div>
+      {senderFileName && <div className="mt-2 truncate font-mono text-sm text-text-primary">{senderFileName}</div>}
+      <div className="mt-2 text-sm text-text-primary">
+        {senderFailureLineSource === 'position' ? (
+          <>Suggested recovery line: <span className="font-mono font-semibold text-accent">{senderFailureLine}</span></>
+        ) : (
+          <>Last acknowledged line: <span className="font-mono font-semibold">{senderFailureLine}</span></>
+        )}
+      </div>
+      <p className="mt-1.5 text-xs leading-relaxed text-text-muted">
+        {senderFailureLineSource === 'position'
+          ? 'Keep this page open. After reconnecting, review this line against the machine’s actual stop position before preparing a restart.'
+          : 'Execution position was unavailable, so this is not a safe restart suggestion. Keep this page open until the controller reconnects.'}
+      </p>
+      {senderError && <div className="mt-2 border-t border-border pt-2 font-mono text-[11px] text-text-dim">{senderError}</div>}
+    </div>
+  ) : null
+
   return (
     <div className="flex flex-col min-h-[100svh] md:h-[100svh] landscape:h-[100svh] md:overflow-hidden landscape:overflow-hidden bg-[var(--bg)] relative">
       {restarting ? (
-        <div className="fixed md:absolute inset-0 z-50 bg-[var(--bg)]/80 backdrop-blur-sm
+        <div className="fixed md:absolute inset-0 z-[120] bg-[var(--bg)]/80 backdrop-blur-sm
                         flex flex-col items-center justify-center gap-3">
           <RefreshCw size={24} className="text-accent animate-spin" />
           <span className="text-text-primary text-base font-medium">Restarting controller…</span>
           <span className="text-text-muted text-sm">Waiting for FluidNC to come back online</span>
+          {streamRecoveryNotice}
         </div>
       ) : showReconnectOverlay && (
-        <div className="fixed md:absolute inset-0 z-50 bg-[var(--bg)]/80 backdrop-blur-sm
+        <div className="fixed md:absolute inset-0 z-[120] bg-[var(--bg)]/80 backdrop-blur-sm
                         flex flex-col items-center justify-center gap-3">
           <RefreshCw size={24} className="text-accent animate-spin" />
           <span className="text-text-muted text-base">Reconnecting…</span>
+          {streamRecoveryNotice}
         </div>
       )}
 
