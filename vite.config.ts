@@ -21,6 +21,16 @@ export default defineConfig(({ mode }) => ({
   build: {
     target: 'es2022',
     ...(mode === 'esp32' ? {
+      // Favor transfer size over minifier speed for the firmware artifact.
+      minify: 'terser',
+      modulePreload: { polyfill: false },
+      terserOptions: {
+        ecma: 2022,
+        module: true,
+        toplevel: true,
+        compress: { passes: 3 },
+        format: { comments: false },
+      },
       assetsInlineLimit: 100_000_000,
       cssCodeSplit: false,
       rollupOptions: {
