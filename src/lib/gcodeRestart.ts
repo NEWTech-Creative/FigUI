@@ -286,6 +286,29 @@ function validateFirstSuffixFeed(
   }
 }
 
+function restoreMotionOnSuffix(lines: string[], motion: RestartModalState['motion']) {
+  let motionEstablished = false
+  return lines.map(raw => {
+    if (motionEstablished) return raw
+    const code = stripComments(raw)
+    if (!code) return raw
+
+    const words = wordsIn(code)
+    const gCodes = words.filter(word => word.letter === 'G').map(word => codeValue(word.value))
+    if (gCodes.some(g => ['0', '1', '2', '3'].includes(g))) {
+      motionEstablished = true
+      return raw
+    }
+
+    const hasMotionWords = words.some(word => ['X', 'Y', 'Z', 'I', 'J', 'K', 'R'].includes(word.letter))
+    const isNonMotionAxisBlock = gCodes.some(g => ['10', '28', '30', '53', '92', '92.1', '92.2', '92.3'].includes(g))
+    if (!hasMotionWords || isNonMotionAxisBlock) return raw
+
+    motionEstablished = true
+    return `${motion} ${raw.trimStart()}`
+  })
+}
+
 export function analyzeRestart(text: string, requestedLine: number): RestartAnalysis {
   const lines = normalizedLines(text)
   const clampedRequested = Math.max(1, Math.min(Math.trunc(requestedLine), lines.length))
@@ -411,6 +434,7 @@ export function buildRestartProgram(text: string, analysis: RestartAnalysis, opt
   const sourceFeed = state.feedMmPerMin == null
     ? null
     : state.units === 'G20' ? state.feedMmPerMin / 25.4 : state.feedMmPerMin
+  const resumedLines = restoreMotionOnSuffix(lines.slice(analysis.resumeLine - 1), state.motion)
 
   const output: string[] = [
     '(FLUIDNC PROGRAM RESTART - REVIEW BEFORE RUNNING)',
@@ -449,10 +473,10 @@ export function buildRestartProgram(text: string, analysis: RestartAnalysis, opt
   )
   if (sourceFeed != null) output.push(`F${fmt(sourceFeed, 3)}`)
   output.push(
-    `${state.distance} ${state.motion}`,
+    state.distance,
     '',
     `(ORIGINAL PROGRAM RESUMES AT FILE LINE ${analysis.resumeLine})`,
-    ...lines.slice(analysis.resumeLine - 1),
+    ...resumedLines,
   )
 
   return `${output.join('\n')}\n`

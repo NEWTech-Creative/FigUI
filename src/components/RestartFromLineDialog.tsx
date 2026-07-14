@@ -8,7 +8,9 @@ interface Props {
   sourceText: string
   sourcePath: string | null
   sourceName: string
+  initialLine?: number | null
   defaultSafeMachineZMm: number | null
+  onPrepared?: () => void
   onClose: () => void
 }
 
@@ -37,7 +39,9 @@ export function RestartFromLineDialog({
   sourceText,
   sourcePath,
   sourceName,
+  initialLine = null,
   defaultSafeMachineZMm,
+  onPrepared,
   onClose,
 }: Props) {
   const inputRef = useRef<HTMLInputElement>(null)
@@ -58,9 +62,12 @@ export function RestartFromLineDialog({
     }
   }, [sourceText])
   const totalLines = program.lineStarts.length
-  const [lineText, setLineText] = useState('')
-  const [selectedLine, setSelectedLine] = useState<number | null>(null)
-  const [analyzedLine, setAnalyzedLine] = useState<number | null>(null)
+  const initialSelectedLine = initialLine == null
+    ? null
+    : Math.max(1, Math.min(Math.trunc(initialLine), totalLines))
+  const [lineText, setLineText] = useState(initialSelectedLine == null ? '' : String(initialSelectedLine))
+  const [selectedLine, setSelectedLine] = useState<number | null>(initialSelectedLine)
+  const [analyzedLine, setAnalyzedLine] = useState<number | null>(initialSelectedLine)
   const [safeZText, setSafeZText] = useState(defaultSafeMachineZMm == null ? '' : String(Number(defaultSafeMachineZMm.toFixed(3))))
   const [clearanceText, setClearanceText] = useState('2')
   const [approachFeedText, setApproachFeedText] = useState('100')
@@ -68,7 +75,10 @@ export function RestartFromLineDialog({
   const [error, setError] = useState('')
 
   useEffect(() => {
-    inputRef.current?.focus()
+    if (initialSelectedLine != null) selectProgramLine(initialSelectedLine, true)
+    else inputRef.current?.focus()
+    // The dialog is remounted for each restart review.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
   const requestedLine = Number(lineText)
@@ -141,20 +151,29 @@ export function RestartFromLineDialog({
         clearanceMm: clearance,
         approachFeedMmPerMin: approachFeed,
       })
-      let generatedPath: string | null = null
-      if (sourcePath) {
-        const { directory } = splitPath(sourcePath)
-        generatedPath = `${directory}${generatedName}`
-        await saveFileContent(directory, generatedName, generated, 'sd')
-        window.dispatchEvent(new Event('files:changed'))
-      }
-      await loadFromText(generated, generatedName, generatedPath, {
+      const restartMetadata = {
         path: sourcePath,
         fileName: sourceName,
         sourceText: sourcePath ? undefined : sourceText,
         requestedLine: analysis.requestedLine,
         resumeLine: analysis.resumeLine,
-      })
+      }
+      if (sourcePath == null) {
+        await loadFromText(generated, generatedName, null, restartMetadata)
+      } else {
+        const { directory } = splitPath(sourcePath)
+        const generatedPath = `${directory}${generatedName}`
+        await saveFileContent(directory, generatedName, generated, 'sd')
+        window.dispatchEvent(new Event('files:changed'))
+        await loadFromText(generated, generatedName, generatedPath, restartMetadata)
+      }
+      const prepared = useGCodeStore.getState()
+      if (prepared.fileName !== generatedName
+        || prepared.restartSource?.requestedLine !== analysis.requestedLine
+        || prepared.restartSource?.resumeLine !== analysis.resumeLine) {
+        throw new Error('The restart program could not be loaded in the viewer.')
+      }
+      onPrepared?.()
       onClose()
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : 'Could not prepare the restart file.')
@@ -219,6 +238,11 @@ export function RestartFromLineDialog({
             </div>
             {lineText && !lineIsValid && (
               <p className="mt-1.5 text-sm text-danger">Enter a whole number from 1 through {totalLines}.</p>
+            )}
+            {initialSelectedLine != null && (
+              <p className="mt-1.5 text-sm text-warn">
+                Suggested from the last tracked machine position. Confirm the actual stop point and selected program line before preparing a restart.
+              </p>
             )}
           </div>
 
@@ -309,7 +333,9 @@ export function RestartFromLineDialog({
               <div className="flex items-center gap-2 rounded border border-ok/25 bg-ok/5 px-3.5 py-3 text-sm">
                 <ShieldCheck size={17} className="text-ok shrink-0" />
                 <span className="text-text-muted">
-                  Preparing creates <span className="font-mono text-text-primary">{generatedName}</span> and loads it in the viewer. Verify the tool and offsets before running.
+                  {sourcePath && (
+                    <>Preparing saves <span className="font-mono text-text-primary">{generatedName}</span> beside the original controller file and loads it in the viewer.</>
+                  )}{' '}Verify the tool and offsets before running.
                 </span>
               </div>
             </>

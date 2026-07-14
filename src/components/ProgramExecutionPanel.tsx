@@ -77,6 +77,8 @@ export function ProgramExecutionPanel({ isTablet, initiallyOpen = false, accordi
   const viewerSourceLine = useGCodeStore(s => s.activeSourceLine)
   const senderPhase = useGCodeSenderStore(s => s.phase)
   const senderAcceptedLine = useGCodeSenderStore(s => s.acceptedLine)
+  const senderFailureLine = useGCodeSenderStore(s => s.failureLine)
+  const senderFailureLineSource = useGCodeSenderStore(s => s.failureLineSource)
   const programRef = useRef<HTMLTextAreaElement>(null)
   const gutterRef = useRef<HTMLDivElement>(null)
   const highlightRef = useRef<HTMLDivElement>(null)
@@ -96,6 +98,7 @@ export function ProgramExecutionPanel({ isTablet, initiallyOpen = false, accordi
   const program = useMemo(() => buildProgram(sourceMatchesJob ? sourceText! : ''), [sourceMatchesJob, sourceText])
   const reportedN = status.plannerLineNumber
   const senderActive = senderPhase === 'streaming' || senderPhase === 'paused' || senderPhase === 'draining'
+  const senderMode = senderPhase !== 'idle'
   const controllerPhysicalLine = reportedN == null ? null : program.nToPhysicalLine.get(reportedN) ?? null
   const estimatedPhysicalLine = sourceMatchesJob
     && viewerSourceLine != null
@@ -103,8 +106,11 @@ export function ProgramExecutionPanel({ isTablet, initiallyOpen = false, accordi
     && viewerSourceLine <= program.totalLines
     ? viewerSourceLine
     : null
-  const physicalLine = controllerPhysicalLine ?? estimatedPhysicalLine
-  const isEstimated = controllerPhysicalLine == null && estimatedPhysicalLine != null
+  const retainedFailureLine = senderMode && !senderActive && senderFailureLineSource === 'position'
+    ? senderFailureLine
+    : null
+  const physicalLine = retainedFailureLine ?? controllerPhysicalLine ?? estimatedPhysicalLine
+  const isEstimated = retainedFailureLine != null || (controllerPhysicalLine == null && estimatedPhysicalLine != null)
 
   function updateHighlight(scrollTop = programRef.current?.scrollTop ?? 0) {
     const highlight = highlightRef.current
@@ -161,7 +167,7 @@ export function ProgramExecutionPanel({ isTablet, initiallyOpen = false, accordi
               type="button"
               className="flex h-7 w-7 items-center justify-center rounded text-text-dim transition-colors hover:bg-elevated hover:text-info"
               onClick={() => setShowTrackingInfo(value => !value)}
-              aria-label={senderActive ? 'About local sender line tracking' : 'About program line tracking'}
+              aria-label={senderMode ? 'About local sender line tracking' : 'About program line tracking'}
               aria-expanded={showTrackingInfo}
             >
               <Info size={14} />
@@ -169,17 +175,12 @@ export function ProgramExecutionPanel({ isTablet, initiallyOpen = false, accordi
             {showTrackingInfo && (
               <div role="note" className="absolute right-0 top-9 z-50 w-72 rounded border border-border bg-surface p-3 text-xs font-normal normal-case tracking-normal text-text-muted shadow-xl">
                 <p className="font-semibold text-text-primary">
-                  {senderActive ? 'About local sender tracking' : 'About line tracking'}
+                  {senderMode ? 'Local job line tracking' : 'About line tracking'}
                 </p>
-                {senderActive ? (
-                  <>
-                    <p className="mt-1.5">
-                      Accepted line is exact: FluidUI advances it only when FluidNC acknowledges that streamed block. The controller may buffer accepted blocks ahead of physical motion.
-                    </p>
-                    <p className="mt-1.5">
-                      When an executing N block is available it is mapped directly. Otherwise, executing motion is located from live XYZ and prevented from advancing beyond the latest accepted line. The estimate cannot distinguish overlapping paths or non-motion blocks such as dwells, tool changes, spindle, coolant, or modal-only commands.
-                    </p>
-                  </>
+                {senderMode ? (
+                  <p className="mt-1.5">
+                    FluidUI estimates the highlighted line by matching the machine's live XYZ position to the loaded toolpath.
+                  </p>
                 ) : (
                   <>
                     <p className="mt-1.5">
@@ -193,12 +194,16 @@ export function ProgramExecutionPanel({ isTablet, initiallyOpen = false, accordi
               </div>
             )}
           </div>
-          {senderActive && senderAcceptedLine != null && (
-            <span className="tag border-ok/35 bg-ok/10 text-ok normal-case font-mono tracking-normal" title="Latest file line acknowledged by FluidNC">
-              Accepted L{senderAcceptedLine}
-            </span>
-          )}
-          {controllerPhysicalLine != null && reportedN != null ? (
+          {senderMode ? (
+            physicalLine != null ? (
+              <span className={`tag normal-case font-mono tracking-normal ${isEstimated ? 'border-info/35 bg-info/10 text-info' : 'border-ok/35 bg-ok/10 text-ok'}`}>
+                <span className={`w-1.5 h-1.5 rounded-full ${isEstimated ? 'bg-info' : 'bg-ok'} ${senderActive ? 'animate-pulse' : ''}`} />
+                Line {physicalLine}
+              </span>
+            ) : (
+              <span className="text-xs font-mono text-text-dim">Locating…</span>
+            )
+          ) : controllerPhysicalLine != null && reportedN != null ? (
             <span className="tag border-ok/35 bg-ok/10 text-ok normal-case font-mono tracking-normal">
               <span className="w-1.5 h-1.5 rounded-full bg-ok animate-pulse" />
               N{reportedN}
@@ -210,7 +215,7 @@ export function ProgramExecutionPanel({ isTablet, initiallyOpen = false, accordi
           ) : (
             <span className="text-xs font-mono text-text-dim">Locating…</span>
           )}
-          {controllerPhysicalLine != null && (
+          {!senderMode && controllerPhysicalLine != null && (
             <span className="text-xs font-mono text-text-muted">File line {physicalLine}</span>
           )}
           <button

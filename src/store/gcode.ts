@@ -68,8 +68,9 @@ let abortController: AbortController | null = null
 let activeReader: ReadableStreamDefaultReader<Uint8Array> | null = null
 
 function isLoadBlockedByMachineState() {
-  const state = useMachineStore.getState().status.state
-  return state === 'Run' || state === 'Hold'
+  const machine = useMachineStore.getState()
+  const state = machine.status.state
+  return machine.connected && (state === 'Run' || state === 'Hold')
 }
 
 function abortInFlight() {

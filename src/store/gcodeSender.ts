@@ -1,5 +1,6 @@
 import { create } from 'zustand'
 import { useMachineStore } from '../store'
+import { useGCodeStore } from './gcode'
 import {
   getLastDisconnectReason,
   isSocketOpen,
@@ -28,7 +29,10 @@ interface StreamBlock {
 interface SenderState {
   phase: SenderPhase
   fileName: string | null
+  jobId: number
   acceptedLine: number | null
+  failureLine: number | null
+  failureLineSource: 'position' | 'acknowledged' | null
   totalSourceLines: number
   completedBlocks: number
   totalBlocks: number
@@ -213,6 +217,11 @@ function disconnectedMessage(action = 'streaming') {
 }
 
 function finish(phase: 'completed' | 'aborted' | 'error', error: string | null = null) {
+  const trackedLine = phase === 'error' ? useGCodeStore.getState().activeSourceLine : null
+  const failureLine = phase === 'error' ? trackedLine ?? lastAcknowledgedLine : null
+  const failureLineSource = trackedLine != null
+    ? 'position'
+    : failureLine != null ? 'acknowledged' : null
   publishProgress()
   clearTimers()
   pendingBlocks = []
@@ -222,7 +231,7 @@ function finish(phase: 'completed' | 'aborted' | 'error', error: string | null =
   keepaliveInFlight = false
   releaseExclusiveTraffic()
   releaseWakeLock()
-  useGCodeSenderStore.setState({ phase, error })
+  useGCodeSenderStore.setState({ phase, error, failureLine, failureLineSource })
 }
 
 function enterDraining(synchronizedEnd = false) {
@@ -290,7 +299,10 @@ function pump() {
 export const useGCodeSenderStore = create<SenderState>((set, get) => ({
   phase: 'idle',
   fileName: null,
+  jobId: 0,
   acceptedLine: null,
+  failureLine: null,
+  failureLineSource: null,
   totalSourceLines: 0,
   completedBlocks: 0,
   totalBlocks: 0,
@@ -337,7 +349,10 @@ export const useGCodeSenderStore = create<SenderState>((set, get) => ({
     set({
       phase: 'streaming',
       fileName,
+      jobId: get().jobId + 1,
       acceptedLine: null,
+      failureLine: null,
+      failureLineSource: null,
       totalSourceLines: built.totalSourceLines,
       completedBlocks: 0,
       totalBlocks: built.blocks.length,
@@ -394,7 +409,7 @@ export const useGCodeSenderStore = create<SenderState>((set, get) => ({
 
   dismiss: () => {
     if (['streaming', 'paused', 'draining'].includes(get().phase)) return
-    set({ phase: 'idle', fileName: null, acceptedLine: null, notice: null, error: null })
+    set({ phase: 'idle', fileName: null, acceptedLine: null, failureLine: null, failureLineSource: null, notice: null, error: null })
   },
 }))
 

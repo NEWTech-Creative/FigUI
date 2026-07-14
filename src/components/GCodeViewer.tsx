@@ -1521,21 +1521,29 @@ export function GCodeViewer({ className, isTablet, showOverrides, fitToViewSigna
   const connected = useMachineStore(s => s.connected)
   const controllerSettings = useMachineStore(s => s.controllerSettings)
   const units = useMachineStore(s => s.units)
-  const runtime = useJobRuntimeEstimate(status, model, controllerSettings, loadedPath, fileName)
-  const progressPercent = runtime.progressPercent
-  const showEstimatedTiming = runtime.source === 'estimated'
   const senderPhase = useGCodeSenderStore(s => s.phase)
-  const senderCompletedBlocks = useGCodeSenderStore(s => s.completedBlocks)
-  const senderTotalBlocks = useGCodeSenderStore(s => s.totalBlocks)
+  const senderJobId = useGCodeSenderStore(s => s.jobId)
   const senderAcceptedLine = useGCodeSenderStore(s => s.acceptedLine)
   const senderNotice = useGCodeSenderStore(s => s.notice)
   const senderError = useGCodeSenderStore(s => s.error)
+  const senderFailureLine = useGCodeSenderStore(s => s.failureLine)
+  const senderFailureLineSource = useGCodeSenderStore(s => s.failureLineSource)
   const startSender = useGCodeSenderStore(s => s.start)
   const pauseSender = useGCodeSenderStore(s => s.pause)
   const resumeSender = useGCodeSenderStore(s => s.resume)
   const abortSender = useGCodeSenderStore(s => s.abort)
   const dismissSender = useGCodeSenderStore(s => s.dismiss)
   const senderActive = senderPhase === 'streaming' || senderPhase === 'paused' || senderPhase === 'draining'
+  const runtime = useJobRuntimeEstimate(
+    status,
+    model,
+    controllerSettings,
+    loadedPath,
+    fileName,
+    { active: senderActive, key: `${senderJobId}|${fileName ?? ''}` },
+  )
+  const progressPercent = runtime.progressPercent
+  const showEstimatedTiming = runtime.source === 'estimated'
   const isRunning = status.state === 'Run' || status.state === 'Hold' || senderActive
   const isJobRunning = senderPhase === 'streaming' || senderPhase === 'draining' || (status.state === 'Run' && senderPhase !== 'paused')
   const isJobHeld = senderPhase === 'paused' || status.state === 'Hold'
@@ -1553,10 +1561,8 @@ export function GCodeViewer({ className, isTablet, showOverrides, fitToViewSigna
   const [autoFollow, setAutoFollow] = useState(true)
   const [coolantState, setCoolantState] = useState<'off' | 'mist' | 'flood'>('off')
   const [showRestartFromLine, setShowRestartFromLine] = useState(false)
+  const [restartInitialLine, setRestartInitialLine] = useState<number | null>(null)
   const isLocalFile = !!sourceText && !loadedPath
-  const senderProgress = senderTotalBlocks > 0
-    ? Math.min(100, Math.round(senderCompletedBlocks / senderTotalBlocks * 100))
-    : 0
   const displayedProgressPercent = senderActive ? senderExecutionProgressPercent : progressPercent
   const safeMachineZ = controllerSettings.machineMaxZ == null
     ? null
@@ -2249,15 +2255,14 @@ export function GCodeViewer({ className, isTablet, showOverrides, fitToViewSigna
               event.currentTarget.value = ''
             }}
           />
-          <button
+          {!isRunning && <button
             className="flex items-center gap-1 px-1.5 py-0.5 rounded text-base text-info bg-info/10 hover:bg-info/20 disabled:opacity-40"
             onClick={() => localFileInputRef.current?.click()}
-            disabled={isRunning}
             title="Open a G-code file from this device"
           >
             <FilePlus size={isTablet ? 16 : 11} />
             <span>Open</span>
-          </button>
+          </button>}
           {(() => {
             const btnCls = isTablet
               ? 'flex items-center gap-1.5 px-3 py-1.5 rounded text-base transition-colors'
@@ -2607,13 +2612,12 @@ export function GCodeViewer({ className, isTablet, showOverrides, fitToViewSigna
           </div>
         )}
 
-        {(senderActive || senderPhase === 'completed' || senderPhase === 'aborted' || senderPhase === 'error') && (
+        {(senderPhase === 'paused' || senderPhase === 'draining' || senderPhase === 'completed' || senderPhase === 'aborted' || senderPhase === 'error') && (
           <div className={`rounded border px-3 py-2 ${senderPhase === 'error' ? 'border-danger/40 bg-danger/10' : 'border-info/30 bg-info/5'}`}>
             <div className="flex items-center justify-between gap-3 text-sm">
               <span className={senderPhase === 'error' ? 'text-danger' : 'text-text-primary'}>
-                {senderPhase === 'streaming' && `Local transfer · ${senderProgress}% accepted`}
-                {senderPhase === 'paused' && `Local stream paused · ${senderProgress}% accepted`}
-                {senderPhase === 'draining' && 'File sent · waiting for machine to finish'}
+                {senderPhase === 'paused' && 'Local job paused'}
+                {senderPhase === 'draining' && 'Finishing local job'}
                 {senderPhase === 'completed' && 'Local job complete'}
                 {senderPhase === 'aborted' && 'Local job aborted'}
                 {senderPhase === 'error' && (senderError ?? 'Local sender stopped')}
@@ -2624,14 +2628,29 @@ export function GCodeViewer({ className, isTablet, showOverrides, fitToViewSigna
                 </button>
               )}
             </div>
-            {senderActive && (
-              <div className="mt-2 h-1.5 overflow-hidden rounded-full bg-elevated">
-                <div className="h-full rounded-full bg-info transition-all" style={{ width: `${senderProgress}%` }} />
+            {senderPhase === 'error' && senderFailureLine != null && (
+              <div className="mt-1 text-xs font-mono text-text-muted">
+                {senderFailureLineSource === 'position' ? 'Last tracked line' : 'Last acknowledged line'}: {senderFailureLine}
               </div>
+            )}
+            {senderPhase === 'error' && senderFailureLine != null && senderFailureLineSource === 'position' && sourceText && fileName && (
+              <button
+                type="button"
+                className="mt-2 btn btn-ghost px-2.5 py-1.5 text-xs gap-1.5"
+                onClick={() => { setRestartInitialLine(senderFailureLine); setShowRestartFromLine(true) }}
+                title="Open the restart editor at the last position-tracked program line"
+              >
+                <ListStart size={13} /> Review restart at line {senderFailureLine}
+              </button>
             )}
             {senderNotice && (
               <div className="mt-2 text-[11px] text-warning">{senderNotice}</div>
             )}
+          </div>
+        )}
+        {senderPhase === 'streaming' && senderNotice && (
+          <div className="rounded border border-warning/30 bg-warning/5 px-3 py-2 text-[11px] text-warning">
+            {senderNotice}
           </div>
         )}
 
@@ -2680,7 +2699,7 @@ export function GCodeViewer({ className, isTablet, showOverrides, fitToViewSigna
           {!isJobRunning && !isJobHeld && !restartSource && (
             <button
               className={`btn btn-ghost gap-1.5 justify-center ${isTablet ? 'text-xl py-3' : 'text-sm'}`}
-              onClick={() => setShowRestartFromLine(true)}
+              onClick={() => { setRestartInitialLine(null); setShowRestartFromLine(true) }}
               disabled={!sourceText || isViewerStartBlocked}
               title={isLocalFile ? 'Prepare a safe local stream that resumes from a file line' : 'Prepare a reviewable SD-card program that restarts from a file line'}
             >
@@ -2769,8 +2788,10 @@ export function GCodeViewer({ className, isTablet, showOverrides, fitToViewSigna
           sourceText={sourceText}
           sourcePath={loadedPath}
           sourceName={fileName}
+          initialLine={restartInitialLine}
           defaultSafeMachineZMm={safeMachineZ}
-          onClose={() => setShowRestartFromLine(false)}
+          onPrepared={senderPhase === 'error' ? dismissSender : undefined}
+          onClose={() => { setShowRestartFromLine(false); setRestartInitialLine(null) }}
         />
       )}
     </div>

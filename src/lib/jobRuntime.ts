@@ -26,6 +26,11 @@ export interface JobRuntimeEstimate {
   totalSeconds: number | null
 }
 
+export interface LocalJobRuntimeContext {
+  active: boolean
+  key: string
+}
+
 const timingCache = new WeakMap<GCodeModel, Map<string, JobTimingEstimate>>()
 
 function clamp01(value: number) {
@@ -386,10 +391,17 @@ export function useJobRuntimeEstimate(
   controllerSettings: ControllerSettings,
   loadedPath: string | null,
   fileName: string | null,
+  localJob?: LocalJobRuntimeContext,
 ): JobRuntimeEstimate {
-  const isJobActive = status.state === 'Run' || status.state === 'Hold'
-  const matchesJob = isJobActive && model && fileMatchesJob(status, loadedPath, fileName)
-  const jobKey = matchesJob && status.sdFilename ? `${status.sdFilename}|${loadedPath ?? ''}|${fileName ?? ''}` : null
+  const controllerJobActive = status.state === 'Run' || status.state === 'Hold'
+  const localJobActive = localJob?.active === true
+  const isJobActive = controllerJobActive || localJobActive
+  const matchesJob = !!model && (localJobActive || (controllerJobActive && fileMatchesJob(status, loadedPath, fileName)))
+  const jobKey = matchesJob
+    ? localJobActive
+      ? `local|${localJob.key}`
+      : status.sdFilename ? `${status.sdFilename}|${loadedPath ?? ''}|${fileName ?? ''}` : null
+    : null
 
   // Wall-time tracking
   const activeRunStartedAtRef = useRef<number | null>(null)
@@ -494,6 +506,9 @@ export function useJobRuntimeEstimate(
   }
 
   if (!timingEstimate) {
+    if (localJobActive) {
+      return { source: 'none', progressPercent: null, elapsedSeconds: null, remainingSeconds: null, totalSeconds: null }
+    }
     return {
       source: 'sd',
       progressPercent: status.sdPercent ?? 0,
