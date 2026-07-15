@@ -2263,6 +2263,7 @@ export function GCodeViewer({ className, isTablet, showOverrides, fitToViewSigna
 
   const isFileDragging = fileDragStatus !== 'idle'
   const isValidFileDragging = fileDragStatus === 'valid' && !isRunning
+  const hasLoadedSource = !!sourceText && !!fileName
 
   const VCX = 45, VCY = 45, CUBE_S = 16
   const viewCubeData = is3D ? get3DViewCubeData(orbitState, cameraRef.current.up, VCX, VCY, CUBE_S) : null
@@ -2271,9 +2272,12 @@ export function GCodeViewer({ className, isTablet, showOverrides, fitToViewSigna
     <div className={`panel flex flex-col overflow-hidden ${className ?? ''}`}>
       <div className="panel-header !flex-col !items-stretch sm:!flex-row sm:!items-center sm:justify-between gap-y-1.5">
         {!isTablet && (
-        <div className="flex items-center gap-2 min-w-0">
+        <div className="flex items-center gap-2 min-w-0 sm:flex-1">
           {fileName ? (
-            <span className="text-text-primary font-mono normal-case tracking-normal font-normal truncate text-sm">
+            <span
+              className="text-text-primary font-mono normal-case tracking-normal font-normal truncate text-sm min-w-0"
+              title={fileName}
+            >
               {fileName}
             </span>
           ) : (
@@ -2304,7 +2308,7 @@ export function GCodeViewer({ className, isTablet, showOverrides, fitToViewSigna
         </div>
         )}
         {/* Right: toggle buttons with visible labels */}
-        <div className="flex items-center gap-1 flex-wrap justify-start sm:justify-end ml-auto">
+        <div className="flex items-center gap-1 flex-wrap sm:flex-nowrap justify-start sm:justify-end ml-auto sm:shrink-0">
           <input
             ref={localFileInputRef}
             type="file"
@@ -2316,14 +2320,6 @@ export function GCodeViewer({ className, isTablet, showOverrides, fitToViewSigna
               event.currentTarget.value = ''
             }}
           />
-          {!isRunning && <button
-            className="flex items-center gap-1 px-1.5 py-0.5 rounded text-base text-info bg-info/10 hover:bg-info/20 disabled:opacity-40"
-            onClick={() => localFileInputRef.current?.click()}
-            title="Open a G-code file from this device"
-          >
-            <FilePlus size={isTablet ? 16 : 11} />
-            <span>Open</span>
-          </button>}
           {(() => {
             const btnCls = isTablet
               ? 'flex items-center gap-1.5 px-3 py-1.5 rounded text-base transition-colors'
@@ -2750,6 +2746,17 @@ export function GCodeViewer({ className, isTablet, showOverrides, fitToViewSigna
         </>}
 
         <div className={`flex gap-1.5 ${(controllerSettings.hasMist || controllerSettings.hasFlood) ? 'sm:flex-[3]' : 'sm:ml-auto'}`}>
+          {!isJobRunning && !isJobHeld && (
+            <button
+              className={`btn btn-ghost justify-center shrink-0 ${isTablet ? 'px-3 py-3' : 'px-2'}`}
+              onClick={() => localFileInputRef.current?.click()}
+              disabled={isRunning}
+              title="Open a G-code file from this device"
+              aria-label="Open a G-code file from this device"
+            >
+              <FilePlus size={isTablet ? 22 : 17} />
+            </button>
+          )}
           {!isJobRunning && !isJobHeld && restartSource && (
             <button
               className={`btn btn-ghost gap-1.5 justify-center ${isTablet ? 'text-xl py-3' : 'text-sm'}`}
@@ -2763,11 +2770,11 @@ export function GCodeViewer({ className, isTablet, showOverrides, fitToViewSigna
               Original
             </button>
           )}
-          {!isJobRunning && !isJobHeld && !restartSource && (
+          {!isJobRunning && !isJobHeld && !restartSource && hasLoadedSource && (
             <button
               className={`btn btn-ghost gap-1.5 justify-center ${isTablet ? 'text-xl py-3' : 'text-sm'}`}
               onClick={() => { setRestartInitialLine(null); setShowRestartFromLine(true) }}
-              disabled={!sourceText || isViewerStartBlocked}
+              disabled={isViewerStartBlocked}
               title={isLocalFile ? 'Prepare a safe local stream that resumes from a file line' : 'Prepare a reviewable SD-card program that restarts from a file line'}
             >
               <ListStart size={isTablet ? 18 : 14} />

@@ -230,7 +230,7 @@ function FileRow({
             }}
             title={
               canLoadGcode
-                ? "Load in G-code viewer"
+                ? `Load ${entry.name} in G-code viewer`
                 : "Cannot load another file while a job is running or held"
             }
           >
