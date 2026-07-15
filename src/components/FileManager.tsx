@@ -32,12 +32,11 @@ import {
 import { CodeEditor, isEditable } from "./CodeEditor";
 import { useMachineStore } from "../store";
 import type { FileEntry, FileListResult } from "../types";
+import { isGCodeFileName } from "../lib/gcodeFiles";
 
 type Filesystem = "sd" | "local";
 
-const GCODE_EXT = new Set([".g", ".gco", ".gcode", ".nc", ".ncc", ".txt"]);
-const isGcode = (name: string) =>
-  GCODE_EXT.has(name.slice(name.lastIndexOf(".")).toLowerCase());
+const isGcode = isGCodeFileName;
 
 function fmtSize(bytes: number): string {
   if (bytes < 1024) return `${bytes} B`;

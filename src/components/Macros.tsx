@@ -5,6 +5,7 @@ import type { Macro, FileEntry } from '../types'
 import { listFiles, fetchFileContent, saveMacroCfg, createDir, saveFileContent } from '../lib/http'
 import { runMacro as runMacroCmd } from '../lib/macros'
 import { CodeEditor } from './CodeEditor'
+import { isGCodeFileName } from '../lib/gcodeFiles'
 
 const COLORS = ['default', 'accent', 'ok', 'warn', 'danger', 'info', 'purple', 'teal'] as const
 
@@ -55,10 +56,7 @@ const getIcon = (name?: string) => {
   return icon || null
 }
 
-const GCODE_EXT = new Set(['.g', '.gco', '.gcode', '.nc', '.ncc'])
-function isGcode(name: string) {
-  return GCODE_EXT.has(name.slice(name.lastIndexOf('.')).toLowerCase())
-}
+const isGcode = isGCodeFileName
 
 
 type BrowserFs = 'sd' | 'local'

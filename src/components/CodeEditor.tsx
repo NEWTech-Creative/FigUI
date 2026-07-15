@@ -18,6 +18,7 @@ import {
   validateFluidConfigForSave,
   type ConfigIssue,
 } from "../lib/configValidation";
+import { GCODE_EXTENSION_SET } from "../lib/gcodeFiles";
 
 function escapeHtml(s: string) {
   return s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
@@ -98,7 +99,7 @@ function highlightYaml(editor: HTMLElement) {
 
 type FileKind = "gcode" | "yaml" | "text";
 
-const GCODE_EXT = new Set([".g", ".gco", ".gcode", ".nc", ".ncc"]);
+const GCODE_EXT = GCODE_EXTENSION_SET;
 const YAML_EXT = new Set([".yaml", ".yml"]);
 
 type TextEdit = { at: number; remove: number; insert: string };

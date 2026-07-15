@@ -11,6 +11,9 @@ import { createRenderer, renderLines, setStaticLineData, type WebGLRenderer, typ
 import { addSegmentToPath, clamp01, getArcGeometry, normalizeAngle } from '../lib/gcodeBuild'
 import { RestartFromLineDialog } from './RestartFromLineDialog'
 import { useGCodeSenderStore } from '../store/gcodeSender'
+import { GCODE_ACCEPT_ATTRIBUTE, isGCodeFileName } from '../lib/gcodeFiles'
+
+const GCODE_EXTENSIONS_PREVIEW = '.g, .nc, .gcode, .ngc, .tap, or .cnc'
 
 const RAPID_COLOR     = 'rgba(110,140,220,0.65)'
 const TRAVERSE_COLOR  = 'rgba(90,185,90,0.6)'
@@ -1036,7 +1039,7 @@ export function GCodeViewer({ className, isTablet, showOverrides, fitToViewSigna
   const markerGeometryRef = useRef<MarkerGeometry | null>(null)
   const pathXYLengthsRef = useRef<{ model: GCodeModel; cumulative: Float64Array } | null>(null)
   const [showTool, setShowTool] = useState(true)
-  const [isFileDragging, setIsFileDragging] = useState(false)
+  const [fileDragStatus, setFileDragStatus] = useState<'idle' | 'valid' | 'invalid'>('idle')
   const [senderExecutionProgressPercent, setSenderExecutionProgressPercent] = useState<number | null>(null)
   const showRapidsRef = useRef(true)
   const showToolRef = useRef(true)
@@ -2185,23 +2188,45 @@ export function GCodeViewer({ className, isTablet, showOverrides, fitToViewSigna
 
   async function loadLocalFile(file: File) {
     if (isRunning) return
+    if (!isGCodeFileName(file.name)) return
     const text = await file.text()
     await loadFromText(text, file.name)
     needsFitRef.current = true
   }
 
+  function getDraggedFileStatus(dataTransfer: DataTransfer): 'valid' | 'invalid' {
+    const files = Array.from(dataTransfer.files ?? [])
+    if (files.length) return isGCodeFileName(files[0].name) ? 'valid' : 'invalid'
+
+    const fileItems = Array.from(dataTransfer.items ?? []).filter(item => item.kind === 'file')
+    if (!fileItems.length) return 'invalid'
+
+    const namedFiles = fileItems
+      .map(item => item.getAsFile())
+      .filter((file): file is File => !!file && !!file.name)
+    if (!namedFiles.length) return 'valid'
+    return isGCodeFileName(namedFiles[0].name) ? 'valid' : 'invalid'
+  }
+
   function onDrop(e: React.DragEvent) {
     e.preventDefault()
-    setIsFileDragging(false)
+    setFileDragStatus('idle')
     const file = e.dataTransfer.files?.[0]
-    if (!file) return
+    if (!file || !isGCodeFileName(file.name)) return
     void loadLocalFile(file)
   }
 
   function onDragOver(e: React.DragEvent) {
     e.preventDefault()
-    if (e.dataTransfer.types.includes('Files')) setIsFileDragging(true)
+    if (e.dataTransfer.types.includes('Files')) {
+      const status = getDraggedFileStatus(e.dataTransfer)
+      e.dataTransfer.dropEffect = status === 'valid' && !isRunning ? 'copy' : 'none'
+      setFileDragStatus(status)
+    }
   }
+
+  const isFileDragging = fileDragStatus !== 'idle'
+  const isValidFileDragging = fileDragStatus === 'valid' && !isRunning
 
   const VCX = 45, VCY = 45, CUBE_S = 16
   const viewCubeData = is3D ? get3DViewCubeData(orbitState, cameraRef.current.up, VCX, VCY, CUBE_S) : null
@@ -2248,7 +2273,7 @@ export function GCodeViewer({ className, isTablet, showOverrides, fitToViewSigna
             ref={localFileInputRef}
             type="file"
             className="hidden"
-            accept=".gcode,.gc,.nc,.ngc,.tap,.cnc,.txt,text/plain"
+            accept={GCODE_ACCEPT_ATTRIBUTE}
             onChange={event => {
               const file = event.currentTarget.files?.[0]
               if (file) void loadLocalFile(file)
@@ -2351,13 +2376,13 @@ export function GCodeViewer({ className, isTablet, showOverrides, fitToViewSigna
         onDrop={onDrop}
         onDragOver={onDragOver}
         onDragLeave={event => {
-          if (!event.currentTarget.contains(event.relatedTarget as Node | null)) setIsFileDragging(false)
+          if (!event.currentTarget.contains(event.relatedTarget as Node | null)) setFileDragStatus('idle')
         }}
         onContextMenu={e => { if (is3D) e.preventDefault() }}
       >
         <canvas
           ref={canvasRef}
-          className={`absolute inset-0 ${is3D ? 'hidden' : ''} ${loading ? 'blur-[2px] opacity-40' : ''}`}
+          className={`absolute inset-0 transition-[filter,opacity] duration-150 ${is3D ? 'hidden' : ''} ${loading || isValidFileDragging ? 'blur-[2px] opacity-40' : ''}`}
           onPointerDown={onPointerDown}
           onPointerMove={onPointerMove}
           onPointerUp={onPointerUp}
@@ -2365,7 +2390,7 @@ export function GCodeViewer({ className, isTablet, showOverrides, fitToViewSigna
         />
         <canvas
           ref={webglCanvasRef}
-          className={`absolute inset-0 ${!is3D ? 'hidden' : ''} ${loading ? 'blur-[2px] opacity-40' : ''}`}
+          className={`absolute inset-0 transition-[filter,opacity] duration-150 ${!is3D ? 'hidden' : ''} ${loading || isValidFileDragging ? 'blur-[2px] opacity-40' : ''}`}
           onPointerDown={onPointerDown}
           onPointerMove={onPointerMove}
           onPointerUp={onPointerUp}
@@ -2373,11 +2398,21 @@ export function GCodeViewer({ className, isTablet, showOverrides, fitToViewSigna
         />
 
         {isFileDragging && !isRunning && (
-          <div className="absolute inset-3 z-40 flex items-center justify-center rounded-xl border-2 border-dashed border-info bg-surface/90 pointer-events-none">
-            <div className="text-center text-info">
+          <div className={`absolute inset-3 z-40 flex items-center justify-center rounded-xl border-2 border-dashed pointer-events-none backdrop-blur-sm ${
+            fileDragStatus === 'valid'
+              ? 'border-info bg-surface/90'
+              : 'border-danger bg-surface/95'
+          }`}>
+            <div className={`text-center ${fileDragStatus === 'valid' ? 'text-info' : 'text-danger'}`}>
               <FilePlus size={34} className="mx-auto mb-2" />
-              <div className="font-semibold">Drop G-code to preview and stream</div>
-              <div className="mt-1 text-sm text-text-muted">The file stays in this browser.</div>
+              <div className="font-semibold">
+                {fileDragStatus === 'valid' ? 'Drop G-code to preview and stream' : 'Unsupported file type'}
+              </div>
+              <div className="mt-1 text-sm text-text-muted">
+                {fileDragStatus === 'valid'
+                  ? 'The file stays in this browser.'
+                  : `Use ${GCODE_EXTENSIONS_PREVIEW} files.`}
+              </div>
             </div>
           </div>
         )}
