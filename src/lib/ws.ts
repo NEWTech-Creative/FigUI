@@ -86,6 +86,27 @@ const pendingAcknowledgments = new Map<string, { callback: () => void, timeoutId
 const pendingSilentResponses: SilentResponseMatcher[] = []
 let activeSilentResponse: SilentResponseMatcher | null = null
 
+export interface ExclusiveCommandResult {
+  outcome: 'ok' | 'error' | 'timeout' | 'disconnected' | 'unavailable'
+  lines: string[]
+}
+
+interface PendingExclusiveCommand {
+  lines: string[]
+  resolve: (result: ExclusiveCommandResult) => void
+  timeoutId: ReturnType<typeof setTimeout>
+}
+
+let pendingExclusiveCommand: PendingExclusiveCommand | null = null
+
+function settleExclusiveCommand(outcome: ExclusiveCommandResult['outcome']) {
+  const pending = pendingExclusiveCommand
+  if (!pending) return
+  pendingExclusiveCommand = null
+  clearTimeout(pending.timeoutId)
+  pending.resolve({ outcome, lines: [...pending.lines] })
+}
+
 function startCommandProcessor() {
   if (commandProcessor) return
   commandProcessor = setInterval(processCommandQueue, 10)
@@ -170,6 +191,7 @@ const LIVENESS_CHECK_MS = 2000
 const LIVENESS_TIMEOUT_MS = 12000
 const OPEN_TIMEOUT_MS = 6000
 export const STATUS_POLL_INTERVAL_MS = 500
+const STREAM_STATUS_POLL_INTERVAL_MS = 500
 const GC_STATE_POLL_INTERVAL_MS = 2000
 // 0x3F = '?' — FluidNC's real-time status request byte.
 const STATUS_REPORT_BYTE = 0x3F
@@ -275,6 +297,7 @@ function handleDisconnect() {
   pendingAcknowledgments.clear()
   pendingSilentResponses.length = 0
   activeSilentResponse = null
+  settleExclusiveCommand('disconnected')
   // Drop queued commands — sending them on a future reconnect would be
   // surprising (e.g. queued jog moves shouldn't auto-resume).
   commandQueue.length = 0
@@ -300,6 +323,13 @@ function closeCurrentSocket() {
 function startStatusPoll() {
   if (backgroundTrafficSuspensions > 0) return
   stopStatusPoll()
+  // During a local stream FluidUI disables FluidNC's 5 Hz auto-reporting and
+  // becomes the sole status producer. A 2 Hz poll keeps Door/Hold detection
+  // responsive while staying well below the controller's 32-message queue
+  // during AsyncTCP's five-second acknowledgement window.
+  const interval = responseTrafficSuspensions > 0
+    ? STREAM_STATUS_POLL_INTERVAL_MS
+    : STATUS_POLL_INTERVAL_MS
   statusPollTimer = setInterval(() => {
     if (socket?.readyState !== WebSocket.OPEN) return
     try {
@@ -309,7 +339,7 @@ function startStatusPoll() {
     } catch {
       // Liveness watchdog will catch a dead socket.
     }
-  }, STATUS_POLL_INTERVAL_MS)
+  }, interval)
 }
 
 function stopStatusPoll() {
@@ -416,6 +446,21 @@ function handleLine(line: string) {
     // the application liveness signal, so a response-producing client ping is
     // unnecessary and would compete with G-code acknowledgements.
     return
+  }
+
+  // Stream setup/teardown commands temporarily own the response lane. Status
+  // reports remain live, but their terminal response must never be mistaken
+  // for a program-block acknowledgement.
+  if (pendingExclusiveCommand && !(line.startsWith('<') && line.endsWith('>'))) {
+    pendingExclusiveCommand.lines.push(line)
+    if (line === 'ok') {
+      settleExclusiveCommand('ok')
+      return
+    }
+    if (line === 'error' || line.startsWith('error:')) {
+      settleExclusiveCommand('error')
+      return
+    }
   }
 
   const isSilentLine = consumeSilentLine(line)
@@ -529,6 +574,33 @@ export function sendStreamRaw(cmd: string) {
 }
 
 /**
+ * Send a controller command while an acknowledged stream owns the response
+ * lane. Only stream setup/teardown may use this, and no program blocks may be
+ * outstanding. Its terminal response is consumed here instead of reaching the
+ * G-code sender's FIFO acknowledgement handler.
+ */
+export function sendExclusiveResponseCommand(cmd: string, timeoutMs = 1500): Promise<ExclusiveCommandResult> {
+  if (
+    responseTrafficSuspensions === 0
+    || pendingExclusiveCommand
+    || socket?.readyState !== WebSocket.OPEN
+  ) {
+    return Promise.resolve({ outcome: 'unavailable', lines: [] })
+  }
+
+  return new Promise(resolve => {
+    const timeoutId = setTimeout(() => settleExclusiveCommand('timeout'), timeoutMs)
+    pendingExclusiveCommand = { lines: [], resolve, timeoutId }
+    try {
+      socket!.send(cmd + '\n')
+      lastResponseProducingSendAt = Date.now()
+    } catch {
+      settleExclusiveCommand('disconnected')
+    }
+  })
+}
+
+/**
  * Browser-side websocket backpressure. `send()` only means that a frame was
  * accepted into the browser queue; it does not mean it has reached FluidNC.
  */
@@ -578,6 +650,7 @@ export function resumeBackgroundTraffic() {
 export function suspendResponseTraffic() {
   responseTrafficSuspensions++
   stopGcStatePoll()
+  if (socket?.readyState === WebSocket.OPEN) startStatusPoll()
 }
 
 /**
@@ -590,6 +663,7 @@ export function isResponseTrafficQuiescent(quietMs = 500) {
     && pendingAcknowledgments.size === 0
     && pendingSilentResponses.length === 0
     && activeSilentResponse === null
+    && pendingExclusiveCommand === null
     && Date.now() - lastResponseProducingSendAt >= quietMs
 }
 
@@ -601,6 +675,7 @@ export function resumeResponseTraffic() {
     || socket?.readyState !== WebSocket.OPEN
   ) return
   connectionHealth.lastResponseTime = Date.now()
+  startStatusPoll()
   startGcStatePoll()
 }
 
@@ -738,6 +813,7 @@ export function disconnect() {
   stopCommandProcessor()
   pendingSilentResponses.length = 0
   activeSilentResponse = null
+  settleExclusiveCommand('disconnected')
   pendingAcknowledgments.forEach(({ timeoutId }) => clearTimeout(timeoutId))
   pendingAcknowledgments.clear()
   commandQueue.length = 0

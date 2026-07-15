@@ -10,6 +10,7 @@ import {
   onSessionTaken,
   onSoftReset,
   resumeResponseTraffic,
+  sendExclusiveResponseCommand,
   sendRealtimeNow,
   sendStreamRaw,
   suspendResponseTraffic,
@@ -79,6 +80,9 @@ let programHasMotion = false
 let sawBusyState = false
 let drainStartedAt = 0
 let endWasSynchronized = false
+let previousReportInterval: number | null = null
+let autoReportChanged = false
+let finishing = false
 let wakeLock: { release: () => Promise<void> } | null = null
 
 function stripComments(raw: string) {
@@ -200,12 +204,35 @@ function disconnectedMessage(action = 'streaming') {
   return `Controller disconnected while ${action}${reason ? `: ${reason}` : ''}.`
 }
 
+interface FinishRequest {
+  phase: 'completed' | 'aborted' | 'error'
+  error: string | null
+  failureLine: number | null
+  failureLineSource: 'position' | 'acknowledged' | null
+}
+
+function finalizeFinish(request: FinishRequest) {
+  previousReportInterval = null
+  autoReportChanged = false
+  releaseExclusiveTraffic()
+  releaseWakeLock()
+  finishing = false
+  useGCodeSenderStore.setState(request)
+}
+
 function finish(phase: 'completed' | 'aborted' | 'error', error: string | null = null) {
+  if (finishing) return
+  finishing = true
   const trackedLine = phase === 'error' ? useGCodeStore.getState().activeSourceLine : null
   const failureLine = phase === 'error' ? trackedLine ?? lastAcknowledgedLine : null
-  const failureLineSource = trackedLine != null
-    ? 'position'
-    : failureLine != null ? 'acknowledged' : null
+  const request: FinishRequest = {
+    phase,
+    error,
+    failureLine,
+    failureLineSource: trackedLine != null
+      ? 'position'
+      : failureLine != null ? 'acknowledged' : null,
+  }
   publishProgress()
   clearTimers()
   pendingBlocks = []
@@ -213,9 +240,20 @@ function finish(phase: 'completed' | 'aborted' | 'error', error: string | null =
   resumePending = false
   responseChannelReady = false
   pendingIdleSince = 0
-  releaseExclusiveTraffic()
-  releaseWakeLock()
-  useGCodeSenderStore.setState({ phase, error, failureLine, failureLineSource })
+
+  if (!autoReportChanged || previousReportInterval == null || !isSocketOpen()) {
+    finalizeFinish(request)
+    return
+  }
+
+  // After reset/error, allow stale program responses to drain before issuing
+  // the restoration command. Normal completion already has an empty FIFO.
+  const restoreDelay = phase === 'completed' ? 0 : 500
+  settleTimer = setTimeout(() => {
+    settleTimer = null
+    void sendExclusiveResponseCommand(`$RI=${previousReportInterval}`, 2000)
+      .finally(() => finalizeFinish(request))
+  }, restoreDelay)
 }
 
 function enterDraining(synchronizedEnd = false) {
@@ -284,6 +322,41 @@ function scheduleAcknowledgmentCheck() {
   }, 500)
 }
 
+async function configureStreamAutoReporting() {
+  const query = await sendExclusiveResponseCommand('$RI')
+  if (!ownsExclusiveTraffic || finishing || useGCodeSenderStore.getState().phase !== 'streaming') return
+
+  if (query.outcome !== 'ok' && query.outcome !== 'error') {
+    finish('error', 'Could not establish exclusive controller reporting for the G-code stream.')
+    return
+  }
+
+  if (query.outcome === 'ok') {
+    const joined = query.lines.join('\n')
+    const intervalMatch = joined.match(/auto report interval is\s+(\d+)\s*ms/i)
+    const wasOff = /auto reporting is off/i.test(joined)
+    previousReportInterval = intervalMatch ? Number(intervalMatch[1]) : wasOff ? 0 : null
+
+    if (previousReportInterval != null && previousReportInterval > 0) {
+      // Once sent, a missing response is ambiguous: FluidNC may have applied
+      // the change. Mark it for restoration until an explicit error proves it
+      // was rejected.
+      autoReportChanged = true
+      const disabled = await sendExclusiveResponseCommand('$RI=0')
+      if (!ownsExclusiveTraffic || finishing || useGCodeSenderStore.getState().phase !== 'streaming') return
+      if (disabled.outcome === 'error') {
+        autoReportChanged = false
+      } else if (disabled.outcome !== 'ok') {
+        finish('error', 'Controller stopped responding while automatic status reports were being suspended.')
+        return
+      }
+    }
+  }
+
+  responseChannelReady = true
+  pump()
+}
+
 function waitForExclusiveResponseChannel(startedAt: number) {
   if (!ownsExclusiveTraffic || useGCodeSenderStore.getState().phase !== 'streaming') return
   if (!isSocketOpen()) {
@@ -291,8 +364,7 @@ function waitForExclusiveResponseChannel(startedAt: number) {
     return
   }
   if (isResponseTrafficQuiescent() && useMachineStore.getState().status.state === 'Idle') {
-    responseChannelReady = true
-    pump()
+    void configureStreamAutoReporting()
     return
   }
   if (Date.now() - startedAt >= STREAM_PREPARE_TIMEOUT_MS) {
@@ -389,6 +461,9 @@ export const useGCodeSenderStore = create<SenderState>((set, get) => ({
     sawBusyState = false
     drainStartedAt = 0
     endWasSynchronized = false
+    previousReportInterval = null
+    autoReportChanged = false
+    finishing = false
     clearTimers()
     suspendResponseTraffic()
     ownsExclusiveTraffic = true

@@ -44,6 +44,8 @@ class FakeWebSocket {
   binaryType = ''
   sent: Array<string | Uint8Array> = []
   machineState = 'Idle'
+  reportInterval = 750
+  supportsReportInterval = true
   onopen: (() => void) | null = null
   onclose: ((event: { code: number; reason: string }) => void) | null = null
   onerror: (() => void) | null = null
@@ -69,6 +71,13 @@ class FakeWebSocket {
     const text = typeof copy === 'string' ? copy : new TextDecoder().decode(copy)
     if (text.trim() === '$G') {
       queueMicrotask(() => this.receive('[GC:G0 G54 G17 G21 G90 G94 M5 M9 T0 F0 S0]\nok\n'))
+    } else if (text.trim() === '$RI') {
+      queueMicrotask(() => this.receive(this.supportsReportInterval
+        ? `[MSG:INFO: websocket auto report interval is ${this.reportInterval} ms]\nok\n`
+        : 'error:3\n'))
+    } else if (/^\$RI=\d+$/.test(text.trim())) {
+      this.reportInterval = Number(text.trim().slice(4))
+      queueMicrotask(() => this.receive('ok\n'))
     } else if (text.startsWith('PING:')) {
       queueMicrotask(() => this.receive('PING:60000:60000'))
     }
@@ -105,8 +114,12 @@ await delay(350)
 
 const programMessages = () => socket.sent
   .filter((item): item is string => typeof item === 'string')
-  .map(item => item.trim())
+  .flatMap(item => item.split('\n').map(line => line.trim()).filter(Boolean))
   .filter(item => item.startsWith('G1 ') || item === 'M30')
+
+const programFrames = () => socket.sent
+  .filter((item): item is string => typeof item === 'string')
+  .filter(item => item.split('\n').some(line => line.trim().startsWith('G1 ') || line.trim() === 'M30'))
 
 assert.equal(programMessages().length, 0, 'stream must honor browser websocket backpressure')
 socket.bufferedAmount = 0
@@ -114,9 +127,16 @@ socket.machineState = 'Run'
 useMachineStore.getState().updateStatus({ state: 'Run' })
 await waitFor(() => programMessages().length > 0, 'stream did not start after backpressure cleared')
 assert.ok(
-  socket.sent.filter(item => typeof item === 'string' && item.trim().startsWith('G1 ')).length > 0,
+  programFrames().length > 0,
   'program commands must use websocket text frames',
 )
+assert.ok(
+  programFrames().every(frame => frame.trim().split('\n').filter(Boolean).length === 1),
+  'program commands should retain per-line framing',
+)
+const textCommands = socket.sent.filter((item): item is string => typeof item === 'string').map(item => item.trim())
+assert.ok(textCommands.indexOf('$RI') < textCommands.indexOf('$RI=0'), 'stream must query the existing report interval before changing it')
+assert.ok(textCommands.indexOf('$RI=0') < textCommands.findIndex(command => command.startsWith('G1 ')), 'auto-reporting must be disabled before G-code starts')
 
 let acknowledged = 0
 while (acknowledged < commands.length) {
@@ -133,12 +153,31 @@ socket.machineState = 'Idle'
 useMachineStore.getState().updateStatus({ state: 'Idle' })
 await waitFor(() => useGCodeSenderStore.getState().phase === 'completed', 'acknowledged stream did not complete')
 assert.equal(useGCodeSenderStore.getState().completedBlocks, commands.length)
+assert.equal(socket.reportInterval, 750, 'stream must restore the exact controller report interval')
 
 useGCodeSenderStore.getState().dismiss()
 assert.equal(useGCodeSenderStore.getState().start('G1 X1 F100', 'lost-ack.gcode'), true)
 await waitFor(() => programMessages().filter(command => command === 'G1 X1 F100').length === 1, 'lost-ack test block was not sent')
-await waitFor(() => useGCodeSenderStore.getState().phase === 'error', 'lost acknowledgement was not detected', 5000)
+await waitFor(() => useGCodeSenderStore.getState().phase === 'error', 'lost acknowledgement was not detected', 7000)
 assert.match(useGCodeSenderStore.getState().error ?? '', /stopped acknowledging/)
+assert.equal(socket.reportInterval, 750, 'error cleanup must restore the exact controller report interval')
+
+useGCodeSenderStore.getState().dismiss()
+socket.supportsReportInterval = false
+const disableCommandsBeforeFallback = socket.sent.filter(item => typeof item === 'string' && item.trim() === '$RI=0').length
+assert.equal(useGCodeSenderStore.getState().start('G1 X99 F100', 'legacy.gcode'), true)
+await waitFor(() => programMessages().includes('G1 X99 F100'), 'legacy fallback stream did not start')
+assert.equal(
+  socket.sent.filter(item => typeof item === 'string' && item.trim() === '$RI=0').length,
+  disableCommandsBeforeFallback,
+  'unsupported firmware must not receive the report-disable command',
+)
+socket.machineState = 'Run'
+useMachineStore.getState().updateStatus({ state: 'Run' })
+socket.receive('ok\n')
+socket.machineState = 'Idle'
+useMachineStore.getState().updateStatus({ state: 'Idle' })
+await waitFor(() => useGCodeSenderStore.getState().phase === 'completed', 'legacy fallback stream did not complete')
 
 ws.disconnect()
 console.log('G-code stream reliability tests passed')
