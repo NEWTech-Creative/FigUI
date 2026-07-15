@@ -179,7 +179,7 @@ export function ProgramExecutionPanel({ isTablet, initiallyOpen = false, accordi
                 </p>
                 {senderMode ? (
                   <p className="mt-1.5">
-                    FluidUI estimates the highlighted line by matching the machine's live XYZ position to the loaded toolpath.
+                    This is an approximation of the current line being executed. It may differ slightly due to FluidNC's planner queue.
                   </p>
                 ) : (
                   <>
