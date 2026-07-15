@@ -174,6 +174,16 @@ body {
   --studio-border: rgb(255 255 255 / 0.1);
   --studio-text: #d8dee9;
   --studio-muted: #778498;
+  --studio-label: #a9b3c2;
+  --studio-subtle: #5e6a7c;
+  --studio-toggle-off-bg: #10141c;
+  --studio-toggle-off-border: rgb(255 255 255 / 0.1);
+  --studio-toggle-off-text: #748094;
+  --studio-toggle-off-track: #384252;
+  --studio-toggle-on-bg: rgb(41 72 61 / 0.4);
+  --studio-toggle-on-border: rgb(84 143 120 / 0.5);
+  --studio-toggle-on-text: #83c5aa;
+  --studio-toggle-on-track: #559c7e;
   background: var(--studio-canvas) !important;
   color: var(--studio-text) !important;
 }
@@ -188,6 +198,16 @@ html:not(.dark):not(.anthracite-dark):not(.midnight-dark) .config-studio {
   --studio-border: rgb(71 85 105 / 0.2);
   --studio-text: #172033;
   --studio-muted: #64748b;
+  --studio-label: #536179;
+  --studio-subtle: #475569;
+  --studio-toggle-off-bg: #f1f3f8;
+  --studio-toggle-off-border: rgb(71 85 105 / 0.22);
+  --studio-toggle-off-text: #475569;
+  --studio-toggle-off-track: #94a3b8;
+  --studio-toggle-on-bg: #e9f6f0;
+  --studio-toggle-on-border: #26735a;
+  --studio-toggle-on-text: #164e3d;
+  --studio-toggle-on-track: #26735a;
 }
 html:not(.dark):not(.anthracite-dark):not(.midnight-dark)
   .config-studio
@@ -226,6 +246,28 @@ html:not(.dark):not(.anthracite-dark):not(.midnight-dark)
 .config-studio [class*="text-[#687589]"],
 .config-studio [class*="text-[#6f7b8e]"] {
   color: var(--studio-muted) !important;
+}
+.config-studio .studio-property-label {
+  color: var(--studio-label);
+}
+.config-studio .studio-property-unit {
+  color: var(--studio-subtle);
+}
+.config-studio .studio-boolean-toggle {
+  border-color: var(--studio-toggle-off-border);
+  background-color: var(--studio-toggle-off-bg);
+  color: var(--studio-toggle-off-text);
+}
+.config-studio .studio-boolean-toggle-on {
+  border-color: var(--studio-toggle-on-border);
+  background-color: var(--studio-toggle-on-bg);
+  color: var(--studio-toggle-on-text);
+}
+.config-studio .studio-boolean-track {
+  background-color: var(--studio-toggle-off-track);
+}
+.config-studio .studio-boolean-toggle-on .studio-boolean-track {
+  background-color: var(--studio-toggle-on-track);
 }
 
 html:not(.dark):not(.anthracite-dark):not(.midnight-dark) .config-studio {

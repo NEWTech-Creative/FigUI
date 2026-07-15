@@ -2670,10 +2670,10 @@ export function ConfigStudio({
                   )
                   .map((f) => (
                     <label key={f.key} className="block" title={f.description}>
-                      <span className="mb-1.5 flex text-[13px] font-medium text-[#a9b3c2]">
+                      <span className="studio-property-label mb-1.5 flex text-[13px] font-medium">
                         <span>{f.label}</span>
                         {f.unit && (
-                          <span className="ml-auto text-[#5e6a7c]">
+                          <span className="studio-property-unit ml-auto">
                             {f.unit}
                           </span>
                         )}
@@ -2695,7 +2695,7 @@ export function ConfigStudio({
                                 : "true",
                             )
                           }
-                          className={`flex w-full items-center justify-between rounded-md border px-2.5 py-2 text-xs ${active.fields[f.key] === "true" ? "border-[#548f78]/50 bg-[#29483d]/40 text-[#83c5aa]" : "border-white/10 bg-[#10141c] text-[#748094]"}`}
+                          className={`studio-boolean-toggle flex w-full items-center justify-between rounded-md border px-2.5 py-2 text-xs ${active.fields[f.key] === "true" ? "studio-boolean-toggle-on" : ""}`}
                         >
                           <span>
                             {active.fields[f.key] === "true"
@@ -2703,7 +2703,7 @@ export function ConfigStudio({
                               : "Disabled"}
                           </span>
                           <span
-                            className={`h-4 w-7 rounded-full p-0.5 ${active.fields[f.key] === "true" ? "bg-[#559c7e]" : "bg-[#384252]"}`}
+                            className="studio-boolean-track h-4 w-7 rounded-full p-0.5"
                           >
                             <span
                               className={`block h-3 w-3 rounded-full bg-white transition-transform ${active.fields[f.key] === "true" ? "translate-x-3" : ""}`}
