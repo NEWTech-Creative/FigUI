@@ -102,6 +102,8 @@ const LOOKAHEAD_MAX_SEGMENTS = 4000
 const LARGE_PROGRESS_OVERLAY_SEGMENT_LIMIT = 100_000
 const EMPTY_FLOAT32 = new Float32Array(0)
 const WHEEL_ZOOM_SENSITIVITY = 0.0012
+const ORBIT_ROTATIONS_PER_VIEWPORT = 1
+const ORBIT_POLAR_EPSILON = 0.001
 const VIEW_FIT_PADDING = 1.15
 const CAMERA_CLIP_NEAR_MIN = 0.001
 const CAMERA_CLIP_PADDING_RATIO = 0.05
@@ -1087,7 +1089,10 @@ export function GCodeViewer({ className, isTablet, showOverrides, fitToViewSigna
     orthoSize: Math.tan(Math.PI / 8) * 100,
     target: { x: 0, y: 0, z: 0 },
   })
-  const orbitDragRef = useRef<{ sx: number; sy: number; theta: number; phi: number } | null>(null)
+  const orbitDragRef = useRef<{
+    x: number
+    y: number
+  } | null>(null)
   const panDragRef = useRef<{
     sx: number
     sy: number
@@ -1151,15 +1156,36 @@ export function GCodeViewer({ className, isTablet, showOverrides, fitToViewSigna
 
   function updateCameraFromOrbit(orbit = orbitState) {
     const camera = cameraRef.current
+    let cameraOrbit = orbit
+
+    if (projectionMode === 'orthographic') {
+      const clipBounds = getClipBounds((modelRef.current ?? model)?.bounds ?? null)
+      const diagonal = Math.hypot(
+        clipBounds.maxX - clipBounds.minX,
+        clipBounds.maxY - clipBounds.minY,
+        clipBounds.maxZ - clipBounds.minZ,
+      )
+      let safeRadius = orbit.radius
+      for (const corner of getBoundsCorners(clipBounds)) {
+        const relative = subtractVectors(corner, orbit.target)
+        safeRadius = Math.max(safeRadius, Math.hypot(relative.x, relative.y, relative.z))
+      }
+      cameraOrbit = {
+        ...orbit,
+        radius: safeRadius + Math.max(CAMERA_CLIP_PADDING_MIN, diagonal * CAMERA_CLIP_PADDING_RATIO),
+      }
+    }
+
     camera.target.x = orbit.target.x
     camera.target.y = orbit.target.y
     camera.target.z = orbit.target.z
-    camera.position.x = orbit.target.x + orbit.radius * Math.sin(orbit.phi) * Math.cos(orbit.theta)
-    camera.position.y = orbit.target.y + orbit.radius * Math.sin(orbit.phi) * Math.sin(orbit.theta)
-    camera.position.z = orbit.target.z + orbit.radius * Math.cos(orbit.phi)
+    const position = getOrbitCameraPosition(cameraOrbit)
+    camera.position.x = position.x
+    camera.position.y = position.y
+    camera.position.z = position.z
     camera.projection = projectionMode
     camera.orthoSize = Math.max(orbit.orthoSize, 1e-3)
-    updateCameraClipping(orbit)
+    updateCameraClipping(cameraOrbit)
   }
 
   function updateCameraClipping(orbit = orbitState, mdl = modelRef.current ?? model) {
@@ -1332,10 +1358,8 @@ export function GCodeViewer({ className, isTablet, showOverrides, fitToViewSigna
     }
 
     orbitDragRef.current = {
-      sx: clientX,
-      sy: clientY,
-      theta: orbitState.theta,
-      phi: orbitState.phi,
+      x: clientX,
+      y: clientY,
     }
     panDragRef.current = null
   }
@@ -1615,18 +1639,21 @@ export function GCodeViewer({ className, isTablet, showOverrides, fitToViewSigna
     if (!mdl && (bedW == null || bedH == null)) return
 
     if (is3D) {
+      cancelSnapAnimation()
       const { w, h } = canvasLogicalSize()
-      const clipBounds = getClipBounds(mdl ? mdl.bounds : null)
-      const centerX = (clipBounds.minX + clipBounds.maxX) / 2
-      const centerY = (clipBounds.minY + clipBounds.maxY) / 2
-      const centerZ = (clipBounds.minZ + clipBounds.maxZ) / 2
+      // Keep the orbit pivot on the part. Clipping still accounts for the bed,
+      // but including it here makes small or offset parts orbit around empty space.
+      const viewBounds = mdl?.bounds ?? getClipBounds(null)
+      const centerX = (viewBounds.minX + viewBounds.maxX) / 2
+      const centerY = (viewBounds.minY + viewBounds.maxY) / 2
+      const centerZ = (viewBounds.minZ + viewBounds.maxZ) / 2
       const camera = cameraRef.current
       const aspect = Math.max(w / Math.max(h, 1), 1e-6)
       const tanHalfFov = Math.max(Math.tan(camera.fov / 2), 1e-6)
       const target = { x: centerX, y: centerY, z: centerZ }
       const fitOrbit = { ...orbitState, target }
       const { forward, right, screenUp } = getOrbitCameraBasis(fitOrbit, camera.up)
-      const corners = getBoundsCorners(clipBounds)
+      const corners = getBoundsCorners(viewBounds)
       let nextRadius = 1
       let nextOrthoSize = orbitState.orthoSize
 
@@ -1635,9 +1662,9 @@ export function GCodeViewer({ className, isTablet, showOverrides, fitToViewSigna
         let maxUp = 0
         let maxTargetDistance = 0
         const diagonal = Math.hypot(
-          clipBounds.maxX - clipBounds.minX,
-          clipBounds.maxY - clipBounds.minY,
-          clipBounds.maxZ - clipBounds.minZ,
+          viewBounds.maxX - viewBounds.minX,
+          viewBounds.maxY - viewBounds.minY,
+          viewBounds.maxZ - viewBounds.minZ,
         )
         const depthPadding = Math.max(CAMERA_CLIP_PADDING_MIN, diagonal * CAMERA_CLIP_PADDING_RATIO)
 
@@ -2081,8 +2108,9 @@ export function GCodeViewer({ className, isTablet, showOverrides, fitToViewSigna
   }, [is3D, projectionMode])
 
   function onPointerDown(e: React.PointerEvent) {
+    if (is3D) e.preventDefault()
     ;(e.target as HTMLElement).setPointerCapture(e.pointerId)
-    const pointerDragMode = is3D && e.button === 2 ? 'pan' : dragMode
+    const pointerDragMode = is3D && (e.button === 1 || e.button === 2 || e.shiftKey) ? 'pan' : dragMode
     activePointersRef.current.set(e.pointerId, { x: e.clientX, y: e.clientY, dragMode: pointerDragMode })
 
     if (activePointersRef.current.size === 1) {
@@ -2109,18 +2137,20 @@ export function GCodeViewer({ className, isTablet, showOverrides, fitToViewSigna
     if (pointers.length === 2) {
       const [p1, p2] = pointers
       const dist = Math.hypot(p2.x - p1.x, p2.y - p1.y)
+      const centerX = (p1.x + p2.x) / 2
+      const centerY = (p1.y + p2.y) / 2
       if (lastPinchDistRef.current !== null) {
         const factor = dist / lastPinchDistRef.current
 
         if (is3D) {
           const smoothFactor = 1 + (factor - 1) * 0.5
-          const anchor = getScreenAnchor((p1.x + p2.x) / 2, (p1.y + p2.y) / 2)
+          const anchor = getScreenAnchor(centerX, centerY)
           setOrbitState(prev => zoomOrbitTowardAnchor(prev, 1 / smoothFactor, anchor))
         } else {
           const t = transformRef.current
           const rect = containerRef.current!.getBoundingClientRect()
-          const mx = (p1.x + p2.x) / 2 - rect.left
-          const my = (p1.y + p2.y) / 2 - rect.top
+          const mx = centerX - rect.left
+          const my = centerY - rect.top
           t.ox = mx - (mx - t.ox) * factor
           t.oy = my - (my - t.oy) * factor
           t.scale *= factor
@@ -2132,14 +2162,20 @@ export function GCodeViewer({ className, isTablet, showOverrides, fitToViewSigna
     } else if (pointers.length === 1) {
       if (is3D && orbitDragRef.current) {
         const d = orbitDragRef.current
-        const sensitivity = 0.01
-        const newTheta = d.theta - (e.clientX - d.sx) * sensitivity
-        const newPhi = Math.max(0.1, Math.min(Math.PI - 0.1, d.phi - (e.clientY - d.sy) * sensitivity))
+        const viewportHeight = Math.max(containerRef.current?.clientHeight ?? 0, 1)
+        const sensitivity = (TAU * ORBIT_ROTATIONS_PER_VIEWPORT) / viewportHeight
+        const deltaTheta = -(e.clientX - d.x) * sensitivity
+        const deltaPhi = -(e.clientY - d.y) * sensitivity
+        d.x = e.clientX
+        d.y = e.clientY
 
         setOrbitState(prev => ({
           ...prev,
-          theta: newTheta,
-          phi: newPhi
+          theta: prev.theta + deltaTheta,
+          phi: Math.max(
+            ORBIT_POLAR_EPSILON,
+            Math.min(Math.PI - ORBIT_POLAR_EPSILON, prev.phi + deltaPhi),
+          ),
         }))
         scheduleRender()
       } else if (is3D && panDragRef.current) {
@@ -2322,8 +2358,8 @@ export function GCodeViewer({ className, isTablet, showOverrides, fitToViewSigna
                 className={`${btnCls} ${dragMode === 'pan' ? 'text-info bg-info/10' : 'text-text-dim bg-elevated hover:text-text-primary'}`}
                 onClick={() => setDragMode(mode => mode === 'orbit' ? 'pan' : 'orbit')}
                 title={dragMode === 'orbit'
-                  ? 'Drag to orbit. Right-drag to pan.'
-                  : 'Drag to pan. Right-drag also pans.'}
+                  ? 'Drag to orbit. Shift-, middle-, or right-drag to pan.'
+                  : 'Drag to pan.'}
               >
                 {dragMode === 'orbit' ? <Orbit size={iconSize} /> : <Hand size={iconSize} />}
                 <span>{dragMode === 'orbit' ? 'Orbit' : 'Pan'}</span>
