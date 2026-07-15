@@ -48,6 +48,8 @@ interface SenderState {
 }
 
 const STREAM_WINDOW_BYTES = 127
+//Bound response count as well as byte count so a burst of tiny commands cannot fill it with `ok`s.
+const STREAM_WINDOW_BLOCKS = 8
 const MAX_COMMAND_BYTES = 240
 const TOOL_CHANGE_SETTLE_MS = 300
 const DRAIN_IDLE_GRACE_MS = 1500
@@ -394,6 +396,7 @@ function pump() {
     const block = blocks[nextBlock]
     const pendingBarrier = pendingBlocks.some(item => item.block.barrier !== null)
     if (pendingBarrier) return
+    if (pendingBlocks.length >= STREAM_WINDOW_BLOCKS) return
     // Stop/tool/end commands must execute alone, after all earlier blocks have
     // acknowledged, so FluidNC cannot read past a program-control boundary.
     if (block.barrier && pendingBlocks.length > 0) return

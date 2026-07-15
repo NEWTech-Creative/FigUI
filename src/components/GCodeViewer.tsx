@@ -2612,14 +2612,11 @@ export function GCodeViewer({ className, isTablet, showOverrides, fitToViewSigna
           </div>
         )}
 
-        {(senderPhase === 'paused' || senderPhase === 'draining' || senderPhase === 'completed' || senderPhase === 'error') && (
+        {(senderPhase === 'error') && (
           <div className={`rounded border px-3 py-2 ${senderPhase === 'error' ? 'border-danger/40 bg-danger/10' : 'border-info/30 bg-info/5'}`}>
             <div className="flex items-center justify-between gap-3 text-sm">
               <span className={senderPhase === 'error' ? 'text-danger' : 'text-text-primary'}>
-                {senderPhase === 'paused' && 'Local job paused'}
-                {senderPhase === 'draining' && 'Finishing local job'}
-                {senderPhase === 'completed' && 'Local job complete'}
-                {senderPhase === 'error' && (senderError ?? 'Local sender stopped')}
+                {senderError ?? 'Local sender stopped'}
               </span>
               {!senderActive && (
                 <button className="text-text-dim hover:text-text-primary" onClick={dismissSender} title="Dismiss">

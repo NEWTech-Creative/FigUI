@@ -145,6 +145,7 @@ while (acknowledged < commands.length) {
   const outstandingBytes = sent.slice(acknowledged)
     .reduce((total, command) => total + new TextEncoder().encode(command).byteLength + 1, 0)
   assert.ok(outstandingBytes <= 127 || sent[acknowledged].length > 127, `stream window overflowed: ${outstandingBytes}`)
+  assert.ok(sent.length - acknowledged <= 8, `stream response window overflowed: ${sent.length - acknowledged} blocks`)
   socket.receive('ok\n')
   acknowledged++
 }

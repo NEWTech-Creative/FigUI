@@ -191,7 +191,7 @@ const LIVENESS_CHECK_MS = 2000
 const LIVENESS_TIMEOUT_MS = 12000
 const OPEN_TIMEOUT_MS = 6000
 export const STATUS_POLL_INTERVAL_MS = 500
-const STREAM_STATUS_POLL_INTERVAL_MS = 500
+const STREAM_STATUS_POLL_INTERVAL_MS = 250
 const GC_STATE_POLL_INTERVAL_MS = 2000
 // 0x3F = '?' — FluidNC's real-time status request byte.
 const STATUS_REPORT_BYTE = 0x3F
@@ -324,9 +324,10 @@ function startStatusPoll() {
   if (backgroundTrafficSuspensions > 0) return
   stopStatusPoll()
   // During a local stream FluidUI disables FluidNC's 5 Hz auto-reporting and
-  // becomes the sole status producer. A 2 Hz poll keeps Door/Hold detection
-  // responsive while staying well below the controller's 32-message queue
-  // during AsyncTCP's five-second acknowledgement window.
+  // becomes the sole status producer. A 4 Hz poll keeps the DRO, toolhead, and
+  // Door/Hold detection responsive while staying below the controller's
+  // 32-message queue during AsyncTCP's five-second acknowledgement window,
+  // with margin for in-flight G-code acknowledgements and keepalive traffic.
   const interval = responseTrafficSuspensions > 0
     ? STREAM_STATUS_POLL_INTERVAL_MS
     : STATUS_POLL_INTERVAL_MS
