@@ -37,6 +37,7 @@ import { isGCodeFileName } from "../lib/gcodeFiles";
 type Filesystem = "sd" | "local";
 
 const isGcode = isGCodeFileName;
+const isYamlFile = (name: string) => /\.ya?ml$/i.test(name);
 
 function fmtSize(bytes: number): string {
   if (bytes < 1024) return `${bytes} B`;
@@ -442,12 +443,14 @@ export function FileManager({ isTablet }: { isTablet?: boolean }) {
   const [newFileName, setNewFileName] = useState("");
   const [showNewFile, setShowNewFile] = useState(false);
   const [editing, setEditing] = useState<{
+    fs: Filesystem;
     path: string;
     filename: string;
     content: string;
     openStudio?: boolean;
   } | null>(null);
   const [editLoading, setEditLoading] = useState<string | null>(null);
+  const [configChoices, setConfigChoices] = useState<FileEntry[] | null>(null);
   const [dragOver, setDragOver] = useState(false);
   const [search, setSearch] = useState("");
   const [selectionMode, setSelectionMode] = useState(false);
@@ -497,28 +500,67 @@ export function FileManager({ isTablet }: { isTablet?: boolean }) {
     return () => window.removeEventListener("files:changed", scheduleRefresh);
   }, [scheduleRefresh]);
 
+  const openStudioFile = useCallback(async (filename: string) => {
+    setConfigChoices(null);
+    setEditLoading(filename);
+    try {
+      const content = await fetchFileContent(`/${filename}`, "local");
+      setEditing({
+        fs: "local",
+        path: "/",
+        filename,
+        content,
+        openStudio: true,
+      });
+    } catch (e) {
+      alert(
+        `Failed to open ${filename}: ${e instanceof Error ? e.message : "Unknown error"}`,
+      );
+    } finally {
+      setEditLoading(null);
+    }
+  }, []);
+
   useEffect(() => {
     const openStudio = async () => {
-      setEditLoading("config.yaml");
+      setEditLoading("YAML files");
       try {
-        const content = await fetchFileContent("/config.yaml", "local");
-        setEditing({
-          path: "/",
-          filename: "config.yaml",
-          content,
-          openStudio: true,
-        });
+        const cachedLocal = _fmCache.get("local");
+        const localRoot =
+          fs === "local" && path === "/" && result
+            ? result
+            : cachedLocal?.path === "/"
+              ? cachedLocal.result
+              : await listFiles("/", "local");
+        if (!_fmCache.has("local") || cachedLocal?.path !== "/") {
+          _fmCache.set("local", { result: localRoot, path: "/" });
+        }
+
+        const yamlFiles = localRoot.files
+          .filter((entry) => !entry.isDir && isYamlFile(entry.name))
+          .sort((a, b) => a.name.localeCompare(b.name));
+
+        if (yamlFiles.length === 0) {
+          alert("No .yaml or .yml files were found in Internal storage.");
+        } else if (yamlFiles.length === 1) {
+          await openStudioFile(yamlFiles[0].name);
+        } else {
+          setConfigChoices(yamlFiles);
+        }
       } catch (e) {
         alert(
-          `Failed to open config.yaml: ${e instanceof Error ? e.message : "Unknown error"}`,
+          `Failed to list YAML files: ${e instanceof Error ? e.message : "Unknown error"}`,
         );
       } finally {
         setEditLoading(null);
       }
     };
+
     window.addEventListener("config:open-studio", openStudio);
-    return () => window.removeEventListener("config:open-studio", openStudio);
-  }, []);
+    return () => {
+      window.removeEventListener("config:open-studio", openStudio);
+    };
+  }, [fs, path, result, openStudioFile]);
 
   useEffect(() => {
     if (!result) return;
@@ -611,6 +653,7 @@ export function FileManager({ isTablet }: { isTablet?: boolean }) {
     setShowNewFile(false);
     if (isEditable(name)) {
       setEditing({
+        fs,
         path: path.endsWith("/") ? path : `${path}/`,
         filename: name,
         content: "",
@@ -631,7 +674,7 @@ export function FileManager({ isTablet }: { isTablet?: boolean }) {
     try {
       const fullFilePath = `${filePath}${filename}`;
       const content = await fetchFileContent(fullFilePath, fs);
-      setEditing({ path: filePath, filename, content });
+      setEditing({ fs, path: filePath, filename, content });
     } catch (e) {
       alert(
         `Failed to load file: ${e instanceof Error ? e.message : "Unknown error"}`,
@@ -644,7 +687,7 @@ export function FileManager({ isTablet }: { isTablet?: boolean }) {
   async function handleSaveFile(content: string) {
     if (!editing) return;
     if (
-      /\.ya?ml$/i.test(editing.filename) &&
+      isYamlFile(editing.filename) &&
       content.includes("# Edited using Config Studio") &&
       !editing.content.includes("# Edited using Config Studio")
     ) {
@@ -654,10 +697,10 @@ export function FileManager({ isTablet }: { isTablet?: boolean }) {
         editing.path,
         backupName,
         editing.content,
-        fs,
+        editing.fs,
       );
     }
-    await saveFileContent(editing.path, editing.filename, content, fs);
+    await saveFileContent(editing.path, editing.filename, content, editing.fs);
     setEditing((current) => (current ? { ...current, content } : current));
     load(path, fs);
   }
@@ -1145,6 +1188,53 @@ export function FileManager({ isTablet }: { isTablet?: boolean }) {
             </div>
             <div className="mt-1 max-w-64 truncate font-mono text-sm text-text-muted">
               {editLoading}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {configChoices && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4 backdrop-blur-[1px]"
+          onClick={() => setConfigChoices(null)}
+        >
+          <div
+            className="flex max-h-[80vh] w-full max-w-md flex-col overflow-hidden rounded-lg border border-border bg-surface shadow-2xl"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-center justify-between border-b border-border px-5 py-4">
+              <div className="min-w-0">
+                <div className="text-base font-semibold text-text-primary">
+                  Choose Config File
+                </div>
+                <div className="mt-0.5 text-sm text-text-muted">
+                  Internal storage
+                </div>
+              </div>
+              <button
+                className="rounded p-2 text-text-muted hover:bg-elevated hover:text-text-primary"
+                onClick={() => setConfigChoices(null)}
+                title="Close"
+              >
+                <X size={18} />
+              </button>
+            </div>
+            <div className="min-h-0 overflow-y-auto p-2">
+              {configChoices.map((entry) => (
+                <button
+                  key={entry.name}
+                  className="flex w-full items-center gap-3 rounded px-3 py-3 text-left hover:bg-elevated"
+                  onClick={() => void openStudioFile(entry.name)}
+                >
+                  <FileCode size={18} className="shrink-0 text-accent" />
+                  <span className="min-w-0 flex-1 truncate font-mono text-sm text-text-primary">
+                    {entry.name}
+                  </span>
+                  <span className="shrink-0 text-xs text-text-muted">
+                    {fmtSize(entry.size)}
+                  </span>
+                </button>
+              ))}
             </div>
           </div>
         </div>
