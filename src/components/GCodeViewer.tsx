@@ -1,5 +1,5 @@
 import { useRef, useEffect, useLayoutEffect, useState, useCallback } from 'react'
-import { Eye, Axis3D, Maximize2, Crosshair, Navigation, Play, Pause, Square, CloudDrizzle, Waves, PowerOff, Box, Zap, Orbit, Hand, ListStart, RotateCcw, FilePlus, X } from 'lucide-react'
+import { Eye, Axis3D, Maximize2, Crosshair, Navigation, Play, Pause, Square, CloudDrizzle, Waves, PowerOff, Box, Zap, Orbit, Hand, ListStart, RotateCcw, FilePlus, X, AlertTriangle } from 'lucide-react'
 import { type GCodeModel, type Segment } from '../lib/gcode'
 import { useMachineStore } from '../store'
 import { useGCodeStore } from '../store/gcode'
@@ -114,6 +114,7 @@ const TOOLHEAD_CONE_HEIGHT = 5
 const TOOLHEAD_CONE_RADIUS = 0.85
 const TOOLHEAD_TIP_CROSS = 0.35
 const TOOLHEAD_TIP_STEM = 1.25
+const LOCAL_SENDER_WARNING_ACK_KEY = 'gcode.localSenderWarningAcknowledged'
 
 const ENTRY_MARKER_LINE = [0.13, 0.77, 0.37, 1.0] as const
 const ENTRY_MARKER_FILL = [0.13, 0.77, 0.37, 0.26] as const
@@ -1588,6 +1589,7 @@ export function GCodeViewer({ className, isTablet, showOverrides, fitToViewSigna
   const [autoFollow, setAutoFollow] = useState(true)
   const [coolantState, setCoolantState] = useState<'off' | 'mist' | 'flood'>('off')
   const [showRestartFromLine, setShowRestartFromLine] = useState(false)
+  const [showLocalSenderWarning, setShowLocalSenderWarning] = useState(false)
   const [restartInitialLine, setRestartInitialLine] = useState<number | null>(null)
   const isLocalFile = !!sourceText && !loadedPath
   const displayedProgressPercent = senderActive ? senderExecutionProgressPercent : progressPercent
@@ -2261,6 +2263,22 @@ export function GCodeViewer({ className, isTablet, showOverrides, fitToViewSigna
     }
   }
 
+  function startLocalSenderWithWarning() {
+    if (!sourceText || !fileName) return
+    if (localStorage.getItem(LOCAL_SENDER_WARNING_ACK_KEY) === 'true') {
+      startSender(sourceText, fileName)
+      return
+    }
+    setShowLocalSenderWarning(true)
+  }
+
+  function confirmLocalSenderWarning() {
+    if (!sourceText || !fileName) return
+    localStorage.setItem(LOCAL_SENDER_WARNING_ACK_KEY, 'true')
+    setShowLocalSenderWarning(false)
+    startSender(sourceText, fileName)
+  }
+
   const isFileDragging = fileDragStatus !== 'idle'
   const isValidFileDragging = fileDragStatus === 'valid' && !isRunning
   const hasLoadedSource = !!sourceText && !!fileName
@@ -2785,7 +2803,7 @@ export function GCodeViewer({ className, isTablet, showOverrides, fitToViewSigna
             <button
               className={`btn btn-ok-solid gap-2 justify-center font-bold ${isTablet ? 'text-xl py-3' : 'text-base'} flex-1`}
               onClick={() => {
-                if (isLocalFile && sourceText && fileName) startSender(sourceText, fileName)
+                if (isLocalFile) startLocalSenderWithWarning()
                 else if (loadedPath) sendRaw(`$SD/Run=${loadedPath}`)
               }}
               disabled={(!loadedPath && !isLocalFile) || !connected || status.state !== 'Idle' || isViewerStartBlocked}
@@ -2867,6 +2885,51 @@ export function GCodeViewer({ className, isTablet, showOverrides, fitToViewSigna
           onPrepared={senderPhase === 'error' ? dismissSender : undefined}
           onClose={() => { setShowRestartFromLine(false); setRestartInitialLine(null) }}
         />
+      )}
+      {showLocalSenderWarning && (
+        <div className="fixed inset-0 z-[70] flex items-center justify-center bg-black/65 p-3 sm:p-6" onClick={() => setShowLocalSenderWarning(false)}>
+          <div
+            className="w-full max-w-md rounded-lg border border-border bg-surface shadow-2xl animate-in"
+            onClick={event => event.stopPropagation()}
+          >
+            <div className="flex items-start justify-between gap-4 border-b border-border px-4 py-3.5">
+              <div className="flex min-w-0 items-center gap-2 text-lg font-semibold text-text-primary">
+                <AlertTriangle size={19} className="shrink-0 text-warn" />
+                Local stream warning
+              </div>
+              <button
+                className="p-1.5 rounded text-text-muted hover:text-text-primary hover:bg-elevated"
+                onClick={() => setShowLocalSenderWarning(false)}
+                title="Close"
+              >
+                <X size={18} />
+              </button>
+            </div>
+            <div className="space-y-3 px-4 py-4 text-sm text-text-muted">
+              <p>
+                Local file streaming is experimental. Use it only with a stable connection to the controller.
+              </p>
+              <p>
+                For best results, keep this browser window open and visible while the job is in progress.
+              </p>
+            </div>
+            <div className="flex flex-col-reverse gap-2 border-t border-border px-4 py-3 sm:flex-row sm:justify-end">
+              <button
+                className="btn btn-ghost justify-center px-4 py-2 text-sm"
+                onClick={() => setShowLocalSenderWarning(false)}
+              >
+                Cancel
+              </button>
+              <button
+                className="btn btn-ok-solid justify-center gap-2 px-4 py-2 text-sm font-semibold"
+                onClick={confirmLocalSenderWarning}
+              >
+                <Play size={14} />
+                Start local job
+              </button>
+            </div>
+          </div>
+        </div>
       )}
     </div>
   )
