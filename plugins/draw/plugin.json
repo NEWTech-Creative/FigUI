@@ -1,0 +1,9 @@
+{
+  "name": "Draw",
+  "description": "Create simple shapes and generate G-code in FigUI.",
+  "version": "1.0.0",
+  "entry": "index.html",
+  "layout": "full",
+  "icon": "draw.png",
+  "files": ["index.html", "plugin.json", "draw.png"]
+}
