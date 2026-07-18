@@ -222,8 +222,8 @@
   @keyframes recPulse { 0%,100% { opacity: 1; } 50% { opacity: .6; } }
   button.icon { min-width: 34px; min-height: 34px; padding: 6px; font-size: 13px; border-radius: 10px; }
 
-  .toggle { position: relative; width: 44px; height: 24px; border-radius: 999px; background: var(--bg, #0c1018);
-    border: 1px solid var(--border-strong, #324059); cursor: pointer; flex-shrink: 0; }
+  .toggle { position: relative; width: 44px; height: 24px; min-width: 44px; min-height: 24px; padding: 0; border-radius: 999px; background: var(--bg, #0c1018);
+    border: 1px solid var(--border-strong, #324059); cursor: pointer; flex-shrink: 0; display: block; appearance: none; }
   .toggle::after { content: ''; position: absolute; top: 2px; left: 2px; width: 18px; height: 18px; border-radius: 50%;
     background: var(--text-muted, #93a0bb); transition: all .15s; }
   .toggle.on { background: var(--slider-btn-primary, var(--accent, #f0a030)); border-color: var(--slider-btn-primary, var(--accent, #f0a030)); }
@@ -339,7 +339,7 @@
       <div class="chip z"><div class="lbl">Z · Tilt</div><div class="val" id="vZ">0.00</div><div class="sub" id="mZ">mach 0.00</div></div>
       <div id="auxHud"></div>
     </div>
-    <div id="statusRow"><button id="viewToggle" title="Switch to the rendered scene view (requires internet to load Three.js)">Render</button><div id="stateChip">—</div></div>
+    <div id="statusRow"><button id="viewToggle" title="Switch to the rendered scene view">Render</button><div id="stateChip">—</div></div>
     <div id="banner"></div>
     <div id="auxControls"></div>
     <div id="hint">drag carriage / pan knob / camera · empty space orbits · scroll zooms</div>
@@ -356,7 +356,7 @@
       <div class="sec-body">
       <div class="row">
         <label>Live jog while dragging</label>
-        <div class="toggle on" id="liveToggle"></div>
+        <button type="button" class="toggle" id="liveToggle" aria-pressed="false" aria-label="Live jog while dragging"></button>
       </div>
       <div class="row">
         <label>Max jog feed (mm/min)</label>
@@ -368,7 +368,7 @@
       </div>
       <div class="row" style="margin-top:8px">
         <label>Joysticks &amp; keys<button type="button" class="info" data-tip="Left joystick / A·D keys = X slide. Right joystick / arrow keys = Pan (left/right) and Tilt (up/down). Joysticks and keyboard work together, and both work in the wireframe and rendered views.">i</button></label>
-        <div class="toggle" id="joystickToggle"></div>
+        <button type="button" class="toggle" id="joystickToggle" aria-pressed="false" aria-label="Joysticks and keys"></button>
       </div>
       <div id="joySpeedControls" style="display:none">
         <div class="row" style="margin-top:8px"><label class="subhead">Joystick &amp; hotkey speed</label></div>
@@ -475,7 +475,7 @@
       <div class="row"><label>Sensor size (mm)<button type="button" class="info" data-tip="Focal length, frustum frame size, and focus min/max/infinity are configured under whichever axis is set to Zoom lens / Focus range, in the Aux Axis Mapping cards below.">i</button></label><input type="number" id="sensorWidth" value="36" min="1" step="1"><input type="number" id="sensorHeight" value="24" min="1" step="1"></div>
       <div class="row">
         <label>Infinity past max<button type="button" class="info" data-tip="Visual only — the rendered frustum keeps focusing past the configured max, but the real motor still stops at its max position.">i</button></label>
-        <div class="toggle on" id="infinityToggle"></div>
+        <button type="button" class="toggle on" id="infinityToggle" aria-pressed="true" aria-label="Infinity past max"></button>
       </div>
       <div id="auxAxisList"></div>
       </div>
@@ -594,7 +594,7 @@ let auxAxes = {
 };
 let auxAxisAvailable = false;
 let keyframes = [];
-let liveJog = true;
+let liveJog = false;
 let activeKf = -1;
 let dragTarget = { ...virt };
 let liveSlewAt = 0;
@@ -617,6 +617,13 @@ let moveScale = 1;
 // $110/$111/$112 max rate) — joySpeedFor() must use the SAME cap, not the raw
 // machine maxRate, otherwise the on-screen position races ahead of whatever
 // feed actually gets sent to the machine via $J= (axisRate/cappedFeedForMove).
+function setToggleState(id, on) {
+  const el = $(id);
+  if (!el) return;
+  el.classList.toggle('on', !!on);
+  el.setAttribute('aria-pressed', String(!!on));
+}
+
 function joySpeedFor(axis) {
   return (axisRate(axis) / 60) * moveScale;
 }
@@ -1282,7 +1289,7 @@ function isTypingTarget(el) {
 
 function setJoystickEnabled(on) {
   joystickEnabled = !!on;
-  $('joystickToggle')?.classList.toggle('on', joystickEnabled);
+  setToggleState('joystickToggle', joystickEnabled);
   $('joyLayer')?.classList.toggle('on', joystickEnabled);
   const speedControls = $('joySpeedControls');
   if (speedControls) speedControls.style.display = joystickEnabled ? '' : 'none';
@@ -1641,8 +1648,17 @@ function flushJog() {
   jogInFlight = true;
   lastSendAt = now;
   send(`$J=G53 G90 G21 ${words} F${fmt(f, 1)}`)
-    .catch(() => {})
-    .finally(() => { jogInFlight = false; });
+    .catch(() => {
+      if (lastSentJogWords === words) {
+        lastSent = { x: NaN, y: NaN, z: NaN };
+        lastSentJogWords = '';
+      }
+      jogDirty = true;
+    })
+    .finally(() => {
+      jogInFlight = false;
+      if (jogDirty) flushJog();
+    });
 }
 
 function jogPump() {
@@ -2117,7 +2133,7 @@ function polyline3(points, closed = false) {
 
 let handles = {};   // screen-space handle dots
 function render() {
-  try { drawFrame(); }
+  try { if (!t3Active) drawFrame(); }
   catch (err) { console.error('[motion-slider] frame error', err); }
   requestAnimationFrame(render);
 }
@@ -2808,6 +2824,10 @@ function buildProgram() {
   return lines;
 }
 
+async function runProgramLine(line, timeoutMs) {
+  return callT('sendQuery', { command: line }, timeoutMs);
+}
+
 /* ================= Focus objects UI ================= */
 function escHtml(s) {
   return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
@@ -2881,7 +2901,7 @@ function updateLensInputs() {
     const el = $(id);
     if (el) el.value = lensSettings[key];
   }
-  $('infinityToggle')?.classList.toggle('on', lensSettings.infinityEnabled !== false);
+  setToggleState('infinityToggle', lensSettings.infinityEnabled !== false);
 }
 
 function readLensInputs() {
@@ -3324,14 +3344,14 @@ for (const id of ['sensorWidth', 'sensorHeight']) {
 }
 $('infinityToggle').addEventListener('click', () => {
   lensSettings.infinityEnabled = !lensSettings.infinityEnabled;
-  $('infinityToggle').classList.toggle('on', lensSettings.infinityEnabled);
+  setToggleState('infinityToggle', lensSettings.infinityEnabled);
   saveSoon();
 });
 
 /* ================= Buttons ================= */
 $('liveToggle').addEventListener('click', () => {
   liveJog = !liveJog;
-  $('liveToggle').classList.toggle('on', liveJog);
+  setToggleState('liveToggle', liveJog);
   if (!liveJog) {           // turning live mode off: halt streaming
     jogPumpOn = false; jogDirty = false;
     if (jogThrottle) { clearTimeout(jogThrottle); jogThrottle = null; }
@@ -3371,10 +3391,11 @@ $('run').addEventListener('click', async () => {
   if (orphaned.length) banner(`${orphaned.length} tracking keyframe(s) missing focus object — using stored angles`);
   isRunning = true;
   try {
+    const lineTimeoutMs = Math.max(10000, totalMs() + 5000);
     for (const line of buildProgram()) {
       // Abort if the machine alarms mid-sequence (checked on each send).
       if (mach.state && mach.state.startsWith('Alarm')) { banner('Run aborted — machine alarm'); break; }
-      await send(line);
+      await runProgramLine(line, lineTimeoutMs);
     }
   } catch (err) { banner(err?.message || 'Run failed'); }
   finally { isRunning = false; }
@@ -3454,7 +3475,7 @@ function currentSettingsPayload() {
   return {
     keyframes,
     lim: limToSave,
-    liveJog,
+    liveJog: false,
     homePose: { ...homePose },
     cameraHeight,
     lensSettings: { ...lensSettings },
@@ -3549,9 +3570,9 @@ async function loadDeviceSettingsDirect() {
     } catch (_) {}
   }
   try {
-    const text = await callT('readFile', { path: '/localfs/plugins/motion-slider/settings.json', fs: 'local' }, 2500);
+    const text = await callT('readFile', { path: '/plugins/motion-slider/settings.json', fs: 'local' }, 2500);
     const data = JSON.parse(text);
-    logMachineSetting('bridge settings loaded', '/localfs/plugins/motion-slider/settings.json');
+    logMachineSetting('bridge settings loaded', '/plugins/motion-slider/settings.json');
     return data;
   } catch (err) {
     logMachineSetting('settings file not loaded', err.message || String(err));
@@ -3611,10 +3632,8 @@ function applySavedSettings(s) {
   if (s.lim) Object.assign(lim, s.lim);
   if (s.jogFeed) $('jogFeed').value = s.jogFeed;
   if (s.defMs) $('defMs').value = formatTimeMs(parseTimeMs(s.defMs, 2000));
-  if (typeof s.liveJog === 'boolean') {
-    liveJog = s.liveJog;
-    $('liveToggle').classList.toggle('on', liveJog);
-  }
+  liveJog = false;
+  setToggleState('liveToggle', false);
   if (typeof s.joystickEnabled === 'boolean') setJoystickEnabled(s.joystickEnabled);
   if ([1, 0.5, 0.1].includes(+s.moveScale)) setMoveScale(+s.moveScale);
   if (Number.isFinite(+s.streamIntervalMs)) {
@@ -4088,7 +4107,7 @@ function toggleView() {
   t3Active = !t3Active;
   updateColourSetupVisibility();
   if (t3Active) {
-    btn.textContent = 'Wireframe'; btn.title = 'Switch to the offline wireframe view (no internet needed)';
+    btn.textContent = 'Wireframe'; btn.title = 'Switch to the wireframe view';
     btn.classList.add('active');
     cv.style.display = 'none';
     tc.style.display = 'block';
@@ -4112,13 +4131,13 @@ function toggleView() {
         }
       });
     }, () => {
-      // Three.js couldn't load (no internet) — fall back to the offline
+      // Three.js couldn't load — fall back to the wireframe
       // wireframe view instead of leaving an empty rendered container up.
-      banner('No internet — Three.js failed to load. Showing wireframe view instead.');
+      banner('Three.js failed to load. Showing wireframe view instead.');
       if (t3Active) toggleView();
     });
   } else {
-    btn.textContent = 'Render'; btn.title = 'Switch to the rendered scene view (requires internet to load Three.js)';
+    btn.textContent = 'Render'; btn.title = 'Switch to the rendered scene view';
     btn.classList.remove('active');
     tc.style.display = 'none';
     cv.style.display = '';
@@ -4144,20 +4163,21 @@ function t3LoadLibs(cb, onError) {
   t3LibsLoading = true;
   const pending = [cb]; // queue callbacks while loading
   const done = () => { t3LibsReady = true; t3LibsLoading = false; t3LoadErrPending = []; pending.forEach(f => f()); };
-  const CDN = 'https://cdn.jsdelivr.net/npm/three@0.132.2/';
+  const THREE_SRC = 'three.min.js';
+  const ORBIT_SRC = 'OrbitControls.js';
   function addScript(src, onload, onerror) {
     const s = Object.assign(document.createElement('script'), { src });
     s.onload = onload; s.onerror = onerror;
     document.head.appendChild(s);
   }
-  // Load three.min.js, then try OrbitControls (optional — failure is non-fatal)
-  addScript(CDN + 'build/three.min.js', () => {
-    addScript(CDN + 'examples/js/controls/OrbitControls.js', done, done);
+  // Load bundled three.min.js, then try OrbitControls (optional — failure is non-fatal)
+  addScript(THREE_SRC, () => {
+    addScript(ORBIT_SRC, done, done);
   }, () => {
     t3LibsLoading = false;
     const errs = t3LoadErrPending; t3LoadErrPending = [];
     if (errs.length) errs.forEach(f => f());
-    else banner('Three.js failed — requires internet connection');
+    else banner('Three.js failed to load');
   });
 }
 
@@ -4389,7 +4409,7 @@ function t3Init() {
   t3Renderer.domElement.style.display = 'block';
   tc.appendChild(t3Renderer.domElement);
 
-  /* OrbitControls — optional (fails gracefully if CDN blocked) */
+  /* OrbitControls — optional (fails gracefully if unavailable) */
   if (typeof THREE.OrbitControls === 'function') {
     t3Orbit = new THREE.OrbitControls(t3Cam, t3Renderer.domElement);
     t3Orbit.enableDamping = true;
@@ -4456,7 +4476,24 @@ function t3Init() {
   })();
 }
 
+function t3DisposeObjects(...roots) {
+  const geometries = new Set();
+  const materials = new Set();
+  roots.forEach(root => {
+    if (!root) return;
+    root.traverse(obj => {
+      if (obj.geometry) geometries.add(obj.geometry);
+      const mat = obj.material;
+      if (Array.isArray(mat)) mat.forEach(m => { if (m) materials.add(m); });
+      else if (mat) materials.add(mat);
+    });
+  });
+  geometries.forEach(g => g.dispose?.());
+  materials.forEach(m => m.dispose?.());
+}
+
 function t3BuildRig() {
+  if (t3Rail || t3Carriage) t3DisposeObjects(t3Rail, t3Carriage);
   if (t3Rail)     { t3Scene.remove(t3Rail);     t3Rail = null; }
   if (t3Carriage) { t3Scene.remove(t3Carriage); t3Carriage = null; }
   t3PanDiscMesh = null; t3CamDiscMesh = null;

@@ -7,5 +7,5 @@
   "layout": "workspace",
   "layoutTablet": "full",
   "layoutMobile": "full",
-  "files": ["index.html", "icon.png"]
+  "files": ["index.html", "icon.png", "three.min.js", "OrbitControls.js"]
 }
