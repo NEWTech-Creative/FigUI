@@ -2042,7 +2042,6 @@ export function GCodeViewer({ className, isTablet, showOverrides, fitToViewSigna
   }
 
   function getSimulationTiming(mdl: GCodeModel) {
-    if (mdl.timingUnsupported) return null
     return buildJobTimingEstimate(mdl, controllerSettings) ?? buildFallbackSimulationTiming(mdl)
   }
 
@@ -2906,7 +2905,6 @@ export function GCodeViewer({ className, isTablet, showOverrides, fitToViewSigna
                 type="button"
                 className="pointer-events-auto flex items-center gap-1.5 rounded border border-border bg-surface/80 backdrop-blur-sm px-3 py-1.5 text-sm font-semibold text-text-primary shadow-sm hover:border-accent/60 hover:text-accent active:bg-elevated"
                 onClick={startSimulation}
-                disabled={model.timingUnsupported}
                 title="Preview the toolpath motion without sending commands"
               >
                 <Play size={14} />

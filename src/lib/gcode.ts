@@ -24,8 +24,6 @@ export interface GCodeModel {
   totalLines: number
   /** Fixed controller waits that can be included in a runtime estimate. */
   fixedDelays?: Array<[sourceLine: number, seconds: number]>
-  /** True when the parser encountered motion it cannot time safely. */
-  timingUnsupported?: boolean
 }
 
 export type WorkCoordinateSystem = 'G54' | 'G55' | 'G56' | 'G57' | 'G58' | 'G59' | 'G59.1' | 'G59.2' | 'G59.3'
@@ -104,9 +102,7 @@ export function parseGCode(text: string, options: ParseGCodeOptions = {}): GCode
   let spindleOn = false        // Track spindle state
   let spindleEverOn = false    // Whether spindle was ever activated (false = no spindle machine e.g. pen plotter)
   let feedMmPerMin = 0
-  let feedRateMode: 93 | 94 | 95 = 94
   const fixedDelays: Array<[number, number]> = []
-  let timingUnsupported = false
   const bounds = { minX: Infinity, minY: Infinity, minZ: Infinity, maxX: -Infinity, maxY: -Infinity, maxZ: -Infinity }
 
   function getMoveType(): 'rapid' | 'feed' | 'traverse' {
@@ -161,10 +157,6 @@ export function parseGCode(text: string, options: ParseGCodeOptions = {}): GCode
       if (g === 91) { incremental = true; continue }
       if (g === 20) { inchMode = true; continue }
       if (g === 21) { inchMode = false; continue }
-      if (g === 93 || g === 94 || g === 95) {
-        feedRateMode = g
-        continue
-      }
       if (g === 17 || g === 18 || g === 19) { plane = g; continue }
       const nextWcs = wcsFromGValue(g)
       if (nextWcs) {
@@ -192,16 +184,7 @@ export function parseGCode(text: string, options: ParseGCodeOptions = {}): GCode
     if (gCodes.includes(4)) {
       if (Number.isFinite(words.P) && words.P >= 0) {
         fixedDelays.push([sourceLine, words.P])
-      } else {
-        timingUnsupported = true
       }
-    }
-
-    if (mCodes.some(code => code === 0 || code === 1 || code === 6)) {
-      timingUnsupported = true
-    }
-    if ('A' in words || 'B' in words || 'C' in words) {
-      timingUnsupported = true
     }
 
     // G92 – set coordinate offset
@@ -232,12 +215,6 @@ export function parseGCode(text: string, options: ParseGCodeOptions = {}): GCode
 
     const hasMove = 'X' in words || 'Y' in words || 'Z' in words
     const xyPlane = plane === 17
-    if (hasMove && !rapid && feedRateMode !== 94) {
-      timingUnsupported = true
-    }
-    if (!xyPlane && (gCodes.includes(2) || gCodes.includes(3) || (arcMode > 0 && hasMove))) {
-      timingUnsupported = true
-    }
     const isArc = xyPlane && (gCodes.includes(2) || gCodes.includes(3) || (arcMode > 0 && hasMove && ('I' in words || 'J' in words || 'R' in words)))
 
     if (hasMove || isArc) {
@@ -332,6 +309,5 @@ export function parseGCode(text: string, options: ParseGCodeOptions = {}): GCode
     bounds,
     totalLines: lines.length,
     fixedDelays,
-    timingUnsupported,
   }
 }

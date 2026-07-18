@@ -161,19 +161,6 @@ function getAxisLimitedValue(
   return limit
 }
 
-function hasAllAxisLimits(
-  axisFractions: SegmentMotionProfile['axisFractions'],
-  xLimit?: number,
-  yLimit?: number,
-  zLimit?: number,
-) {
-  const valid = (value: number | undefined) => value != null && Number.isFinite(value) && value > 0
-  return (axisFractions.x <= 1e-6 || valid(xLimit))
-    && (axisFractions.y <= 1e-6 || valid(yLimit))
-    && (axisFractions.z <= 1e-6 || valid(zLimit))
-}
-
-
 function segmentTimeWithEndpoints(
   lengthMm: number,
   vMax: number,
@@ -266,8 +253,6 @@ export function buildJobTimingEstimate(
   settings: ControllerSettings,
   overrides: JobTimingOverrides = {},
 ): JobTimingEstimate | null {
-  if (model.timingUnsupported) return null
-
   const feedScale = getOverrideScale(overrides.feedPercent)
   const rapidScale = getOverrideScale(overrides.rapidPercent)
   const key = `${motionSettingsKey(settings)}|${feedScale}|${rapidScale}`
@@ -291,11 +276,6 @@ export function buildJobTimingEstimate(
     if (!profile) {
       planned[i] = null
       continue
-    }
-
-    if (!hasAllAxisLimits(profile.axisFractions, settings.maxRateX, settings.maxRateY, settings.maxRateZ)
-      || !hasAllAxisLimits(profile.axisFractions, settings.accelX, settings.accelY, settings.accelZ)) {
-      return null
     }
 
     const maxSpeed = getAxisLimitedValue(
