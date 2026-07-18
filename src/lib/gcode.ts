@@ -24,15 +24,74 @@ export interface GCodeModel {
   totalLines: number
 }
 
+export type WorkCoordinateSystem = 'G54' | 'G55' | 'G56' | 'G57' | 'G58' | 'G59' | 'G59.1' | 'G59.2' | 'G59.3'
+
+export interface WorkOffset {
+  x: number
+  y: number
+  z: number
+}
+
+export interface ParseGCodeOptions {
+  activeWcs?: WorkCoordinateSystem
+  currentWco?: WorkOffset
+  workOffsets?: Partial<Record<WorkCoordinateSystem, WorkOffset>>
+}
+
 /** Map segment index → approximate source-line fraction (0..1) */
 export function segmentProgress(idx: number, total: number): number {
   return total > 0 ? idx / total : 0
 }
 
-export function parseGCode(text: string): GCodeModel {
+const WORK_COORDINATE_SYSTEMS = new Set<WorkCoordinateSystem>([
+  'G54', 'G55', 'G56', 'G57', 'G58', 'G59', 'G59.1', 'G59.2', 'G59.3',
+])
+
+function normalizeWcs(code: string | undefined): WorkCoordinateSystem | undefined {
+  if (!code) return undefined
+  const upper = code.toUpperCase()
+  return WORK_COORDINATE_SYSTEMS.has(upper as WorkCoordinateSystem)
+    ? upper as WorkCoordinateSystem
+    : undefined
+}
+
+function wcsFromGValue(g: number): WorkCoordinateSystem | null {
+  if (g === 54) return 'G54'
+  if (g === 55) return 'G55'
+  if (g === 56) return 'G56'
+  if (g === 57) return 'G57'
+  if (g === 58) return 'G58'
+  if (g === 59) return 'G59'
+  if (g === 59.1) return 'G59.1'
+  if (g === 59.2) return 'G59.2'
+  if (g === 59.3) return 'G59.3'
+  return null
+}
+
+function getShift(
+  wcs: WorkCoordinateSystem | undefined,
+  activeWcs: WorkCoordinateSystem | undefined,
+  currentWco: WorkOffset,
+  workOffsets: Partial<Record<WorkCoordinateSystem, WorkOffset>>,
+): WorkOffset {
+  if (!wcs || wcs === activeWcs) return { x: 0, y: 0, z: 0 }
+  const target = workOffsets[wcs]
+  if (!target) return { x: 0, y: 0, z: 0 }
+  return {
+    x: target.x - currentWco.x,
+    y: target.y - currentWco.y,
+    z: target.z - currentWco.z,
+  }
+}
+
+export function parseGCode(text: string, options: ParseGCodeOptions = {}): GCodeModel {
   const segments: Segment[] = []
   let x = 0, y = 0, z = 0
   let offX = 0, offY = 0, offZ = 0        // G92 coordinate offsets
+  let activeWcs = normalizeWcs(options.activeWcs) ?? 'G54'
+  const currentWco = options.currentWco ?? { x: 0, y: 0, z: 0 }
+  const workOffsets = options.workOffsets ?? {}
+  let wcsShift = getShift(activeWcs, activeWcs, currentWco, workOffsets)
   let rapid = true
   let arcMode: 0 | 2 | 3 = 0   // 0 = linear, 2 = CW arc, 3 = CCW arc
   let plane = 17               // G17=XY, G18=ZX, G19=YZ
@@ -96,6 +155,12 @@ export function parseGCode(text: string): GCodeModel {
       if (g === 20) { inchMode = true; continue }
       if (g === 21) { inchMode = false; continue }
       if (g === 17 || g === 18 || g === 19) { plane = g; continue }
+      const nextWcs = wcsFromGValue(g)
+      if (nextWcs) {
+        activeWcs = nextWcs
+        wcsShift = getShift(activeWcs, normalizeWcs(options.activeWcs), currentWco, workOffsets)
+        continue
+      }
       if (g === 0) { rapid = true; arcMode = 0 }
       else if (g === 1) { rapid = false; arcMode = 0 }
       else if (g === 2) { rapid = false; arcMode = 2 }
@@ -115,18 +180,18 @@ export function parseGCode(text: string): GCodeModel {
 
     // G92 – set coordinate offset
     if (gCodes.includes(92)) {
-      offX = x - (words.X ?? x)
-      offY = y - (words.Y ?? y)
-      offZ = z - (words.Z ?? z)
+      offX = x - wcsShift.x - (words.X ?? (x - wcsShift.x))
+      offY = y - wcsShift.y - (words.Y ?? (y - wcsShift.y))
+      offZ = z - wcsShift.z - (words.Z ?? (z - wcsShift.z))
       continue
     }
 
     if (gCodes.includes(28)) {
       const x0 = x, y0 = y, z0 = z
       if ('X' in words || 'Y' in words || 'Z' in words) {
-        x = (words.X ?? x) + offX
-        y = (words.Y ?? y) + offY
-        z = (words.Z ?? z) + offZ
+        x = (words.X ?? (x - wcsShift.x - offX)) + offX + wcsShift.x
+        y = (words.Y ?? (y - wcsShift.y - offY)) + offY + wcsShift.y
+        z = (words.Z ?? (z - wcsShift.z - offZ)) + offZ + wcsShift.z
         expandBounds(x0, y0, z0)
         expandBounds(x, y, z)
         segments.push({ x0, y0, z0, x1: x, y1: y, z1: z, moveType: 'rapid', sourceLine })
@@ -151,9 +216,9 @@ export function parseGCode(text: string): GCodeModel {
         y += words.Y ?? 0
         z += words.Z ?? 0
       } else {
-        x = (words.X ?? (x - offX)) + offX
-        y = (words.Y ?? (y - offY)) + offY
-        z = (words.Z ?? (z - offZ)) + offZ
+        x = (words.X ?? (x - wcsShift.x - offX)) + offX + wcsShift.x
+        y = (words.Y ?? (y - wcsShift.y - offY)) + offY + wcsShift.y
+        z = (words.Z ?? (z - wcsShift.z - offZ)) + offZ + wcsShift.z
       }
 
       expandBounds(x0, y0, z0)

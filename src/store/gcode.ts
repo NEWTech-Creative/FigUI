@@ -1,7 +1,13 @@
 import { create } from 'zustand'
-import { parseGCode, type GCodeModel } from '../lib/gcode'
+import {
+  parseGCode,
+  type GCodeModel,
+  type ParseGCodeOptions,
+  type WorkCoordinateSystem,
+  type WorkOffset,
+} from '../lib/gcode'
 import { useMachineStore } from '../store'
-import { getBase } from '../lib/http'
+import { getBase, sendCommand } from '../lib/http'
 import { sendRaw } from '../lib/ws'
 import {
   buildStatic2DPathsAsync,
@@ -67,6 +73,10 @@ let loadRequestId = 0
 let abortController: AbortController | null = null
 let activeReader: ReadableStreamDefaultReader<Uint8Array> | null = null
 
+const WORK_COORDINATE_SYSTEMS = new Set<WorkCoordinateSystem>([
+  'G54', 'G55', 'G56', 'G57', 'G58', 'G59', 'G59.1', 'G59.2', 'G59.3',
+])
+
 function isLoadBlockedByMachineState() {
   const machine = useMachineStore.getState()
   const state = machine.status.state
@@ -84,6 +94,55 @@ function abortInFlight() {
     abortController = null
   }
   activeLoadPath = null
+}
+
+function normalizeWcs(value: string | undefined): WorkCoordinateSystem | undefined {
+  if (!value) return undefined
+  const upper = value.toUpperCase()
+  return WORK_COORDINATE_SYSTEMS.has(upper as WorkCoordinateSystem)
+    ? upper as WorkCoordinateSystem
+    : undefined
+}
+
+function parseWorkOffsetResponse(text: string): Partial<Record<WorkCoordinateSystem, WorkOffset>> {
+  const offsets: Partial<Record<WorkCoordinateSystem, WorkOffset>> = {}
+  const numberPattern = '(-?(?:\\d+\\.?\\d*|\\.\\d+))'
+  const offsetPattern = new RegExp(`^\\[(G5[4-9](?:\\.[1-3])?):${numberPattern},${numberPattern},${numberPattern}(?:,[^\\]]*)?\\]$`)
+  for (const raw of text.split('\n')) {
+    const match = raw.trim().match(offsetPattern)
+    const wcs = normalizeWcs(match?.[1])
+    if (!match || !wcs) continue
+    offsets[wcs] = {
+      x: Number.parseFloat(match[2]),
+      y: Number.parseFloat(match[3]),
+      z: Number.parseFloat(match[4]),
+    }
+  }
+  return offsets
+}
+
+async function getParseOptions(): Promise<ParseGCodeOptions> {
+  const machine = useMachineStore.getState()
+  const activeWcs = normalizeWcs(machine.status.gcodeModes?.wcs)
+  const currentWco = machine.status.wco
+  const workOffsets: Partial<Record<WorkCoordinateSystem, WorkOffset>> = {}
+
+  if (activeWcs) {
+    workOffsets[activeWcs] = currentWco
+  }
+
+  if (machine.connected) {
+    try {
+      Object.assign(workOffsets, parseWorkOffsetResponse(await sendCommand('$#')))
+      if (activeWcs) {
+        workOffsets[activeWcs] = currentWco
+      }
+    } catch (e) {
+      console.warn('Failed to fetch work offsets for G-code preview:', e)
+    }
+  }
+
+  return { activeWcs, currentWco, workOffsets }
 }
 
 export const useGCodeStore = create<GCodeStore>((set, get) => ({
@@ -173,7 +232,10 @@ export const useGCodeStore = create<GCodeStore>((set, get) => ({
       set({ downloadProgress: 100, isProcessing2D: true, processing2DProgress: 5 })
       await nextAnimationFrame()
 
-      const parsed = parseGCode(text)
+      const parseOptions = await getParseOptions()
+      if (requestId !== loadRequestId) return
+
+      const parsed = parseGCode(text, parseOptions)
       if (requestId !== loadRequestId) return
       set({ processing2DProgress: 15 })
 
@@ -266,7 +328,10 @@ export const useGCodeStore = create<GCodeStore>((set, get) => ({
 
     try {
       await nextAnimationFrame()
-      const parsed = parseGCode(text)
+      const parseOptions = await getParseOptions()
+      if (requestId !== loadRequestId) return
+
+      const parsed = parseGCode(text, parseOptions)
       if (requestId !== loadRequestId) return
       set({ processing2DProgress: 15 })
 
