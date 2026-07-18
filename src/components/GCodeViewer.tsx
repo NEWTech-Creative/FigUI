@@ -6,7 +6,7 @@ import { useGCodeStore } from '../store/gcode'
 import { sendRaw, sendRealtime, STATUS_POLL_INTERVAL_MS } from '../lib/ws'
 import type { ControllerSettings, MachineStatus, Units } from '../types'
 import { displayToMm, mmToDisplay } from '../lib/units'
-import { formatRuntime, useJobRuntimeEstimate } from '../lib/jobRuntime'
+import { buildJobTimingEstimate, formatRuntime, useJobRuntimeEstimate, type JobTimingEstimate } from '../lib/jobRuntime'
 import { createRenderer, renderLines, setStaticLineData, type WebGLRenderer, type Camera, type Vector3 } from '../lib/webgl'
 import { addSegmentToPath, clamp01, getArcGeometry, normalizeAngle } from '../lib/gcodeBuild'
 import { RestartFromLineDialog } from './RestartFromLineDialog'
@@ -47,6 +47,8 @@ interface ToolpathProgress {
   fraction: number
   misses?: number
 }
+
+type SimulationPhase = 'idle' | 'playing' | 'paused' | 'completed'
 
 interface OrbitState {
   theta: number
@@ -115,6 +117,9 @@ const TOOLHEAD_CONE_RADIUS = 0.85
 const TOOLHEAD_TIP_CROSS = 0.35
 const TOOLHEAD_TIP_STEM = 1.25
 const LOCAL_SENDER_WARNING_ACK_KEY = 'gcode.localSenderWarningAcknowledged'
+const SIMULATION_SPEED_MIN = 25
+const SIMULATION_SPEED_MAX = 10000
+const SIMULATION_SPEED_STEP = 25
 
 const ENTRY_MARKER_LINE = [0.13, 0.77, 0.37, 1.0] as const
 const ENTRY_MARKER_FILL = [0.13, 0.77, 0.37, 0.26] as const
@@ -161,6 +166,12 @@ interface Static2DPaths {
   rapidPath: Path2D
   traversePath: Path2D
   cutPath: Path2D
+}
+
+interface Progress2DPath {
+  model: GCodeModel
+  path: Path2D
+  lastCompletedSegment: number
 }
 
 interface MarkerPoint {
@@ -736,6 +747,93 @@ function segmentXYLength(seg: Segment) {
   return Math.hypot(seg.x1 - seg.x0, seg.y1 - seg.y0, seg.z1 - seg.z0)
 }
 
+function buildFallbackSimulationTiming(model: GCodeModel): JobTimingEstimate | null {
+  if (model.segments.length === 0) return null
+  const segmentSeconds = new Float64Array(model.segments.length)
+  let totalSeconds = 0
+  let totalRapidSeconds = 0
+  let totalControlledSeconds = 0
+
+  for (let i = 0; i < model.segments.length; i++) {
+    const seg = model.segments[i]
+    const length = segmentXYLength(seg)
+    if (length <= 1e-9) continue
+    const speedMmPerMin = seg.moveType === 'rapid'
+      ? 3000
+      : seg.feedMmPerMin && seg.feedMmPerMin > 0 ? seg.feedMmPerMin : 1000
+    const seconds = length / (speedMmPerMin / 60)
+    segmentSeconds[i] = seconds
+    totalSeconds += seconds
+    if (seg.moveType === 'rapid') totalRapidSeconds += seconds
+    else totalControlledSeconds += seconds
+  }
+
+  return totalSeconds > 0
+    ? { segmentSeconds, totalSeconds, totalRapidSeconds, totalControlledSeconds }
+    : null
+}
+
+function buildCumulativeSegmentTimes(timing: JobTimingEstimate) {
+  const cumulative = new Float64Array(timing.segmentSeconds.length + 1)
+  for (let i = 0; i < timing.segmentSeconds.length; i++) {
+    cumulative[i + 1] = cumulative[i] + timing.segmentSeconds[i]
+  }
+  return cumulative
+}
+
+function getSimulationProgressAt(
+  timing: JobTimingEstimate,
+  cumulative: Float64Array,
+  elapsedSeconds: number,
+): ToolpathProgress | null {
+  if (timing.segmentSeconds.length === 0 || timing.totalSeconds <= 0) return null
+  const clampedElapsed = Math.max(0, Math.min(elapsedSeconds, timing.totalSeconds))
+  let low = 0
+  let high = timing.segmentSeconds.length - 1
+
+  // Find the first segment whose end time reaches the requested time. This
+  // replaces the per-frame scan from the beginning of the whole program.
+  while (low < high) {
+    const mid = low + Math.floor((high - low) / 2)
+    if (cumulative[mid + 1] >= clampedElapsed) high = mid
+    else low = mid + 1
+  }
+
+  let segmentIndex = low
+  while (segmentIndex < timing.segmentSeconds.length && timing.segmentSeconds[segmentIndex] <= 0) {
+    segmentIndex++
+  }
+  if (segmentIndex >= timing.segmentSeconds.length) {
+    segmentIndex = timing.segmentSeconds.length - 1
+    while (segmentIndex >= 0 && timing.segmentSeconds[segmentIndex] <= 0) segmentIndex--
+  }
+  if (segmentIndex < 0) return null
+
+  const seconds = timing.segmentSeconds[segmentIndex]
+  return {
+    segmentIndex,
+    fraction: clamp01((clampedElapsed - cumulative[segmentIndex]) / seconds),
+  }
+}
+
+function getSegmentPoint(seg: Segment, fraction: number) {
+  const t = clamp01(fraction)
+  if (seg.i !== undefined) {
+    const arc = getArcGeometry(seg)
+    const angle = arc.startAngle + (seg.cw ? -1 : 1) * arc.sweep * t
+    return {
+      x: arc.cx + Math.cos(angle) * arc.r,
+      y: arc.cy + Math.sin(angle) * arc.r,
+      z: seg.z0 + (seg.z1 - seg.z0) * t,
+    }
+  }
+  return {
+    x: seg.x0 + (seg.x1 - seg.x0) * t,
+    y: seg.y0 + (seg.y1 - seg.y0) * t,
+    z: seg.z0 + (seg.z1 - seg.z0) * t,
+  }
+}
+
 function buildCumulativeXYLengths(segments: Segment[]) {
   const cumulative = new Float64Array(segments.length + 1)
   for (let i = 0; i < segments.length; i++) {
@@ -1039,6 +1137,7 @@ export function GCodeViewer({ className, isTablet, showOverrides, fitToViewSigna
   const modelRef = useRef<GCodeModel | null>(null)
   const staticPathGeometryRef = useRef<StaticPathGeometry | null>(null)
   const static2DPathsRef = useRef<Static2DPaths | null>(null)
+  const progress2DPathRef = useRef<Progress2DPath | null>(null)
   const markerGeometryRef = useRef<MarkerGeometry | null>(null)
   const pathXYLengthsRef = useRef<{ model: GCodeModel; cumulative: Float64Array } | null>(null)
   const [showTool, setShowTool] = useState(true)
@@ -1054,8 +1153,27 @@ export function GCodeViewer({ className, isTablet, showOverrides, fitToViewSigna
   const renderRef = useRef<() => void>(() => {})
   const needsFitRef = useRef(true)
   const progressRef = useRef<ToolpathProgress | null>(null)
+  const simulationFrameRef = useRef(0)
+  const simulationPhaseRef = useRef<SimulationPhase>('idle')
+  const simulationTimingRef = useRef<JobTimingEstimate | null>(null)
+  const simulationCumulativeTimesRef = useRef<Float64Array | null>(null)
+  const simulationStartedAtRef = useRef(0)
+  const simulationElapsedAtPauseRef = useRef(0)
+  const simulationElapsedAtSpeedChangeRef = useRef(0)
+  const simulationSpeedRef = useRef(1)
+  const simulationWallStartedAtRef = useRef(0)
+  const simulationWallElapsedAtPauseRef = useRef(0)
+  const simulationLastUiPublishRef = useRef(0)
+  const simulationSourceLineRef = useRef<number | null>(null)
+  const simulationStopTimerRef = useRef<number | null>(null)
+  const simulationToolPosRef = useRef<{ x: number; y: number; z: number } | null>(null)
   const prevIsRunningRef = useRef(false)
   const prevModelRef = useRef<GCodeModel | null>(null)
+  const [simulationPhase, setSimulationPhase] = useState<SimulationPhase>('idle')
+  const [simulationElapsedSeconds, setSimulationElapsedSeconds] = useState(0)
+  const [simulationWallElapsedSeconds, setSimulationWallElapsedSeconds] = useState(0)
+  const [simulationTotalSeconds, setSimulationTotalSeconds] = useState<number | null>(null)
+  const [simulationSpeedPercent, setSimulationSpeedPercent] = useState(100)
 
   useEffect(() => {
     if (!fitToViewSignal) return
@@ -1545,6 +1663,27 @@ export function GCodeViewer({ className, isTablet, showOverrides, fitToViewSigna
     return paths
   }
 
+  function ensureProgress2DPath(mdl: GCodeModel, progress: ToolpathProgress) {
+    const lastCompletedSegment = progress.segmentIndex - 1
+    let cached = progress2DPathRef.current
+
+    if (
+      !cached
+      || cached.model !== mdl
+      || lastCompletedSegment < cached.lastCompletedSegment
+    ) {
+      cached = { model: mdl, path: new Path2D(), lastCompletedSegment: -1 }
+      progress2DPathRef.current = cached
+    }
+
+    for (let i = cached.lastCompletedSegment + 1; i <= lastCompletedSegment; i++) {
+      const seg = mdl.segments[i]
+      if (seg.moveType === 'feed') addSegmentToPath(cached.path, seg)
+    }
+    cached.lastCompletedSegment = lastCompletedSegment
+    return cached.path
+  }
+
   const status = useMachineStore(s => s.status)
   const connected = useMachineStore(s => s.connected)
   const controllerSettings = useMachineStore(s => s.controllerSettings)
@@ -1572,7 +1711,10 @@ export function GCodeViewer({ className, isTablet, showOverrides, fitToViewSigna
   )
   const progressPercent = runtime.progressPercent
   const showEstimatedTiming = runtime.source === 'estimated'
-  const isRunning = status.state === 'Run' || status.state === 'Hold' || senderActive
+  const simulationActive = simulationPhase !== 'idle'
+  const simulationPaused = simulationPhase === 'paused'
+  const machineJobActive = status.state === 'Run' || status.state === 'Hold' || senderActive
+  const isRunning = machineJobActive || simulationActive
   const isJobRunning = senderPhase === 'streaming' || senderPhase === 'draining' || (status.state === 'Run' && senderPhase !== 'paused')
   const isJobHeld = senderPhase === 'paused' || status.state === 'Hold'
   const isLargeProgressOverlayDisabled = !!model && isRunning && model.segments.length > LARGE_PROGRESS_OVERLAY_SEGMENT_LIMIT
@@ -1592,7 +1734,24 @@ export function GCodeViewer({ className, isTablet, showOverrides, fitToViewSigna
   const [showLocalSenderWarning, setShowLocalSenderWarning] = useState(false)
   const [restartInitialLine, setRestartInitialLine] = useState<number | null>(null)
   const isLocalFile = !!sourceText && !loadedPath
-  const displayedProgressPercent = senderActive ? senderExecutionProgressPercent : progressPercent
+  const simulationProgressPercent = simulationTotalSeconds && simulationTotalSeconds > 0
+    ? clamp01(simulationElapsedSeconds / simulationTotalSeconds) * 100
+    : null
+  const displayedProgressPercent = simulationActive
+    ? simulationProgressPercent
+    : senderActive ? senderExecutionProgressPercent : progressPercent
+  const showDisplayedTiming = simulationActive || showEstimatedTiming
+  const simulationSpeedScale = simulationSpeedPercent / 100
+  const simulationRemainingWallSeconds = simulationActive && simulationTotalSeconds != null
+    ? Math.max(0, simulationTotalSeconds - simulationElapsedSeconds) / simulationSpeedScale
+    : null
+  const displayedElapsedSeconds = simulationActive ? simulationWallElapsedSeconds : runtime.elapsedSeconds
+  const displayedRemainingSeconds = simulationActive && simulationTotalSeconds != null
+    ? simulationRemainingWallSeconds
+    : runtime.remainingSeconds
+  const displayedTotalSeconds = simulationActive
+    ? simulationRemainingWallSeconds != null ? simulationWallElapsedSeconds + simulationRemainingWallSeconds : null
+    : runtime.totalSeconds
   const safeMachineZ = controllerSettings.machineMaxZ == null
     ? null
     : controllerSettings.machineMaxZ - Math.min(1, Math.max(0.1, (controllerSettings.maxTravelZ ?? 100) * 0.005))
@@ -1602,6 +1761,8 @@ export function GCodeViewer({ className, isTablet, showOverrides, fitToViewSigna
   showToolRef.current = showTool
 
   useEffect(() => {
+    const previousModel = modelRef.current
+    const modelChanged = model !== previousModel
     modelRef.current = model
     static2DPathsRef.current = (storePaths2D && model)
       ? { model, rapidPath: storePaths2D.rapidPath, traversePath: storePaths2D.traversePath, cutPath: storePaths2D.cutPath }
@@ -1617,8 +1778,11 @@ export function GCodeViewer({ className, isTablet, showOverrides, fitToViewSigna
       : null
     markerGeometryRef.current = null
     pathXYLengthsRef.current = null
-    progressRef.current = null
-    if (model && model !== prevModelRef.current) {
+    if (modelChanged) {
+      if (simulationPhaseRef.current !== 'idle') stopSimulation()
+      progressRef.current = null
+    }
+    if (model && modelChanged) {
       needsFitRef.current = true
       if (is3D && !storeGeometry3D) {
         setIs3D(false)
@@ -1737,8 +1901,174 @@ export function GCodeViewer({ className, isTablet, showOverrides, fitToViewSigna
   }
 
   function scheduleRender() {
-    cancelAnimationFrame(animRef.current)
-    animRef.current = requestAnimationFrame(() => renderRef.current())
+    if (animRef.current) return
+    animRef.current = requestAnimationFrame(() => {
+      animRef.current = 0
+      renderRef.current()
+    })
+  }
+
+  function publishSimulationProgress(elapsedSeconds: number, timing: JobTimingEstimate, phase: SimulationPhase) {
+    const mdl = modelRef.current
+    const cumulative = simulationCumulativeTimesRef.current ?? buildCumulativeSegmentTimes(timing)
+    simulationCumulativeTimesRef.current = cumulative
+    const progress = getSimulationProgressAt(timing, cumulative, elapsedSeconds)
+    const clampedElapsed = Math.max(0, Math.min(elapsedSeconds, timing.totalSeconds))
+    progressRef.current = progress
+    simulationElapsedAtPauseRef.current = clampedElapsed
+    simulationToolPosRef.current = mdl && progress
+      ? getSegmentPoint(mdl.segments[progress.segmentIndex], progress.fraction)
+      : null
+
+    const sourceLine = mdl && progress ? mdl.segments[progress.segmentIndex]?.sourceLine ?? null : null
+    const wallElapsed = phase === 'paused'
+      ? simulationWallElapsedAtPauseRef.current
+      : getCurrentSimulationWallElapsed()
+    const now = performance.now()
+    const shouldPublishUi = phase !== simulationPhaseRef.current
+      || clampedElapsed === 0
+      || clampedElapsed >= timing.totalSeconds
+      || now - simulationLastUiPublishRef.current >= 250
+    if (shouldPublishUi) {
+      simulationLastUiPublishRef.current = now
+      setSimulationElapsedSeconds(clampedElapsed)
+      setSimulationWallElapsedSeconds(wallElapsed)
+      setSimulationPhase(phase)
+      if (sourceLine !== simulationSourceLineRef.current) {
+        simulationSourceLineRef.current = sourceLine
+        setActiveSourceLine(sourceLine)
+      }
+    }
+    simulationPhaseRef.current = phase
+    scheduleRender()
+  }
+
+  function cancelSimulationFrame() {
+    if (simulationFrameRef.current) {
+      cancelAnimationFrame(simulationFrameRef.current)
+      simulationFrameRef.current = 0
+    }
+  }
+
+  function getCurrentSimulationWallElapsed() {
+    if (simulationPhaseRef.current !== 'playing') {
+      return Math.max(0, simulationWallElapsedAtPauseRef.current)
+    }
+    return simulationWallElapsedAtPauseRef.current
+      + Math.max(0, performance.now() - simulationWallStartedAtRef.current) / 1000
+  }
+
+  function getCurrentSimulationElapsed() {
+    const timing = simulationTimingRef.current
+    if (!timing) return 0
+    if (simulationPhaseRef.current !== 'playing') {
+      return Math.max(0, Math.min(simulationElapsedAtPauseRef.current, timing.totalSeconds))
+    }
+    const elapsed = simulationElapsedAtSpeedChangeRef.current
+      + ((performance.now() - simulationStartedAtRef.current) / 1000) * simulationSpeedRef.current
+    return Math.max(0, Math.min(elapsed, timing.totalSeconds))
+  }
+
+  function setSimulationSpeedPercentClamped(nextPercent: number) {
+    const next = Math.max(SIMULATION_SPEED_MIN, Math.min(SIMULATION_SPEED_MAX, nextPercent))
+    const currentElapsed = getCurrentSimulationElapsed()
+    const currentWallElapsed = getCurrentSimulationWallElapsed()
+    simulationSpeedRef.current = next / 100
+    simulationElapsedAtSpeedChangeRef.current = currentElapsed
+    simulationElapsedAtPauseRef.current = currentElapsed
+    simulationStartedAtRef.current = performance.now()
+    simulationWallElapsedAtPauseRef.current = currentWallElapsed
+    simulationWallStartedAtRef.current = performance.now()
+    setSimulationSpeedPercent(next)
+    const timing = simulationTimingRef.current
+    if (timing) publishSimulationProgress(currentElapsed, timing, simulationPhaseRef.current)
+  }
+
+  function stopSimulation(phase: SimulationPhase = 'idle') {
+    cancelSimulationFrame()
+    if (simulationStopTimerRef.current) {
+      window.clearTimeout(simulationStopTimerRef.current)
+      simulationStopTimerRef.current = null
+    }
+    simulationPhaseRef.current = phase
+    simulationTimingRef.current = null
+    simulationCumulativeTimesRef.current = null
+    simulationStartedAtRef.current = 0
+    simulationElapsedAtPauseRef.current = 0
+    simulationElapsedAtSpeedChangeRef.current = 0
+    simulationWallStartedAtRef.current = 0
+    simulationWallElapsedAtPauseRef.current = 0
+    simulationLastUiPublishRef.current = 0
+    simulationSourceLineRef.current = null
+    simulationToolPosRef.current = null
+    if (phase !== 'completed') {
+      progressRef.current = null
+      setActiveSourceLine(null)
+    }
+    setSimulationPhase(phase)
+    setSimulationElapsedSeconds(0)
+    setSimulationWallElapsedSeconds(0)
+    setSimulationTotalSeconds(null)
+    scheduleRender()
+  }
+
+  function tickSimulation() {
+    const timing = simulationTimingRef.current
+    if (!timing || simulationPhaseRef.current !== 'playing') return
+
+    const elapsedSeconds = getCurrentSimulationElapsed()
+    if (elapsedSeconds >= timing.totalSeconds) {
+      publishSimulationProgress(timing.totalSeconds, timing, 'completed')
+      simulationFrameRef.current = 0
+      simulationStopTimerRef.current = window.setTimeout(() => {
+        simulationStopTimerRef.current = null
+        if (simulationPhaseRef.current === 'completed') stopSimulation()
+      }, 900)
+      return
+    }
+
+    publishSimulationProgress(elapsedSeconds, timing, 'playing')
+    simulationFrameRef.current = requestAnimationFrame(tickSimulation)
+  }
+
+  function getSimulationTiming(mdl: GCodeModel) {
+    return buildJobTimingEstimate(mdl, controllerSettings) ?? buildFallbackSimulationTiming(mdl)
+  }
+
+  function startSimulation() {
+    if (!model || isViewerStartBlocked || machineJobActive) return
+    const timing = getSimulationTiming(model)
+    if (!timing) return
+    cancelSimulationFrame()
+    simulationTimingRef.current = timing
+    simulationCumulativeTimesRef.current = buildCumulativeSegmentTimes(timing)
+    simulationElapsedAtPauseRef.current = 0
+    simulationElapsedAtSpeedChangeRef.current = 0
+    simulationStartedAtRef.current = performance.now()
+    simulationWallElapsedAtPauseRef.current = 0
+    simulationWallStartedAtRef.current = performance.now()
+    setSimulationTotalSeconds(timing.totalSeconds)
+    publishSimulationProgress(0, timing, 'playing')
+    simulationFrameRef.current = requestAnimationFrame(tickSimulation)
+  }
+
+  function pauseSimulation() {
+    const timing = simulationTimingRef.current
+    if (!timing || simulationPhaseRef.current !== 'playing') return
+    simulationWallElapsedAtPauseRef.current = getCurrentSimulationWallElapsed()
+    cancelSimulationFrame()
+    publishSimulationProgress(getCurrentSimulationElapsed(), timing, 'paused')
+  }
+
+  function resumeSimulation() {
+    const timing = simulationTimingRef.current
+    if (!timing || simulationPhaseRef.current !== 'paused') return
+    simulationElapsedAtSpeedChangeRef.current = simulationElapsedAtPauseRef.current
+    simulationStartedAtRef.current = performance.now()
+    simulationWallStartedAtRef.current = performance.now()
+    simulationPhaseRef.current = 'playing'
+    setSimulationPhase('playing')
+    simulationFrameRef.current = requestAnimationFrame(tickSimulation)
   }
 
   function render() {
@@ -1767,10 +2097,11 @@ export function GCodeViewer({ className, isTablet, showOverrides, fitToViewSigna
       updateCameraFromOrbit()
       cameraRef.current.aspect = w / h
 
-      const running3d = store.status.state === 'Run' || store.status.state === 'Hold'
+      const simulationRendering3d = simulationPhaseRef.current !== 'idle'
+      const running3d = store.status.state === 'Run' || store.status.state === 'Hold' || simulationRendering3d
       const progress3d = running3d ? progressRef.current : null
       const use3DProgressOverlay = mdl !== null && progress3d !== null && mdl.segments.length <= LARGE_PROGRESS_OVERLAY_SEGMENT_LIMIT
-      const wpos3d = showToolRef.current ? store.status.wpos : null
+      const wpos3d = showToolRef.current ? (simulationRendering3d ? simulationToolPosRef.current : store.status.wpos) : null
       const markerGeometry = mdl ? ensureEntryExitMarkerGeometry(mdl) : { vertices: EMPTY_FLOAT32, colors: EMPTY_FLOAT32, triangleVertices: EMPTY_FLOAT32, triangleColors: EMPTY_FLOAT32 }
       const bed3d = getBedEnvelope(store.controllerSettings, store.status)
       const bedGeometry = bed3d ? buildBedLineGeometry(bed3d.width, bed3d.height, bed3d.originX, bed3d.originY) : null
@@ -1866,11 +2197,13 @@ export function GCodeViewer({ className, isTablet, showOverrides, fitToViewSigna
 
       const mdl = modelRef.current
       const store = useMachineStore.getState()
-      const running = store.status.state === 'Run' || store.status.state === 'Hold'
+      const simulationRendering = simulationPhaseRef.current !== 'idle'
+      const running = store.status.state === 'Run' || store.status.state === 'Hold' || simulationRendering
 
       if (!mdl) {
         if (showToolRef.current) {
-          const wpos = store.status.wpos
+          const wpos = simulationRendering ? simulationToolPosRef.current : store.status.wpos
+          if (!wpos) return
           drawToolPosition(ctx, t, wpos.x, wpos.y, running)
         }
         return
@@ -1890,20 +2223,22 @@ export function GCodeViewer({ className, isTablet, showOverrides, fitToViewSigna
       const use2DProgressOverlay = progress !== null && mdl.segments.length <= LARGE_PROGRESS_OVERLAY_SEGMENT_LIMIT
 
       if (use2DProgressOverlay) {
-        ctx.strokeStyle = CUT_DONE
-        ctx.lineWidth = 1.5
-        ctx.setLineDash([])
+        const completedPath = ensureProgress2DPath(mdl, progress)
+        strokeModelPath(ctx, completedPath, t, CUT_DONE, 1.5)
 
-        for (let i = 0; i <= progress.segmentIndex; i++) {
-          const seg = segments[i]
-          if (seg.moveType !== 'feed') continue
-          drawSegment(ctx, seg, t, i === progress.segmentIndex ? progress.fraction : 1)
+        const currentSegment = segments[progress.segmentIndex]
+        if (currentSegment?.moveType === 'feed') {
+          ctx.strokeStyle = CUT_DONE
+          ctx.lineWidth = 1.5
+          ctx.setLineDash([])
+          drawSegment(ctx, currentSegment, t, progress.fraction)
         }
       }
       ctx.setLineDash([])
 
       if (showToolRef.current) {
-        const wpos = store.status.wpos
+        const wpos = simulationRendering ? simulationToolPosRef.current : store.status.wpos
+        if (!wpos) return
         drawToolPosition(ctx, t, wpos.x, wpos.y, running)
       }
     }
@@ -1945,6 +2280,14 @@ export function GCodeViewer({ className, isTablet, showOverrides, fitToViewSigna
   ])
 
   useEffect(() => {
+    if (simulationActive) {
+      prevIsRunningRef.current = isRunning
+      prevModelRef.current = model
+      setSenderExecutionProgressPercent(null)
+      scheduleRender()
+      return
+    }
+
     if (isRunning && modelRef.current) {
       const progressOverlayEnabled = modelRef.current.segments.length <= LARGE_PROGRESS_OVERLAY_SEGMENT_LIMIT
 
@@ -2011,6 +2354,7 @@ export function GCodeViewer({ className, isTablet, showOverrides, fitToViewSigna
     scheduleRender()
   }, [
     model,
+    simulationActive,
     showRapids,
     showTool,
     isRunning,
@@ -2036,6 +2380,11 @@ export function GCodeViewer({ className, isTablet, showOverrides, fitToViewSigna
   ])
 
   useEffect(() => () => setActiveSourceLine(null), [setActiveSourceLine])
+
+  useEffect(() => () => {
+    cancelSimulationFrame()
+    if (simulationStopTimerRef.current) window.clearTimeout(simulationStopTimerRef.current)
+  }, [])
 
   useLayoutEffect(() => {
     if (is3D) {
@@ -2539,6 +2888,77 @@ export function GCodeViewer({ className, isTablet, showOverrides, fitToViewSigna
           </div>
         )}
 
+        {model && !isViewerStartBlocked && !machineJobActive && (
+          <div className={`absolute ${isProcessing3D ? 'top-20' : 'top-3'} right-3 left-3 sm:left-auto z-20 flex justify-end pointer-events-none`}>
+            {!simulationActive ? (
+              <button
+                type="button"
+                className="pointer-events-auto flex items-center gap-1.5 rounded border border-border bg-surface/80 backdrop-blur-sm px-3 py-1.5 text-sm font-semibold text-text-primary shadow-sm hover:border-accent/60 hover:text-accent active:bg-elevated"
+                onClick={startSimulation}
+                title="Preview the toolpath motion without sending commands"
+              >
+                <Play size={14} />
+                Simulate
+              </button>
+            ) : (
+              <div className="pointer-events-auto flex flex-wrap items-center justify-end gap-1.5 rounded border border-border bg-surface/80 backdrop-blur-sm px-2 py-1.5 shadow-sm">
+                <span className="hidden sm:inline px-1.5 text-xs font-semibold uppercase tracking-wide text-text-muted">Simulation</span>
+                <div className="flex items-center gap-1" title="Simulation playback speed">
+                  <button
+                    type="button"
+                    className="h-8 w-8 rounded border border-border bg-elevated text-base text-text-primary hover:border-accent/60 disabled:opacity-40"
+                    onClick={() => setSimulationSpeedPercentClamped(simulationSpeedPercent - SIMULATION_SPEED_STEP)}
+                    disabled={simulationSpeedPercent <= SIMULATION_SPEED_MIN}
+                    aria-label="Decrease simulation speed"
+                  >
+                    −
+                  </button>
+                  <button
+                    type="button"
+                    className={`h-8 min-w-14 rounded border border-border bg-elevated px-2 font-mono text-sm font-semibold ${simulationSpeedPercent === 100 ? 'text-accent' : simulationSpeedPercent > 100 ? 'text-ok' : 'text-warn'}`}
+                    onClick={() => setSimulationSpeedPercentClamped(100)}
+                    title="Reset simulation speed to 100%"
+                  >
+                    {simulationSpeedPercent}%
+                  </button>
+                  <button
+                    type="button"
+                    className="h-8 w-8 rounded border border-border bg-elevated text-base text-text-primary hover:border-accent/60 disabled:opacity-40"
+                    onClick={() => setSimulationSpeedPercentClamped(simulationSpeedPercent + SIMULATION_SPEED_STEP)}
+                    disabled={simulationSpeedPercent >= SIMULATION_SPEED_MAX}
+                    aria-label="Increase simulation speed"
+                  >
+                    +
+                  </button>
+                </div>
+                <button
+                  type="button"
+                  className={`h-8 rounded border px-2.5 text-sm font-semibold ${simulationPaused ? 'border-ok/40 bg-ok/10 text-ok' : 'border-warning/40 bg-warning/10 text-warning'} disabled:opacity-50`}
+                  onClick={simulationPaused ? resumeSimulation : pauseSimulation}
+                  disabled={simulationPhase === 'completed'}
+                  title={simulationPaused ? 'Resume preview simulation' : 'Pause preview simulation'}
+                >
+                  <span className="inline-flex items-center gap-1.5">
+                    {simulationPaused ? <Play size={13} /> : <Pause size={13} />}
+                    {simulationPaused ? 'Resume' : 'Pause'}
+                  </span>
+                </button>
+                <button
+                  type="button"
+                  className="h-8 rounded border border-border bg-elevated px-2.5 text-sm font-semibold text-text-primary hover:border-danger/50 hover:text-danger"
+                  onClick={() => stopSimulation()}
+                  title="Stop preview simulation"
+                >
+                  <span className="inline-flex items-center gap-1.5">
+                    <Square size={13} />
+                    Stop
+                  </span>
+                </button>
+              </div>
+            )}
+          </div>
+        )}
+
         {!model && !loading && (
           <div className="absolute inset-0 flex flex-col items-center justify-center text-text-dim text-2xl gap-2">
             <Eye size={24} className="opacity-30" />
@@ -2654,13 +3074,18 @@ export function GCodeViewer({ className, isTablet, showOverrides, fitToViewSigna
       {/* Permanent bottom strip */}
       <div className="shrink-0 border-t border-border bg-surface px-4 pt-2.5 pb-3 flex flex-col gap-2">
         {/* Progress bar — only while a job is active */}
-        {(isJobRunning || isJobHeld) && (
+        {(isJobRunning || isJobHeld || simulationActive) && (
           <div className="flex flex-col gap-1.5">
             {displayedProgressPercent != null && (
               <div className="flex items-center gap-2.5">
                 <div className="flex-1 h-1.5 bg-elevated rounded-full overflow-hidden">
                   <div className="h-full bg-ok transition-all duration-500 rounded-full" style={{ width: `${displayedProgressPercent}%` }} />
                 </div>
+                {simulationActive && (
+                  <span className="text-[11px] font-mono text-text-muted tabular-nums" title="Preview-only simulation; no commands are being sent">
+                    Simulation {Math.round(displayedProgressPercent)}%
+                  </span>
+                )}
                 {senderActive && (
                   <span className="text-[11px] font-mono text-text-muted tabular-nums" title="Position-derived toolpath completion, bounded by the latest accepted line">
                     Motion {Math.round(displayedProgressPercent)}%
@@ -2668,17 +3093,19 @@ export function GCodeViewer({ className, isTablet, showOverrides, fitToViewSigna
                 )}
               </div>
             )}
-            {showEstimatedTiming && (
-              <div className="flex items-center justify-between gap-3 text-[11px] font-mono text-text-muted tabular-nums">
-                <span>Elapsed {formatRuntime(runtime.elapsedSeconds)}</span>
-                <span>Remain {formatRuntime(runtime.remainingSeconds)}</span>
-                <span>Total {formatRuntime(runtime.totalSeconds)}</span>
+            {showDisplayedTiming && (
+              <div className="flex flex-wrap items-center justify-between gap-2 text-[11px] font-mono text-text-muted tabular-nums">
+                <div className="flex items-center justify-between gap-3 min-w-[220px] flex-1">
+                  <span>Elapsed {formatRuntime(displayedElapsedSeconds)}</span>
+                  <span>Remain {formatRuntime(displayedRemainingSeconds)}</span>
+                  <span>Total {formatRuntime(displayedTotalSeconds)}</span>
+                </div>
               </div>
             )}
           </div>
         )}
 
-        {showOverrides && (
+        {showOverrides && !simulationActive && (
           <div className="flex gap-2">
             <ViewerOverrideControl
               label="Feed"
@@ -2736,7 +3163,7 @@ export function GCodeViewer({ className, isTablet, showOverrides, fitToViewSigna
         )}
 
         <div className="flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-3">
-        {(controllerSettings.hasMist || controllerSettings.hasFlood) && <>
+        {!simulationActive && (controllerSettings.hasMist || controllerSettings.hasFlood) && <>
           <div className="flex gap-1.5 sm:flex-[6]">
             {controllerSettings.hasMist && <button
               onClick={() => { sendRealtime(0xA0); setCoolantState('mist') }}
@@ -2764,7 +3191,7 @@ export function GCodeViewer({ className, isTablet, showOverrides, fitToViewSigna
         </>}
 
         <div className={`flex gap-1.5 ${(controllerSettings.hasMist || controllerSettings.hasFlood) ? 'sm:flex-[3]' : 'sm:ml-auto'}`}>
-          {!isJobRunning && !isJobHeld && (
+          {!isJobRunning && !isJobHeld && !simulationActive && (
             <button
               className={`btn btn-ghost justify-center shrink-0 ${isTablet ? 'px-3 py-3' : 'px-2'}`}
               onClick={() => localFileInputRef.current?.click()}
@@ -2775,7 +3202,7 @@ export function GCodeViewer({ className, isTablet, showOverrides, fitToViewSigna
               <FilePlus size={isTablet ? 22 : 17} />
             </button>
           )}
-          {!isJobRunning && !isJobHeld && restartSource && (
+          {!isJobRunning && !isJobHeld && !simulationActive && restartSource && (
             <button
               className={`btn btn-ghost gap-1.5 justify-center ${isTablet ? 'text-xl py-3' : 'text-sm'}`}
               onClick={() => restartSource.path
@@ -2788,7 +3215,7 @@ export function GCodeViewer({ className, isTablet, showOverrides, fitToViewSigna
               Original
             </button>
           )}
-          {!isJobRunning && !isJobHeld && !restartSource && hasLoadedSource && (
+          {!isJobRunning && !isJobHeld && !simulationActive && !restartSource && hasLoadedSource && (
             <button
               className={`btn btn-ghost gap-1.5 justify-center ${isTablet ? 'text-xl py-3' : 'text-sm'}`}
               onClick={() => { setRestartInitialLine(null); setShowRestartFromLine(true) }}
@@ -2799,7 +3226,7 @@ export function GCodeViewer({ className, isTablet, showOverrides, fitToViewSigna
               From line
             </button>
           )}
-          {!isJobRunning && !isJobHeld && (
+          {!isJobRunning && !isJobHeld && !simulationActive && (
             <button
               className={`btn btn-ok-solid gap-2 justify-center font-bold ${isTablet ? 'text-xl py-3' : 'text-base'} flex-1`}
               onClick={() => {

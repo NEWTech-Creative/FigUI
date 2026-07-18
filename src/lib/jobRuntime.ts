@@ -11,7 +11,7 @@ interface SegmentMotionProfile {
   exitDir: { x: number; y: number; z: number }
 }
 
-interface JobTimingEstimate {
+export interface JobTimingEstimate {
   segmentSeconds: Float64Array
   totalSeconds: number
   totalRapidSeconds: number
@@ -210,7 +210,7 @@ interface PlannedSegment {
   vExit: number 
 }
 
-function buildJobTimingEstimate(model: GCodeModel, settings: ControllerSettings): JobTimingEstimate | null {
+export function buildJobTimingEstimate(model: GCodeModel, settings: ControllerSettings): JobTimingEstimate | null {
   const key = motionSettingsKey(settings)
   let byKey = timingCache.get(model)
   if (!byKey) {
