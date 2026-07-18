@@ -190,6 +190,6 @@ export function classifyLine(line: string): 'error' | 'alarm' | 'info' | 'ok' | 
   if (line.startsWith('ALARM:') || line.includes('[MSG:WARN')) return 'alarm'
   if (line.includes('[MSG:INFO')) return 'info'
   if (line === 'ok') return 'ok'
-  if (line.startsWith('<') && line.endsWith('>')) return 'status'
+  if ((line.startsWith('<') && line.endsWith('>')) || (line.startsWith('[GC:') && line.endsWith(']'))) return 'status'
   return 'normal'
 }
