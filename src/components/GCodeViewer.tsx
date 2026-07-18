@@ -6,7 +6,7 @@ import { useGCodeStore } from '../store/gcode'
 import { sendRaw, sendRealtime, STATUS_POLL_INTERVAL_MS } from '../lib/ws'
 import type { ControllerSettings, MachineStatus, Units } from '../types'
 import { displayToMm, mmToDisplay } from '../lib/units'
-import { buildJobTimingEstimate, formatRuntime, useJobRuntimeEstimate, type JobTimingEstimate } from '../lib/jobRuntime'
+import { buildJobTimingEstimate, distributeFixedDelays, formatRuntime, useJobRuntimeEstimate, type JobTimingEstimate } from '../lib/jobRuntime'
 import { createRenderer, renderLines, setStaticLineData, type WebGLRenderer, type Camera, type Vector3 } from '../lib/webgl'
 import { addSegmentToPath, clamp01, getArcGeometry, normalizeAngle } from '../lib/gcodeBuild'
 import { RestartFromLineDialog } from './RestartFromLineDialog'
@@ -751,8 +751,6 @@ function buildFallbackSimulationTiming(model: GCodeModel): JobTimingEstimate | n
   if (model.segments.length === 0) return null
   const segmentSeconds = new Float64Array(model.segments.length)
   let totalSeconds = 0
-  let totalRapidSeconds = 0
-  let totalControlledSeconds = 0
 
   for (let i = 0; i < model.segments.length; i++) {
     const seg = model.segments[i]
@@ -764,20 +762,30 @@ function buildFallbackSimulationTiming(model: GCodeModel): JobTimingEstimate | n
     const seconds = length / (speedMmPerMin / 60)
     segmentSeconds[i] = seconds
     totalSeconds += seconds
-    if (seg.moveType === 'rapid') totalRapidSeconds += seconds
-    else totalControlledSeconds += seconds
   }
 
+  const delayBeforeSegmentSeconds = new Float64Array(model.segments.length)
+  const [trailingDelaySeconds, totalFixedSeconds] = distributeFixedDelays(model, delayBeforeSegmentSeconds)
+  totalSeconds += totalFixedSeconds
+
   return totalSeconds > 0
-    ? { segmentSeconds, totalSeconds, totalRapidSeconds, totalControlledSeconds }
+    ? {
+        segmentSeconds,
+        delayBeforeSegmentSeconds,
+        trailingDelaySeconds,
+        totalSeconds,
+      }
     : null
 }
 
 function buildCumulativeSegmentTimes(timing: JobTimingEstimate) {
   const cumulative = new Float64Array(timing.segmentSeconds.length + 1)
   for (let i = 0; i < timing.segmentSeconds.length; i++) {
-    cumulative[i + 1] = cumulative[i] + timing.segmentSeconds[i]
+    cumulative[i + 1] = cumulative[i]
+      + timing.delayBeforeSegmentSeconds[i]
+      + timing.segmentSeconds[i]
   }
+  cumulative[cumulative.length - 1] += timing.trailingDelaySeconds
   return cumulative
 }
 
@@ -812,7 +820,9 @@ function getSimulationProgressAt(
   const seconds = timing.segmentSeconds[segmentIndex]
   return {
     segmentIndex,
-    fraction: clamp01((clampedElapsed - cumulative[segmentIndex]) / seconds),
+    fraction: clamp01((clampedElapsed
+      - cumulative[segmentIndex]
+      - timing.delayBeforeSegmentSeconds[segmentIndex]) / seconds),
   }
 }
 
@@ -2032,6 +2042,7 @@ export function GCodeViewer({ className, isTablet, showOverrides, fitToViewSigna
   }
 
   function getSimulationTiming(mdl: GCodeModel) {
+    if (mdl.timingUnsupported) return null
     return buildJobTimingEstimate(mdl, controllerSettings) ?? buildFallbackSimulationTiming(mdl)
   }
 
@@ -2895,6 +2906,7 @@ export function GCodeViewer({ className, isTablet, showOverrides, fitToViewSigna
                 type="button"
                 className="pointer-events-auto flex items-center gap-1.5 rounded border border-border bg-surface/80 backdrop-blur-sm px-3 py-1.5 text-sm font-semibold text-text-primary shadow-sm hover:border-accent/60 hover:text-accent active:bg-elevated"
                 onClick={startSimulation}
+                disabled={model.timingUnsupported}
                 title="Preview the toolpath motion without sending commands"
               >
                 <Play size={14} />
